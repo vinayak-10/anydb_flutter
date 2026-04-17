@@ -1,0 +1,747 @@
+{
+    "name": "RKM Physio",
+    "description": "Ramakrishna Mission Physiotherapy Database for Daily & Monthly Reports",
+    "contents": [
+        {
+            "type": "aggregator",
+            "name": "Daily Report",
+            "version": "1.0.0",
+            "share": [
+                {
+                    "type": "open"
+                },
+                {
+                    "type": "local"
+                },
+                {
+                    "type": "e-mail",
+                    "url": "kapil.bhavsar@gmail.com"
+                },
+                {
+                    "type": "url",
+                    "url": "https://dwall.xyz/uploadfile/"
+                },
+                {
+                    "type": "ftp",
+                    "url": "ftp://username:password@ftp-server-url/path-to-store/"
+                }
+            ],
+            "schema": [
+                {
+                    "type": "report",
+                    "name": "Daily",
+                    "header": {
+                        "title": "Ramakrishna Mission, Indore",
+                        "subtitle": "Physiotherapy Center's Daily Report"
+                    },
+                    "row": [
+                        {
+                            "source": {
+                                "type": "database",
+                                "name": "Patients",
+                                "storage": [
+                                    {
+                                        "type": "local"
+                                    }
+                                ]
+                            },
+                            "columns": [
+                                "Card Number",
+                                "Display Name",
+                                "Sex",
+                                "Charges",
+                                "Paid",
+                                "Discount",
+                                "Mode",
+                                "Registered On",
+                                "_counter.add.mm",
+                                "_counter.add.yy",
+                                "Date"
+                            ],
+                            "predicates": [
+                                {
+                                    "name": "Patients on Date",
+                                    "operation": "date",
+                                    "column": "Date",
+                                    "parameter": {
+                                        "match": true,
+                                        "type": "day"
+                                    }
+                                },
+                                {
+                                    "operation": "convert",
+                                    "column": "Registered On",
+                                    "parameter": {
+                                        "to": "date"
+                                    }
+                                },
+                                {
+                                    "operation": "convert",
+                                    "column": "Date",
+                                    "parameter": {
+                                        "to": "date"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": [
+                        {
+                            "title": "Total Charges",
+                            "formula": "SUM($Charges.START:$Charges.END)",
+                            "column": "Charges"
+                        },
+                        {
+                            "title": "Total Paid",
+                            "formula": "SUM($Paid.START:$Paid.END)",
+                            "column": "Paid"
+                        },
+                        {
+                            "title": "Total Cash",
+                            "formula": "SUMIF($Mode.START:$Mode.END, \"Cash\", $Paid.START:$Paid.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Total UPI",
+                            "formula": "SUMIF($Mode.START:$Mode.END, \"UPI\", $Paid.START:$Paid.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Total Transactions",
+                            "formula": "COUNTA($Mode.START:$Mode.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Cash Transactions",
+                            "formula": "COUNTIF($Mode.START:$Mode.END, \"Cash\")",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "UPI Transactions",
+                            "formula": "COUNTIF($Mode.START:$Mode.END, \"UPI\")",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Total Discounts",
+                            "formula": "SUM($Discount.START:$Discount.END)",
+                            "column": "Discount"
+                        },
+                        {
+                            "title": "Free Transactions",
+                            "formula": "COUNT(FILTER($Discount.START:$Discount.END, $Discount.START:$Discount.END=$Charges.START:$Charges.END))",
+                            "column": "Discount"
+                        },
+                        {
+                            "title": "Male",
+                            "formula": "IFERROR(ROWS(UNIQUE(FILTER($Card Number.START:$Card Number.END,$Sex.START:$Sex.END=\"Male\"))),0)",
+                            "column": "Sex"
+                        },
+                        {
+                            "title": "Female",
+                            "formula": "IFERROR(ROWS(UNIQUE(FILTER($Card Number.START:$Card Number.END,$Sex.START:$Sex.END=\"Female\"))),0)",
+                            "column": "Sex"
+                        },
+                        {
+                            "title": "New Patients",
+                            "formula": "IFERROR(ROWS(UNIQUE(FILTER($Card Number.START:$Card Number.END,$Registered On.START:$Registered On.END=$Date.START))),0)",
+                            "column": "Registered On"
+                        },
+                        {
+                            "title": "Existing Patients",
+                            "formula": "IFERROR(ROWS(UNIQUE(FILTER($Card Number.START:$Card Number.END,$Registered On.START:$Registered On.END<>$Date.START))),0)",
+                            "column": "Registered On"
+                        }
+                    ]
+                },
+                {
+                    "type": "report",
+                    "name": "Monthly",
+                    "header": {
+                        "title": "Ramakrishna Mission, Indore",
+                        "subtitle": "Physiotherapy Center's Monthly Report"
+                    },
+                    "row": [
+                        {
+                            "source": {
+                                "type": "report",
+                                "name": "Daily",
+                                "storage": [
+                                    {
+                                        "type": "local"
+                                    }
+                                ]
+                            },
+                            "columns": [
+                                {
+                                    "title": "Charges",
+                                    "formula": "'Daily'!A7"
+                                },
+                                {
+                                    "title": "Paid",
+                                    "formula": "'Daily'!B7"
+                                },
+                                {
+                                    "title": "Cash",
+                                    "formula": "'Daily'!C7"
+                                },
+                                {
+                                    "title": "UPI",
+                                    "formula": "'Daily'!D7"
+                                },
+                                {
+                                    "title": "Transactions",
+                                    "formula": "'Daily'!E7"
+                                },
+                                {
+                                    "title": "Cash Transactions",
+                                    "formula": "'Daily'!F7"
+                                },
+                                {
+                                    "title": "UPI Transactions",
+                                    "formula": "'Daily'!G7"
+                                },
+                                {
+                                    "title": "Discounts",
+                                    "formula": "'Daily'!H7"
+                                },
+                                {
+                                    "title": "Free Transactions",
+                                    "formula": "'Daily'!I7"
+                                },
+                                {
+                                    "title": "Male",
+                                    "formula": "'Daily'!J7"
+                                },
+                                {
+                                    "title": "Female",
+                                    "formula": "'Daily'!K7"
+                                },
+                                {
+                                    "title": "New Patients",
+                                    "formula": "'Daily'!L7"
+                                },
+                                {
+                                    "title": "Existing Patients",
+                                    "formula": "'Daily'!M7"
+                                }
+                            ],
+                            "predicates": [
+                                {
+                                    "name": "Patients in Month",
+                                    "operation": "date",
+                                    "parameter": {
+                                        "type": "month"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": [
+                        {
+                            "title": "Total Charges",
+                            "formula": "SUM($Charges.START:$Charges.END)",
+                            "column": "Charges"
+                        },
+                        {
+                            "title": "Total Paid",
+                            "formula": "SUM($Paid.START:$Paid.END)",
+                            "column": "Paid"
+                        },
+                        {
+                            "title": "Total Cash",
+                            "formula": "SUM($Cash.START:$Cash.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Total UPI",
+                            "formula": "SUM($UPI.START:$UPI.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Total Transactions",
+                            "formula": "SUM($Transactions.START:$Transactions.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Cash Transactions",
+                            "formula": "SUM($Cash Transactions.START:$Cash Transactions.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "UPI Transactions",
+                            "formula": "SUM($UPI Transactions.START:$UPI Transactions.END)",
+                            "column": "Mode"
+                        },
+                        {
+                            "title": "Total Discounts",
+                            "formula": "SUM($Discounts.START:$Discounts.END)",
+                            "column": "Discount"
+                        },
+                        {
+                            "title": "Free Transactions",
+                            "formula": "SUM($Free Transactions.START:$Free Transactions.END)",
+                            "column": "Discount"
+                        },
+                        {
+                            "title": "Male",
+                            "formula": "SUM($Male.START:$Male.END)",
+                            "column": "Sex"
+                        },
+                        {
+                            "title": "Female",
+                            "formula": "SUM($Female.START:$Female.END)",
+                            "column": "Sex"
+                        },
+                        {
+                            "title": "New Patients",
+                            "formula": "SUM($New Patients.START:$New Patients.END)",
+                            "column": "Registered On"
+                        },
+                        {
+                            "title": "Existing Patients",
+                            "formula": "SUM($Existing Patients.START:$Existing Patients.END)",
+                            "column": "Registered On"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "aggregator",
+            "name": "Full Report",
+            "version": "1.0.0",
+            "share": [
+                {
+                    "type": "local"
+                },
+                {
+                    "type": "open"
+                },
+                {
+                    "type": "e-mail",
+                    "url": "kapil.bhavsar@gmail.com"
+                },
+                {
+                    "type": "ftp",
+                    "url": "ftp://username:password@ftp-server-url/path-to-store/"
+                }
+            ],
+            "schema": [
+                {
+                    "type": "report",
+                    "name": "Full",
+                    "header": {
+                        "title": "Ramakrishna Mission, Indore",
+                        "subtitle": "Physiotherapy Center's Full Report"
+                    },
+                    "row": [
+                        {
+                            "source": {
+                                "type": "database",
+                                "name": "Patients",
+                                "storage": [
+                                    {
+                                        "type": "local"
+                                    }
+                                ]
+                            },
+                            "columns": [],
+                            "predicates": [
+                                {
+                                    "operation": "generate",
+                                    "name": "Generate Full Report"
+                                },
+                                {
+                                    "operation": "convert",
+                                    "column": "Registered On",
+                                    "parameter": {
+                                        "to": "date"
+                                    }
+                                },
+                                {
+                                    "operation": "convert",
+                                    "column": "Date",
+                                    "parameter": {
+                                        "to": "date"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "summary": []
+                }
+            ]
+        },
+        {
+            "type": "database",
+            "name": "Patients",
+            "version": "1.0.0",
+            "storage": [
+                {
+                    "type": "local"
+                },
+                {
+                    "type": "file"
+                },
+                {
+                    "type": "gdrive",
+                    "folder": "dwall.xyz.genui",
+                    "file": "genui.json"
+                },
+                {
+                    "type": "rest-api",
+                    "url": "http://dwall.xyz/gendata/add",
+                    "method": "POST"
+                }
+            ],
+            "authentication": [
+                "google",
+                "facebook",
+                "aadhar",
+                "otp"
+            ],
+            "header": {
+                "title": "Ramakrishna Mission, Indore",
+                "subtitle": "Physiotherapy Center"
+            },
+            "meta": {
+                "ts": [
+                    "Registration",
+                    "Registered On"
+                ]
+            },
+            "schema": [
+                {
+                    "type": "list-header",
+                    "name": "Patient's Data",
+                    "title": [
+                        {
+                            "type": "values",
+                            "value": [
+                                [
+                                    "Profile",
+                                    "Display Name"
+                                ]
+                            ]
+                        }
+                    ],
+                    "elements": [
+                        {
+                            "type": "values",
+                            "value": [
+                                [
+                                    "Medical Data",
+                                    "Diagnosis"
+                                ],
+                                [
+                                    "Medical Data",
+                                    "Therapies"
+                                ]
+                            ]
+                        },
+                        {
+                            "type": "function",
+                            "value": [
+                                {
+                                    "title": "Mini Account",
+                                    "content": [
+                                        {
+                                            "operation": "invoke",
+                                            "on": [
+                                                "Account"
+                                            ],
+                                            "what": "get-dues",
+                                            "parameters": {}
+                                        },
+                                        {
+                                            "operation": "invoke",
+                                            "on": [
+                                                "Account"
+                                            ],
+                                            "what": "add-one",
+                                            "parameters": {}
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "function",
+                            "value": [
+                                {
+                                    "title": "Renewal Info",
+                                    "content": [
+                                        {
+                                            "operation": "invoke",
+                                            "on": [
+                                                "Registration",
+                                                "Renewal"
+                                            ],
+                                            "what": "text",
+                                            "parameters": {}
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "type": "composite",
+                    "name": "Registration",
+                    "searchable": true,
+                    "displayGroup": [
+                        [
+                            "Card Number",
+                            "yy",
+                            "mm"
+                        ],
+                        [
+                            "Registered On"
+                        ],
+                        [
+                            "Renewal"
+                        ]
+                    ],
+                    "elements": [
+                        {
+                            "type": "number",
+                            "name": "Card Number",
+                            "defaultValue": "",
+                            "format": "[09999]{/}[00]{/}[099999]",
+                            "searchable": true
+                        },
+                        {
+                            "type": "meta",
+                            "fields": [
+                                "_counter.add.yy",
+                                "_yy"
+                            ],
+                            "separator": "/",
+                            "name": "yy"
+                        },
+                        {
+                            "type": "meta",
+                            "fields": [
+                                "_counter.add.mm",
+                                "_mm"
+                            ],
+                            "separator": "/",
+                            "name": "mm"
+                        },
+                        {
+                            "type": "dateTime",
+                            "name": "Registered On",
+                            "defaultValue": "",
+                            "observers": [
+                                "mm",
+                                "yy"
+                            ]
+                        },
+                        {
+                            "type": "reminder",
+                            "name": "Renewal",
+                            "defaultValue": {
+                                "year": "0",
+                                "month": "0",
+                                "days": "30"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "type": "composite",
+                    "name": "Profile",
+                    "searchable": true,
+                    "displayGroup": [
+                        [
+                            "Display Name"
+                        ],
+                        [
+                            "Age",
+                            "Sex"
+                        ],
+                        [
+                            "Contact Number"
+                        ],
+                        [
+                            "Address"
+                        ]
+                    ],
+                    "elements": [
+                        {
+                            "type": "text",
+                            "name": "Display Name",
+                            "defaultValue": "",
+                            "searchable": true
+                        },
+                        {
+                            "type": "number",
+                            "name": "Age",
+                            "defaultValue": ""
+                        },
+                        {
+                            "type": "multi-select",
+                            "name": "Sex",
+                            "defaultValues": [],
+                            "limit": 1,
+                            "allowedValues": [
+                                "Male",
+                                "Female",
+                                "Others"
+                            ]
+                        },
+                        {
+                            "type": "phoneNumber",
+                            "name": "Contact Number",
+                            "defaultValue": "+91",
+                            "searchable": true
+                        },
+                        {
+                            "type": "text",
+                            "name": "Address",
+                            "defaultValue": "Indore",
+                            "searchable": true
+                        }
+                    ]
+                },
+                {
+                    "type": "composite",
+                    "name": "Medical Data",
+                    "displayGroup": [
+                        [
+                            "Therapist Incharge",
+                            "Diagnosis"
+                        ],
+                        [
+                            "Therapies"
+                        ],
+                        [
+                            "Referred By",
+                            "Notes"
+                        ]
+                    ],
+                    "elements": [
+                        {
+                            "type": "text",
+                            "name": "Therapist Incharge",
+                            "defaultValue": "GSS",
+                            "searchable": true
+                        },
+                        {
+                            "type": "text",
+                            "name": "Diagnosis",
+                            "defaultValue": "Back Pain",
+                            "multiline": true,
+                            "lines": 1
+                        },
+                        {
+                            "type": "multi-select",
+                            "name": "Therapies",
+                            "defaultValues": [],
+                            "allowedValues": [
+                                "CPM",
+                                "MEMS",
+                                "Diathermy",
+                                "Cervical Traction",
+                                "Pelvic Traction",
+                                "EMS",
+                                "HCP",
+                                "TENS",
+                                "Infrared",
+                                "UST",
+                                "IFT",
+                                "Wax Bath",
+                                "Isometric"
+                            ]
+                        },
+                        {
+                            "type": "text",
+                            "name": "Referred By",
+                            "defaultValue": ""
+                        },
+                        {
+                            "type": "text",
+                            "name": "Notes",
+                            "defaultValue": "",
+                            "multiline": true,
+                            "lines": 3,
+                            "timed": true
+                        }
+                    ]
+                },
+                {
+                    "type": "simple-account",
+                    "name": "Account",
+                    "version": "1.0.0",
+                    "schema": {
+                        "type": "composite",
+                        "name": "Entry",
+                        "version": "1.0.0",
+                        "displayGroup": [
+                            [
+                                "Date"
+                            ],
+                            [
+                                "Charges",
+                                "Paid",
+                                "Discount"
+                            ],
+                            [
+                                "Mode"
+                            ],
+                            [
+                                "Notes"
+                            ]
+                        ],
+                        "elements": [
+                            {
+                                "type": "dateTime",
+                                "name": "Date",
+                                "id": "Transaction-Date",
+                                "defaultValue": ""
+                            },
+                            {
+                                "type": "number",
+                                "name": "Charges",
+                                "id": "Debit",
+                                "defaultValue": "50"
+                            },
+                            {
+                                "type": "number",
+                                "name": "Paid",
+                                "id": "Credit",
+                                "defaultValue": "50"
+                            },
+                            {
+                                "type": "number",
+                                "name": "Discount",
+                                "id": "Discount",
+                                "defaultValue": "0"
+                            },
+                            {
+                                "type": "multi-select",
+                                "name": "Mode",
+                                "id": "Payment-Mode",
+                                "defaultValues": [
+                                    "Cash"
+                                ],
+                                "limit": 1,
+                                "allowedValues": [
+                                    "Cash",
+                                    "UPI"
+                                ]
+                            },
+                            {
+                                "type": "text",
+                                "name": "Notes",
+                                "id": "Transaction-Text",
+                                "defaultValue": ""
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}
