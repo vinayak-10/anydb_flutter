@@ -9,12 +9,22 @@ import 'screens/collection_view.dart';
 import 'package:file_picker/file_picker.dart';
 import 'core/settings_provider.dart';
 import 'components/drawer_content.dart';
+import 'services/google_drive_service.dart';
 
 // Providers
 final schemaServiceProvider = Provider((ref) => SchemaService());
 final fileServiceProvider = Provider((ref) => FileService());
 
+final appInitProvider = FutureProvider<void>((ref) async {
+  final googleDriveService = ref.read(googleDriveServiceProvider);
+  await googleDriveService.init();
+  if (googleDriveService.currentUser != null) {
+    ref.read(googleUserProvider.notifier).setUser(googleDriveService.currentUser);
+  }
+});
+
 final schemasProvider = FutureProvider<List<SchemaInfo>>((ref) async {
+  await ref.watch(appInitProvider.future); // Wait for app init
   debugPrint("schemasProvider: init started");
   final service = ref.watch(schemaServiceProvider);
   await service.init();

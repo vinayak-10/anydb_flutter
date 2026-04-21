@@ -23,49 +23,67 @@ class GoogleDriveService {
     
     _initCompleter = Completer<void>();
     try {
-      debugPrint("GoogleDriveService: Initializing API for Web/GIS...");
+      debugPrint("GoogleDriveService: Initializing API...");
+      // For v7.2.0+, initialize is mandatory.
+      // On Web, clientId is required here. On mobile, it's typically configured in native files.
       await _googleSignIn.initialize(
-        clientId: "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com",
+        clientId: kIsWeb ? "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com" : null,
       );
+      
+      // attemptLightweightAuthentication is the new signInSilently
+      _currentUser = await _googleSignIn.attemptLightweightAuthentication();
+      if (_currentUser != null) {
+        debugPrint("GoogleDriveService: Restored session for ${_currentUser!.displayName}");
+      }
       _initCompleter!.complete();
     } catch (e) {
-      _initCompleter!.completeError(e);
-      _initCompleter = null; 
-      rethrow;
+      if (e is! UnimplementedError) {
+        debugPrint("GoogleDriveService: Initialization error: $e");
+        _initCompleter!.completeError(e);
+        _initCompleter = null; 
+        rethrow;
+      } else {
+        debugPrint("GoogleDriveService: initialize() not implemented on this platform, skipping.");
+        _initCompleter!.complete();
+      }
     }
     return _initCompleter!.future;
   }
 
-  Future<bool> login() async {
+  Future<GoogleSignInAccount?> login() async {
     try {
       await init();
       
       final List<String> scopes = [drive.DriveApi.driveFileScope];
 
-      if (kIsWeb) {
-        debugPrint("GoogleDriveService: Web direct auth...");
+      // authenticate() is the new signIn() in v7.x
+      _currentUser = await _googleSignIn.authenticate();
+      
+      if (_currentUser != null) {
+        debugPrint("GoogleDriveService: Authenticated as ${_currentUser!.displayName}");
+        
+        // Authorization is separate from Authentication in v7.x
         final auth = await _googleSignIn.authorizationClient.authorizeScopes(scopes);
         _httpClient = auth.authClient(scopes: scopes);
-        return true; 
-      } else {
-        _currentUser = await _googleSignIn.authenticate();
-        if (_currentUser != null) {
-          var auth = await _currentUser!.authorizationClient.authorizationForScopes(scopes);
-          auth ??= await _currentUser!.authorizationClient.authorizeScopes(scopes);
-          _httpClient = auth.authClient(scopes: scopes);
-        }
-        return _currentUser != null;
       }
+      return _currentUser;
     } catch (error) {
       debugPrint('Google Sign-In Error: $error');
-      return false;
+      return null;
     }
   }
 
   Future<void> logout() async {
     try {
-      await _googleSignIn.disconnect();
-    } catch (_) {}
+      await _googleSignIn.signOut();
+      if (!kIsWeb) {
+        try {
+          await _googleSignIn.disconnect();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint("GoogleDriveService: Logout error: $e");
+    }
     _currentUser = null;
     _httpClient = null;
   }
@@ -252,10 +270,10 @@ class GoogleDriveService {
 
 final googleDriveServiceProvider = Provider((ref) => GoogleDriveService());
 
-class GoogleLoginNotifier extends Notifier<bool> {
+class GoogleUserNotifier extends Notifier<GoogleSignInAccount?> {
   @override
-  bool build() => false;
-  void set(bool val) => state = val;
+  GoogleSignInAccount? build() => null;
+  void setUser(GoogleSignInAccount? user) => state = user;
 }
 
-final googleLoginProvider = NotifierProvider<GoogleLoginNotifier, bool>(GoogleLoginNotifier.new);
+final googleUserProvider = NotifierProvider<GoogleUserNotifier, GoogleSignInAccount?>(GoogleUserNotifier.new);
