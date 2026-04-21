@@ -7,17 +7,40 @@ class PhoneNumber extends GenInterface {
   String id = "";
   String value = "";
   bool searchable = false;
+  List<dynamic> observers = [];
+  Map<String, dynamic>? oSchema;
+  dynamic repoIntf;
 
   @override
   String getType() => "phoneNumber";
 
   @override
+  String getName() => name;
+
+  @override
+  String getId() => id;
+
+  @override
   void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
+    oSchema = jsonObj;
+    this.repoIntf = repoIntf;
     name = jsonObj['name'] ?? "";
     id = jsonObj['id']?.toString() ?? "";
     value = jsonObj['defaultValue'] ?? "";
     searchable = jsonObj['searchable'] ?? false;
+    observers = jsonObj['observers'] is List ? jsonObj['observers'] : [];
   }
+
+  @override
+  GenInterface clone() {
+    final c = PhoneNumber();
+    c.init(oSchema ?? {}, repoIntf);
+    c.populate(fetch());
+    return c;
+  }
+
+  @override
+  List<dynamic> getObservers() => observers;
 
   @override
   void populate(Map<String, dynamic> jsonDb) {
@@ -32,29 +55,44 @@ class PhoneNumber extends GenInterface {
   }
 
   @override
-  List<bool> match(String val) {
+  List<bool> match(String val, {bool exact = false}) {
     if (searchable) {
-      if (value == val) return [true, true];
-      if (value.contains(val)) return [true, false];
+      if (exact) {
+        if (value == val) return [true, true];
+      } else {
+        if (value == val) return [true, true];
+        if (value.contains(val)) return [true, false];
+      }
     }
     return [false, false];
   }
 
   @override
-  Widget editor({required Key key, Function? onChanged}) {
+  Widget editor({
+    required Key key, 
+    required Function(dynamic) onChanged, 
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs, 
+    int? index, 
+    bool? autoFocus, 
+    bool? refresh
+  }) {
     return _PhoneNumberEditor(
       key: key,
       label: name,
       initialValue: value,
       onChanged: (txt) {
         value = txt;
-        if (onChanged != null) onChanged(txt);
+        onChanged(txt);
+        if (cbNotifyParent != null) {
+          cbNotifyParent(this, {name: txt}, observers);
+        }
       },
     );
   }
 
   @override
-  Widget display({bool onlyValue = false}) {
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     if (onlyValue) return Text(value);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),

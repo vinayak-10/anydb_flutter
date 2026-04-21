@@ -10,21 +10,46 @@ class TextAscii extends GenInterface {
   bool multiline = false;
   int lines = 1;
   int maxsize = 100;
+  List<dynamic> observers = [];
+  Map<String, dynamic>? oSchema;
+  dynamic repoIntf;
 
   @override
   String getType() => "text";
 
   @override
+  String getName() => name;
+
+  @override
+  String getId() => id;
+
+  @override
   void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
-    name = jsonObj['name']?.toString() ?? "";
-    id = jsonObj['id']?.toString() ?? "";
-    value = jsonObj['defaultValue']?.toString() ?? "";
-    searchable = jsonObj['searchable'] ?? false;
-    timed = jsonObj['timed'] ?? false;
-    multiline = jsonObj['multiline'] ?? false;
-    lines = jsonObj['lines'] is int ? jsonObj['lines'] : 1;
-    maxsize = jsonObj['maxsize'] is int ? jsonObj['maxsize'] : 100;
+    oSchema = jsonObj;
+    this.repoIntf = repoIntf;
+    final Map<String, dynamic> jo = jsonObj;
+    
+    name = jo['name']?.toString() ?? "";
+    id = jo['id']?.toString() ?? "";
+    value = jo['defaultValue']?.toString() ?? "";
+    searchable = jo['searchable'] ?? false;
+    timed = jo['timed'] ?? false;
+    multiline = jo['multiline'] ?? false;
+    lines = jo['lines'] is int ? jo['lines'] : 1;
+    maxsize = jo['maxsize'] is int ? jo['maxsize'] : 100;
+    observers = jo['observers'] is List ? jo['observers'] : [];
   }
+
+  @override
+  GenInterface clone() {
+    final c = TextAscii();
+    c.init(oSchema!, repoIntf);
+    c.populate(fetch());
+    return c;
+  }
+
+  @override
+  List<dynamic> getObservers() => observers;
 
   @override
   void populate(Map<String, dynamic> jsonDb) {
@@ -39,18 +64,30 @@ class TextAscii extends GenInterface {
   }
 
   @override
-  List<bool> match(String val) {
+  List<bool> match(String val, {bool exact = false}) {
     if (searchable) {
       String c1 = value.toLowerCase();
       String c2 = val.toLowerCase();
-      if (c1 == c2) return [true, true];
-      if (c1.contains(c2)) return [true, false];
+      if (exact) {
+        if (c1 == c2) return [true, true];
+      } else {
+        if (c1 == c2) return [true, true];
+        if (c1.contains(c2)) return [true, false];
+      }
     }
     return [false, false];
   }
 
   @override
-  Widget editor({required Key key, Function? onChanged}) {
+  Widget editor({
+    required Key key, 
+    required Function(dynamic) onChanged, 
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs, 
+    int? index, 
+    bool? autoFocus, 
+    bool? refresh
+  }) {
     return _TextAsciiEditor(
       key: key,
       label: name,
@@ -61,13 +98,16 @@ class TextAscii extends GenInterface {
       timed: timed,
       onChanged: (txt) {
         value = txt;
-        if (onChanged != null) onChanged(txt);
+        onChanged(txt);
+        if (cbNotifyParent != null) {
+          cbNotifyParent(this, {name: txt}, observers);
+        }
       },
     );
   }
 
   @override
-  Widget display({bool onlyValue = false}) {
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     if (onlyValue) return Text(value);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -116,6 +156,14 @@ class _TextAsciiEditorState extends State<_TextAsciiEditor> {
     _controller = TextEditingController(text: widget.initialValue);
     _focusNode = FocusNode();
     _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(_TextAsciiEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != _controller.text && !_focusNode.hasFocus) {
+      _controller.text = widget.initialValue;
+    }
   }
 
   void _onFocusChange() {

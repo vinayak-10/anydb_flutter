@@ -7,31 +7,21 @@ abstract class GenInterface {
     smObjId++;
   }
 
-  String getType() {
-    return "undefined";
-  }
+  String getType();
 
-  void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
-    // this function take the json schema and initializes the object
-  }
+  void init(Map<String, dynamic> jsonObj, dynamic repoIntf);
 
-  GenInterface? clone() {
-    return null;
-  }
+  GenInterface? clone();
 
-  void populate(Map<String, dynamic> jsonDb) {
+  void populate(Map<String, dynamic> jsonDb);
 
-  }
-
-  Map<String, dynamic> fetch() {
-    return {};
-  }
+  Map<String, dynamic> fetch();
 
   Map<String, dynamic> validate() {
-    return {'name': '', 'valid': true, 'constraint': []};
+    return {'valid': true, 'name': '', 'constraint': ''};
   }
 
-  List<bool> match(String val) {
+  List<bool> match(String val, {bool exact = false}) {
     return [false, false];
   }
 
@@ -51,19 +41,36 @@ abstract class GenInterface {
     return this;
   }
 
-  Widget editor({required Key key, Function? onChanged}) {
-    // this is editor interface that is to be extended by derived class
+  GenInterface? getComponentAtIndex(int index) {
+    return null;
+  }
+
+  int getComponentIdIndex(String id) {
+    return -1;
+  }
+
+  String getValue() {
+    return "";
+  }
+
+  Widget editor({
+    required Key key, 
+    required Function(dynamic) onChanged, 
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs, 
+    int? index, 
+    bool? autoFocus, 
+    bool? refresh
+  }) {
     return const SizedBox.shrink();
   }
 
-  Widget display({bool onlyValue = false}) {
-    // this is display interface that is to be extended by derived class
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     return const SizedBox.shrink();
   }
 
-  Widget invoke(dynamic props) {
-    // This function will return component that is invoked on object
-    return const SizedBox.shrink();
+  Widget? invoke({required String method, required Map<String, dynamic> parameters, VoidCallback? onChanged}) {
+    return null;
   }
 
   Map<String, dynamic> get() {
@@ -71,7 +78,6 @@ abstract class GenInterface {
   }
 
   bool notify(dynamic d) {
-    // do nothing
     return false;
   }
 
@@ -80,6 +86,5 @@ abstract class GenInterface {
   }
 
   void set(Map<String, dynamic> jo) {
-    // sets the component with Json Object
   }
 }

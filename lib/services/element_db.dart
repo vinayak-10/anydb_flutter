@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import '../models/element_model.dart';
 import 'storage_service.dart';
+import 'meta_service.dart';
+import 'event_trigger_service.dart';
 
 class ElementDb {
   String key = '';
@@ -10,6 +12,8 @@ class ElementDb {
   List<ElementModel> elements = [];
   List<dynamic> fullSchema = [];
   dynamic intf;
+  late Meta metaService;
+  EventTriggerService? _triggerService;
 
   bool initialized = false;
 
@@ -34,9 +38,18 @@ class ElementDb {
     
     intf = interface;
 
+    final List<dynamic>? tsPath = sj['meta']?['ts'];
+    metaService = Meta(dbKey: key, tsPath: tsPath);
+
+    if (sj.containsKey('events')) {
+      _triggerService = EventTriggerService(db: this, eventsSchema: sj['events']);
+    }
+
     final storageConfig = sj['storage'] ?? [];
     await storage.init(key, storageConfig is List ? storageConfig : [storageConfig]);
+    
     initialized = true;
+    _triggerService?.trigger('onDbStart');
     debugPrint("ElementDb.init: finished for $key");
   }
 
@@ -64,15 +77,76 @@ class ElementDb {
 
     elements = [];
     final allData = await storage.fetch();
-    
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const purgeThreshold = 72 * 60 * 60 * 1000; // 72 hours in ms
+
     for (var data in allData) {
+      if (data.isEmpty) continue;
+      final key = data.keys.first;
+      final val = data.values.first as Map<String, dynamic>;
+      
+      // Auto-purge logic: If marked for delete > 72 hours ago, remove from storage
+      final meta = val['__meta__'];
+      if (meta != null && meta['time'] != null && meta['time']['d'] != null) {
+        final deleteTime = meta['time']['d'] as int;
+        if (now - deleteTime > purgeThreshold) {
+          await storage.remove(key);
+          continue;
+        }
+      }
+
       final element = ElementModel();
       element.init(dbSchema, intf);
       element.populate(data);
       elements.add(element);
+      metaService.add(data);
     }
 
     return elements.length;
+  }
+
+  Future<void> markArchive(ElementModel element) async {
+    final data = element.fetch();
+    final key = data.keys.first;
+    final val = data.values.first as Map<String, dynamic>;
+    
+    val['__meta__'] ??= {};
+    val['__meta__']['time'] ??= {};
+    val['__meta__']['time']['a'] = DateTime.now().millisecondsSinceEpoch;
+    
+    await storage.add(key, val);
+    await initDb(forced: true);
+  }
+
+  Future<void> markDelete(ElementModel element) async {
+    final data = element.fetch();
+    final key = data.keys.first;
+    final val = data.values.first as Map<String, dynamic>;
+    
+    val['__meta__'] ??= {};
+    val['__meta__']['time'] ??= {};
+    val['__meta__']['time']['d'] = DateTime.now().millisecondsSinceEpoch;
+    
+    await storage.add(key, val);
+    await initDb(forced: true);
+  }
+
+  Future<void> restore(ElementModel element) async {
+    final data = element.fetch();
+    final key = data.keys.first;
+    final val = data.values.first as Map<String, dynamic>;
+    
+    if (val['__meta__'] != null && val['__meta__']['time'] != null) {
+      val['__meta__']['time'].remove('a');
+      val['__meta__']['time'].remove('d');
+    }
+    
+    await storage.add(key, val);
+    await initDb(forced: true);
+  }
+
+  Map<String, dynamic> getStats() {
+    return metaService.getStats();
   }
 
   Future<void> addRecord(ElementModel element) async {
@@ -81,12 +155,40 @@ class ElementDb {
     final recordVal = data.values.first;
     
     await storage.add(recordKey, recordVal);
-    elements.add(element);
+    
+    // Check if record already exists in local list to prevent duplicates
+    int existingIdx = elements.indexWhere((e) => e.key == recordKey);
+    if (existingIdx != -1) {
+      elements[existingIdx] = element;
+      metaService.update(data);
+    } else {
+      elements.add(element);
+      metaService.add(data);
+    }
   }
 
   Future<void> removeRecord(String recordKey) async {
     await storage.remove(recordKey);
     elements.removeWhere((e) => e.key == recordKey);
+    metaService.delete(recordKey);
+  }
+
+  Future<void> clear() async {
+    await storage.clear();
+    elements.clear();
+    metaService = Meta(dbKey: key, tsPath: metaService.tsPath);
+  }
+
+  Future<void> importDb(List<dynamic> data, {bool wipeFirst = false}) async {
+    if (wipeFirst) {
+      await clear();
+    }
+    await storage.importData(data);
+    await initDb(forced: true);
+  }
+
+  Future<List<dynamic>> exportDb() async {
+    return await storage.exportData();
   }
 
   List<ElementModel> applyFilter(String filterType) {
@@ -122,5 +224,9 @@ class ElementDb {
   List<ElementModel> search(String query) {
     if (query.isEmpty) return elements;
     return elements.where((e) => e.match(query)[0]).toList();
+  }
+
+  Future<void> close() async {
+    await _triggerService?.trigger('onDbStop');
   }
 }

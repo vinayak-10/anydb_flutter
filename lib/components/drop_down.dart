@@ -12,24 +12,53 @@ class DropDown extends GenInterface {
     'initFn': null,
     'data': {'displayKeys': [], 'store': []}
   };
+  Map<String, dynamic>? oSchema;
+  dynamic repoIntf;
 
   @override
   String getType() => "dropdown";
 
   @override
-  void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
-    name = jsonObj['name'] ?? "";
-    id = jsonObj['id']?.toString() ?? "";
-    values = jsonObj['defaultValue'] is List ? jsonObj['defaultValue'] : [jsonObj['defaultValue']];
-    searchable = jsonObj['searchable'] ?? false;
+  String getName() => name;
 
-    if (jsonObj.containsKey('source')) {
-      final sourceSchema = jsonObj['source'];
-      if (sourceSchema.containsKey('displayKeys')) {
+  @override
+  String getId() => id;
+
+  @override
+  void init(dynamic jsonObj, dynamic repoIntf) {
+    if (jsonObj is! Map) return;
+    oSchema = Map<String, dynamic>.from(jsonObj);
+    this.repoIntf = repoIntf;
+    final Map<String, dynamic> jo = Map<String, dynamic>.from(jsonObj);
+    
+    name = jo['name']?.toString() ?? "";
+    id = jo['id']?.toString() ?? "";
+    
+    final rawDefault = jo['defaultValue'];
+    if (rawDefault is List) {
+      values = rawDefault;
+    } else if (rawDefault != null) {
+      values = [rawDefault];
+    } else {
+      values = [];
+    }
+    
+    searchable = jo['searchable'] ?? false;
+
+    if (jo.containsKey('source')) {
+      final sourceSchema = jo['source'];
+      if (sourceSchema is Map && sourceSchema.containsKey('displayKeys')) {
         source['data']['displayKeys'] = sourceSchema['displayKeys'];
       }
-      // Placeholder for repoIntf reference
     }
+  }
+
+  @override
+  GenInterface clone() {
+    final c = DropDown();
+    c.init(oSchema ?? {}, repoIntf);
+    c.populate(fetch());
+    return c;
   }
 
   @override
@@ -46,7 +75,7 @@ class DropDown extends GenInterface {
   }
 
   @override
-  Widget editor({required Key key, Function? onChanged}) {
+  Widget editor({required Key key, required Function(dynamic) onChanged, Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent, dynamic frefs, int? index, bool? autoFocus, bool? refresh}) {
     return _DropDownEditor(
       key: key,
       label: name,
@@ -54,7 +83,7 @@ class DropDown extends GenInterface {
       items: allowedValues(), // For now, we'll use a simple list or dummy data
       onChanged: (val) {
         values = [val];
-        if (onChanged != null) onChanged(val);
+        onChanged(val);
       },
     );
   }
@@ -65,7 +94,7 @@ class DropDown extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false}) {
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     final displayValue = values.join(", ");
     if (onlyValue) return Text(displayValue);
     return Padding(

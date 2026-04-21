@@ -7,10 +7,11 @@ import 'services/collection_service.dart';
 import 'services/file_service.dart';
 import 'screens/collection_view.dart';
 import 'package:file_picker/file_picker.dart';
+import 'core/settings_provider.dart';
+import 'components/drawer_content.dart';
 
 // Providers
 final schemaServiceProvider = Provider((ref) => SchemaService());
-final collectionServiceProvider = Provider((ref) => CollectionService());
 final fileServiceProvider = Provider((ref) => FileService());
 
 final schemasProvider = FutureProvider<List<SchemaInfo>>((ref) async {
@@ -31,12 +32,14 @@ void main() {
   );
 }
 
-class AnyDbApp extends StatelessWidget {
+class AnyDbApp extends ConsumerWidget {
   const AnyDbApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     debugPrint("AnyDbApp: building");
+    final settings = ref.watch(settingsProvider);
+
     return MaterialApp(
       title: 'AnyDb Flutter',
       theme: ThemeData(
@@ -45,8 +48,12 @@ class AnyDbApp extends StatelessWidget {
       ),
       home: const HomePage(),
       builder: (context, child) {
-        debugPrint("MaterialApp: child is ${child?.runtimeType}");
-        return child ?? const SizedBox.shrink();
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(settings.fontScale),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
       },
     );
   }
@@ -65,66 +72,103 @@ class HomePage extends ConsumerWidget {
         title: const Text('AnyDb: Select Schema'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
+      drawer: const DrawerContent(),
       body: schemasAsync.when(
         data: (schemas) {
           debugPrint("HomePage: data state, schemas count = ${schemas.length}");
-          return schemas.isEmpty
-            ? Center(
+          if (schemas.isEmpty) {
+             return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text("No schemas found."),
+                    const Icon(Icons.schema_outlined, size: 80, color: Colors.grey),
                     const SizedBox(height: 16),
-                    ElevatedButton(
+                    const Text("No schemas found at runtime.", style: TextStyle(fontSize: 18, color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 40),
+                      child: Text(
+                        "Please put a schema .json file in your device's storage (xyz.maya/anydb/schema/) or click the '+' button to import one.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
                       onPressed: () async {
                         await ref.read(schemaServiceProvider).loadDefaultSchema();
                         ref.invalidate(schemasProvider);
                       },
-                      child: const Text("Load Default Schema (RKM Physio)"),
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text("Seed from Built-in Default"),
                     ),
-                    const SizedBox(height: 8),
-                    const Text("OR click '+' to add your own JSON schema"),
                   ],
                 ),
-              )
-            : ListView.builder(
-                itemCount: schemas.length,
-                itemBuilder: (context, index) {
-                  final schema = schemas[index];
-                  return ListTile(
-                    leading: const Icon(Icons.schema),
-                    title: Text(schema.name),
-                    subtitle: Text(schema.path),
-                    onTap: () async {
-                      final fileService = ref.read(fileServiceProvider);
-                      debugPrint("HomePage: Loading schema from ${schema.path}");
-                      final schemaData = await fileService.readJson(schema.path);
-                      debugPrint("HomePage: schemaData type is ${schemaData?.runtimeType}");
-                      
-                      if (schemaData != null) {
-                        final collectionService = ref.read(collectionServiceProvider);
-                        await collectionService.init(schemaData);
-
-                        if (!context.mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => CollectionView(
-                            dbs: collectionService.dbs,
-                            title: schema.name,
-                          )),
-                        );
-                      }
-                    },
-                    trailing: IconButton(
-                      icon: const Icon(Icons.share),
+              );
+          }
+          return ListView.builder(
+            itemCount: schemas.length,
+            itemBuilder: (context, index) {
+              final schema = schemas[index];
+              return ListTile(
+                leading: const Icon(Icons.schema, color: Colors.deepPurple),
+                title: Text(schema.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(schema.path, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.output, color: Colors.blue),
+                      tooltip: "Export Schema",
                       onPressed: () async {
                         await ref.read(schemaServiceProvider).exportSchema(schema);
                         ref.invalidate(schemasProvider);
                       },
                     ),
-                  );
-                },
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: "Delete Schema",
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text("Delete Schema?"),
+                            content: Text("Are you sure you want to delete ${schema.name}?"),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
+                              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true) {
+                          await ref.read(schemaServiceProvider).deleteSchema(schema);
+                          ref.invalidate(schemasProvider);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                onTap: () async {
+                  final fileService = ref.read(fileServiceProvider);
+                  debugPrint("HomePage: Loading schema from ${schema.path}");
+                  final schemaData = await fileService.readJson(schema.path);
+                  
+                  if (schemaData != null) {
+                      final collectionService = ref.read(collectionServiceProvider);
+                      await collectionService.init(schemaData);
+
+                      if (!context.mounted) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => CollectionView(
+                          contents: collectionService.contents,
+                          title: schema.name,
+                        )),
+                      );
+                    }                },
               );
+            },
+          );
         },
         loading: () {
           debugPrint("HomePage: loading state");
@@ -147,7 +191,8 @@ class HomePage extends ConsumerWidget {
             if (kIsWeb) {
               final bytes = result.files.single.bytes;
               if (bytes != null) {
-                final content = jsonDecode(utf8.decode(bytes));
+                final decoded = jsonDecode(utf8.decode(bytes));
+                final Map<String, dynamic> content = decoded is Map ? decoded.cast<String, dynamic>() : decoded;
                 await ref.read(schemaServiceProvider).addSchema(content);
               }
             } else {

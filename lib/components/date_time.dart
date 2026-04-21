@@ -9,21 +9,58 @@ class DateTimeComponent extends GenInterface {
   List<dynamic> observers = [];
   bool searchable = false;
   String mode = "date"; // "date" or "time" or "datetime"
+  Map<String, dynamic>? oSchema;
+  dynamic repoIntf;
 
   @override
   String getType() => "dateTime";
 
   @override
+  String getName() => name;
+
+  @override
+  String getId() => id;
+
+  @override
   void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
-    name = jsonObj['name'] ?? "";
-    id = jsonObj['id']?.toString() ?? "";
-    value = jsonObj['defaultValue'] != null 
-        ? DateTime.fromMillisecondsSinceEpoch(jsonObj['defaultValue']) 
-        : DateTime.now();
-    observers = jsonObj['observers'] ?? [];
-    searchable = jsonObj['searchable'] ?? false;
-    mode = jsonObj['mode'] ?? "date";
+    oSchema = jsonObj;
+    this.repoIntf = repoIntf;
+    final Map<String, dynamic> jo = jsonObj;
+    
+    name = jo['name']?.toString() ?? "";
+    id = jo['id']?.toString() ?? "";
+    
+    final rawDefault = jo['defaultValue'];
+    if (rawDefault is int) {
+      value = DateTime.fromMillisecondsSinceEpoch(rawDefault);
+    } else if (rawDefault is String && rawDefault.isNotEmpty) {
+      final parsed = int.tryParse(rawDefault);
+      if (parsed != null) {
+        value = DateTime.fromMillisecondsSinceEpoch(parsed);
+      } else {
+        // Try parsing as ISO string? 
+        final date = DateTime.tryParse(rawDefault);
+        if (date != null) value = date;
+      }
+    } else {
+      value = DateTime.now();
+    }
+    
+    observers = jo['observers'] is List ? jo['observers'] : [];
+    searchable = jo['searchable'] ?? false;
+    mode = jo['mode']?.toString() ?? "date";
   }
+
+  @override
+  GenInterface clone() {
+    final c = DateTimeComponent();
+    c.init(oSchema ?? {}, repoIntf);
+    c.populate(fetch());
+    return c;
+  }
+
+  @override
+  List<dynamic> getObservers() => observers;
 
   @override
   void populate(Map<String, dynamic> jsonDb) {
@@ -43,7 +80,15 @@ class DateTimeComponent extends GenInterface {
   }
 
   @override
-  Widget editor({required Key key, Function? onChanged}) {
+  Widget editor({
+    required Key key, 
+    required Function(dynamic) onChanged, 
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs, 
+    int? index, 
+    bool? autoFocus, 
+    bool? refresh
+  }) {
     return _DateTimeEditor(
       key: key,
       label: name,
@@ -51,7 +96,10 @@ class DateTimeComponent extends GenInterface {
       mode: mode,
       onChanged: (dt) {
         value = dt;
-        if (onChanged != null) onChanged(dt);
+        onChanged(dt);
+        if (cbNotifyParent != null) {
+          cbNotifyParent(this, {name: dt.millisecondsSinceEpoch}, observers);
+        }
       },
     );
   }
@@ -66,7 +114,7 @@ class DateTimeComponent extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false}) {
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     final displayValue = getFormattedValue();
     if (onlyValue) return Text(displayValue);
     return Padding(

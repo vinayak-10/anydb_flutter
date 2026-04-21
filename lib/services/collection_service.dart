@@ -1,12 +1,28 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'element_db.dart';
-import '../models/element_model.dart';
+import 'aggregator_service.dart';
+
+enum ContentType { database, aggregator }
+
+class AppContent {
+  final String name;
+  final ContentType type;
+  final dynamic service; // ElementDb or AggregatorService
+  final Map<String, dynamic> schema;
+
+  AppContent({
+    required this.name,
+    required this.type,
+    required this.service,
+    required this.schema,
+  });
+}
 
 class CollectionService {
   String collectionName = '';
   String collectionDescription = '';
-  final List<ElementDb> dbs = [];
-  // final List<Aggregator> aggregators = []; // To be implemented
+  final List<AppContent> contents = [];
 
   Future<Map<String, int>> init(dynamic collectionSchema) async {
     if (collectionSchema is! Map) {
@@ -18,62 +34,75 @@ class CollectionService {
     debugPrint("CollectionService.init: starting for ${cs['name']}");
     collectionName = cs['name'] ?? '';
     collectionDescription = cs['description'] ?? '';
-    dbs.clear();
+    contents.clear();
 
     final rawContents = cs['contents'];
-    debugPrint("CollectionService.init: rawContents type is ${rawContents.runtimeType}");
-    List<dynamic>? contents;
+    List<dynamic>? rawList;
     if (rawContents is List) {
-      contents = rawContents;
+      rawList = rawContents;
     } else if (rawContents is Map) {
-      contents = [rawContents];
+      rawList = [rawContents];
     }
 
-    if (contents != null) {
-      for (var schemaItem in contents) {
+    int dbCount = 0;
+    int aggCount = 0;
+
+    if (rawList != null) {
+      List<AppContent> dbsList = [];
+      List<AppContent> aggsList = [];
+
+      for (var schemaItem in rawList) {
         if (schemaItem is! Map) continue;
         final item = Map<String, dynamic>.from(schemaItem);
-        
-        debugPrint("CollectionService.init: item type is ${item.runtimeType}, value = ${item['name']}");
-        if (item['type'] == 'database') {
+        final String name = item['name'] ?? 'Unnamed';
+        final String type = item['type'] ?? '';
+
+        if (type == 'database') {
           final edb = ElementDb();
           await edb.init(item, {
             'dataRefIntf': (r) => getDb(r),
             'open': (what) => open(what),
           });
-          dbs.add(edb);
+          dbsList.add(AppContent(
+            name: name,
+            type: ContentType.database,
+            service: edb,
+            schema: item,
+          ));
+          dbCount++;
+        } else if (type == 'aggregator') {
+          final agg = AggregatorService();
+          agg.init(item);
+          aggsList.add(AppContent(
+            name: name,
+            type: ContentType.aggregator,
+            service: agg,
+            schema: item,
+          ));
+          aggCount++;
         }
       }
+      contents.addAll(dbsList);
+      contents.addAll(aggsList);
     }
     
-    return {'database': dbs.length, 'aggregator': 0};
+    return {'database': dbCount, 'aggregator': aggCount};
   }
 
   ElementDb? getDb(String name) {
     try {
-      return dbs.firstWhere((db) => db.key == name);
+      final content = contents.firstWhere(
+        (c) => c.type == ContentType.database && c.name == name
+      );
+      return content.service as ElementDb;
     } catch (_) {
       return null;
     }
   }
 
   Future<void> open(Map<String, dynamic> what) async {
-    // In Flutter, this would use url_launcher or a file viewer package
-    final uri = what['uri'];
-    if (uri != null) {
-      // await InvokerService.open(uri);
-    }
-  }
-
-  ElementModel? getElement(String keyDb, String keyElement) {
-    final db = getDb(keyDb);
-    if (db != null) {
-      try {
-        return db.elements.firstWhere((e) => e.key == keyElement);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
+    // Implementation for opening files/URLs
   }
 }
+
+final collectionServiceProvider = Provider((ref) => CollectionService());

@@ -22,34 +22,51 @@ class SchemaService {
   Future<void> init() async {
     debugPrint("SchemaService: init started");
     _schemas = [];
-    final rootPath = await _fileService.getInternalRoot();
-    debugPrint("SchemaService: rootPath = $rootPath");
     
+    // 1. Load from internal storage
+    final internalRoot = await _fileService.getInternalRoot();
+    await _loadFromDir(internalRoot);
+
+    // 2. Load from external storage
+    final externalRoot = await _fileService.getExternalRoot();
+    await _loadFromDir(externalRoot);
+    
+    debugPrint("SchemaService: init finished, loaded ${_schemas.length} schemas");
+  }
+
+  Future<void> _loadFromDir(String path) async {
     if (!kIsWeb) {
-      if (!await io.dirExists(rootPath)) {
-        await io.createDir(rootPath);
+      if (!await io.dirExists(path)) {
+        await io.createDir(path);
       }
     }
 
-    final files = await _fileService.getFiles(rootPath, 'json');
+    final files = await _fileService.getFiles(path, 'json');
     for (var filePath in files) {
-      debugPrint("SchemaService: loading schema from $filePath");
-      final content = await _fileService.readJson(filePath);
-      if (content != null) {
-        _schemas.add(SchemaInfo(
-          name: content['name'],
-          path: filePath,
-        ));
+      debugPrint("SchemaService: checking schema at $filePath");
+      try {
+        final content = await _fileService.readJson(filePath);
+        if (content != null && content is Map && content.containsKey('name')) {
+          // Avoid duplicates by path
+          if (!_schemas.any((s) => s.path == filePath)) {
+            _schemas.add(SchemaInfo(
+              name: content['name'].toString(),
+              path: filePath,
+            ));
+          }
+        }
+      } catch (e) {
+        debugPrint("SchemaService: Failed to load schema from $filePath: $e");
       }
     }
-    debugPrint("SchemaService: init finished, loaded ${_schemas.length} schemas");
   }
 
   Future<void> loadDefaultSchema() async {
     debugPrint("SchemaService: loading default schema from assets");
     try {
-      final defaultJson = await rootBundle.loadString('assets/schema.json');
-      final content = jsonDecode(defaultJson);
+      final defaultJson = await rootBundle.loadString('assets/RKM_Physio (1).json');
+      final decoded = jsonDecode(defaultJson);
+      final Map<String, dynamic> content = decoded is Map ? decoded.cast<String, dynamic>() : decoded;
       await addSchema(content);
     } catch (e) {
       debugPrint("SchemaService Error: No default schema found in assets. $e");
@@ -91,11 +108,16 @@ class SchemaService {
     
     if (contents != null) {
       for (var content in contents) {
-        final type = _fileService.sanitizeName(content['type']);
-        final value = _fileService.sanitizeName(content['name']);
+        final name = content['name'];
+        final type = content['type'];
         
-        await _fileService.ensureDir(await _fileService.getInternalPath(schemaName, type, value));
-        await _fileService.ensureDir(await _fileService.getExternalPath(schemaName, type, value));
+        if (type == 'database') {
+          await _fileService.ensureDir(await _fileService.getDatabasePath(schemaName, name));
+          await _fileService.ensureDir(await _fileService.getDatabasePath(schemaName, name, external: true));
+        } else if (type == 'aggregator') {
+          await _fileService.ensureDir(await _fileService.getAggregatorPath(schemaName));
+          await _fileService.ensureDir(await _fileService.getAggregatorPath(schemaName, external: true));
+        }
       }
     }
   }
@@ -105,7 +127,14 @@ class SchemaService {
     final fileName = p.basename(info.path);
     final targetPath = p.join(externalRoot, fileName);
     
-    await _fileService.moveFile(info.path, targetPath);
+    if (!kIsWeb) {
+      await io.copyFile(info.path, targetPath);
+    }
+    await init();
+  }
+
+  Future<void> deleteSchema(SchemaInfo info) async {
+    await io.deleteFile(info.path);
     await init();
   }
 }

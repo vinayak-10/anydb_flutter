@@ -9,20 +9,51 @@ class MultiSelect extends GenInterface {
   int limit = 0;
   int min = 0;
   bool searchable = false;
+  List<dynamic> observers = [];
+  Map<String, dynamic>? oSchema;
+  dynamic repoIntf;
 
   @override
   String getType() => "multi-select";
 
   @override
-  void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
-    name = jsonObj['name'] ?? "";
-    id = jsonObj['id']?.toString() ?? "";
-    values = List<String>.from(jsonObj['defaultValues'] ?? []);
-    allowed = List<String>.from(jsonObj['allowedValues'] ?? []);
-    limit = jsonObj['limit'] ?? allowed.length;
-    min = jsonObj['min'] ?? 0;
-    searchable = jsonObj['searchable'] ?? false;
+  String getName() => name;
+
+  @override
+  String getId() => id;
+
+  @override
+  void init(dynamic jsonObj, dynamic repoIntf) {
+    if (jsonObj is! Map) return;
+    oSchema = Map<String, dynamic>.from(jsonObj);
+    this.repoIntf = repoIntf;
+    final Map<String, dynamic> jo = Map<String, dynamic>.from(jsonObj);
+    
+    name = jo['name']?.toString() ?? "";
+    id = jo['id']?.toString() ?? "";
+    values = List<String>.from(jo['defaultValues'] ?? []);
+    allowed = List<String>.from(jo['allowedValues'] ?? []);
+    
+    final l = jo['limit'];
+    limit = l is int ? l : (int.tryParse(l?.toString() ?? "") ?? allowed.length);
+    
+    final m = jo['min'];
+    min = m is int ? m : (int.tryParse(m?.toString() ?? "") ?? 0);
+    
+    searchable = jo['searchable'] ?? false;
+    observers = jo['observers'] is List ? jo['observers'] : [];
   }
+
+  @override
+  GenInterface clone() {
+    final c = MultiSelect();
+    c.init(oSchema ?? {}, repoIntf);
+    c.populate(fetch());
+    return c;
+  }
+
+  @override
+  List<dynamic> getObservers() => observers;
 
   @override
   void populate(Map<String, dynamic> jsonDb) {
@@ -37,7 +68,7 @@ class MultiSelect extends GenInterface {
   }
 
   @override
-  List<bool> match(String val) {
+  List<bool> match(String val, {bool exact = false}) {
     if (searchable) {
       for (var v in values) {
         if (v.toLowerCase() == val.toLowerCase()) return [true, true];
@@ -49,19 +80,26 @@ class MultiSelect extends GenInterface {
 
   @override
   Map<String, dynamic> validate() {
-    bool valid = true;
-    List<String> failedConstraints = [];
-
     if (values.length < min) {
-      valid = false;
-      failedConstraints.add("Select at least $min");
+      return {
+        'name': name,
+        'valid': false,
+        'constraint': "Please select at least $min $name(s)."
+      };
     }
-
-    return {'name': name, 'valid': valid, 'constraint': failedConstraints};
+    return {'name': name, 'valid': true, 'constraint': ''};
   }
 
   @override
-  Widget editor({required Key key, Function? onChanged}) {
+  Widget editor({
+    required Key key, 
+    required Function(dynamic) onChanged, 
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs, 
+    int? index, 
+    bool? autoFocus, 
+    bool? refresh
+  }) {
     return _MultiSelectEditor(
       key: key,
       label: name,
@@ -70,13 +108,16 @@ class MultiSelect extends GenInterface {
       limit: limit,
       onChanged: (newValues) {
         values = newValues;
-        if (onChanged != null) onChanged(newValues);
+        onChanged(newValues);
+        if (cbNotifyParent != null) {
+          cbNotifyParent(this, {name: newValues}, observers);
+        }
       },
     );
   }
 
   @override
-  Widget display({bool onlyValue = false}) {
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     final chips = values.map((v) => Chip(
       label: Text(v, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
       backgroundColor: Colors.blue[50],

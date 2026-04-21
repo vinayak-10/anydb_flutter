@@ -1,81 +1,170 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:excel/excel.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 import 'file_service.dart';
+import 'invoker_service.dart';
+import '../core/formula_engine.dart';
 import 'package:path/path.dart' as p;
 import 'io_helper.dart' as io;
 
 class WorkbookService {
   final FileService _fileService = FileService();
+  String? _lastReportPath;
+  String? _lastAggregatorDir;
+  String? get lastReportPath => _lastReportPath;
 
   Future<String> write(Map<String, dynamic> meta, Map<String, dynamic> data) async {
     final excel = Excel.createExcel();
-    final sheetName = meta['entry'] ?? 'Sheet1';
+    final reportName = meta['aggregator'] ?? 'Report';
+    final sheetName = _fileService.sanitizeName(reportName);
     
-    // Remove default sheet
-    if (excel.sheets.containsKey('Sheet1') && sheetName != 'Sheet1') {
+    if (excel.sheets.containsKey('Sheet1')) {
       excel.delete('Sheet1');
     }
+    final Sheet reportSheet = excel[sheetName];
 
-    final Sheet sheetObject = excel[sheetName];
+    // Row 1: Report Type: [Aggregator]
+    reportSheet.appendRow([TextCellValue("Report Type: $reportName")]);
 
-    // 1. Add Report Name
-    sheetObject.appendRow([TextCellValue("Report Type"), TextCellValue(data['name'] ?? "")]);
-    
-    // 2. Add Header
-    final List<dynamic> headers = data['header'] ?? [];
-    for (var headerRow in headers) {
-      sheetObject.appendRow(List<CellValue>.from(headerRow.map((e) => TextCellValue(e.toString()))));
+    // Row 2 & 3: Schema Title & Subtitle
+    final List<dynamic> headerData = data['header'] ?? [];
+    String title = "";
+    String subtitle = "";
+    if (headerData.isNotEmpty && headerData[0] is List && (headerData[0] as List).isNotEmpty) {
+      title = headerData[0][0].toString();
     }
+    if (headerData.length > 1 && headerData[1] is List && (headerData[1] as List).isNotEmpty) {
+      subtitle = headerData[1][0].toString();
+    }
+    reportSheet.appendRow([TextCellValue(title)]);
+    reportSheet.appendRow([TextCellValue(subtitle)]);
 
-    // 3. Add Summary Headers
-    sheetObject.appendRow([TextCellValue("")]); // Gap
+    // Row 4-5: Gap
+    reportSheet.appendRow([]);
+    reportSheet.appendRow([]);
+
+    // Row 6 & 7: Summary Headers and Formulas
     final Map<String, dynamic> summary = data['summary'] ?? {};
-    sheetObject.appendRow(List<CellValue>.from(summary.keys.map((e) => TextCellValue(e))));
+    final List<CellValue> summaryHeaders = [];
+    final List<CellValue> summaryValues = [];
     
-    // 4. Add Summary Values (Formulas not directly supported by 'excel' package in the same way, using values for now)
-    sheetObject.appendRow(List<CellValue>.from(summary.values.map((e) => TextCellValue(e.toString()))));
+    final List<dynamic> tableData = data['records'] ?? [];
+    final List<String> columnNames = tableData.isNotEmpty ? (tableData.first as Map<String, dynamic>).keys.toList() : [];
+    
+    // Data Table starts at Row 10 (1-indexed), Row 9 is headers
+    final int sr = 10;
+    final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
 
-    // 5. Add Table Data
-    sheetObject.appendRow([TextCellValue("")]); // Gap
-    sheetObject.appendRow([TextCellValue("")]); // Gap
-    
-    final List<dynamic> tableData = data['data'] ?? [];
-    if (tableData.isNotEmpty) {
-      // Add data headers
-      final firstRow = tableData.first as Map<String, dynamic>;
-      sheetObject.appendRow(List<CellValue>.from(firstRow.keys.map((e) => TextCellValue(e))));
+    summary.forEach((k, v) {
+      summaryHeaders.add(TextCellValue(k.toUpperCase()));
       
-      // Add data rows
+      final vs = v.toString();
+      if (vs.contains("SUM(") || vs.contains("COUNT(") || vs.contains("ROUND(")) {
+        final formulated = FormulaEngine.formulate(vs, columnNames, sr, er, sheetName: sheetName);
+        summaryValues.add(FormulaCellValue(formulated ?? vs));
+      } else {
+        summaryValues.add(TextCellValue(vs));
+      }
+    });
+    reportSheet.appendRow(summaryHeaders);
+    reportSheet.appendRow(summaryValues);
+
+    // Row 8: Gap
+    reportSheet.appendRow([]);
+
+    // Row 9+: Data Table with Headers
+    if (columnNames.isNotEmpty) {
+      reportSheet.appendRow(List<CellValue>.from(columnNames.map((e) => TextCellValue(e))));
+      
       for (var row in tableData) {
         final Map<String, dynamic> rowMap = row as Map<String, dynamic>;
-        sheetObject.appendRow(List<CellValue>.from(rowMap.values.map((e) => TextCellValue(e.toString()))));
+        reportSheet.appendRow(List<CellValue>.from(columnNames.map((name) => TextCellValue(rowMap[name]?.toString() ?? ''))));
       }
     }
 
-    // Save File
-    final aggregatorName = _fileService.sanitizeName(meta['aggregator']);
-    final fileName = "${meta['collection']}.xlsx";
+    // Save File logic
+    final now = DateTime.now();
+    final String monthStr = DateFormat('MMM').format(now);
+    final String timestampStr = DateFormat('yyyyMMdd_HHmmss').format(now);
+    final String fileName = "${_fileService.sanitizeName(reportName)}_${monthStr}_$timestampStr.xlsx";
     
     if (kIsWeb) {
-      // On web, skip direct file system operations
+      final fileBytes = excel.save();
+      if (fileBytes != null) {
+        final base64Data = base64Encode(fileBytes);
+        _lastReportPath = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,$base64Data|$fileName";
+        return _lastReportPath!;
+      }
       return fileName;
     }
 
-    final internalPath = await _fileService.getInternalPath(aggregatorName, "aggregator", "");
-    await _fileService.ensureDir(internalPath);
+    // Structure: xyz.maya/anydb/schemaName/Aggregators/reportName.xlsx
+    final schemaName = meta['aggregator'] ?? 'Default';
+    final aggregatorDir = await _fileService.getAggregatorPath(schemaName, external: true);
+    _lastAggregatorDir = aggregatorDir;
+    await _fileService.ensureDir(aggregatorDir);
     
-    final fullPath = p.join(internalPath, fileName);
+    final fullPath = p.join(aggregatorDir, fileName);
+    _lastReportPath = p.isAbsolute(fullPath) ? fullPath : p.absolute(fullPath);
     final fileBytes = excel.save();
     if (fileBytes != null) {
-      await io.writeBytes(fullPath, fileBytes);
+      await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
+      // Trigger remote shares defined in schema
+      _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 
-    // Copy to external for sharing
-    final externalPath = await _fileService.getExternalPath(aggregatorName, "aggregator", "");
-    await _fileService.ensureDir(externalPath);
-    final externalFile = p.join(externalPath, fileName);
-    await io.copyFile(fullPath, externalFile);
+    // Database Backup (Automatic on report generation)
+    await _backupDatabase(schemaName, meta['collection'] ?? "Database");
 
-    return externalFile;
+    return _lastReportPath!;
+  }
+
+  Future<void> openReport(String? path) async {
+    var pStr = path ?? _lastReportPath;
+    if (pStr != null) {
+      // Verify that the path being passed is a full absolute path.
+      // If it's just a filename, join it with the last known aggregator directory.
+      if (!p.isAbsolute(pStr) && !pStr.startsWith('http') && !pStr.startsWith('data:') && _lastAggregatorDir != null) {
+        pStr = p.join(_lastAggregatorDir!, pStr);
+      }
+      await InvokerService.open(pStr);
+    }
+  }
+
+  void _triggerRemoteShares(List<dynamic> shares, String filePath, String fileName) async {
+    for (var share in shares) {
+      final type = share['type'];
+      final url = share['url'];
+
+      if (type == 'e-mail' && url != null) {
+        final Uri emailLaunchUri = Uri(
+          scheme: 'mailto',
+          path: url,
+          query: 'subject=Report: $fileName&body=Please find the attached report.',
+        );
+        launchUrl(emailLaunchUri);
+      } else if (type == 'url' && url != null) {
+        try {
+          final bytes = await io.readBytes(filePath);
+          if (bytes != null) {
+            await http.post(Uri.parse(url), body: bytes);
+          }
+        } catch (e) {
+          debugPrint("WorkbookService: REST share failed: $e");
+        }
+      }
+    }
+  }
+
+  Future<void> _backupDatabase(String schemaName, String dbName) async {
+    try {
+      final dbDir = await _fileService.getDatabasePath(schemaName, dbName, external: true);
+      await _fileService.ensureDir(dbDir);
+    } catch (e) {
+      debugPrint("WorkbookService: Backup failed: $e");
+    }
   }
 }

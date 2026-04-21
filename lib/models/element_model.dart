@@ -13,6 +13,7 @@ class ElementModel {
 
   void init(List<dynamic> schema, dynamic repoIntf) {
     intf = repoIntf;
+    originalSchema = {'elements': schema};
     components = [];
 
     for (var s in schema) {
@@ -27,6 +28,14 @@ class ElementModel {
     final m = MetaDefault();
     m.init(null, repoIntf);
     components.add(m);
+  }
+
+  ElementModel clone() {
+    final ce = ElementModel();
+    ce.init(originalSchema?['elements'] ?? [], intf);
+    ce.key = key;
+    ce.populate(fetch());
+    return ce;
   }
 
   void populate(Map<String, dynamic> dbJson) {
@@ -60,9 +69,9 @@ class ElementModel {
     return {'name': key, 'valid': true, 'constraint': []};
   }
 
-  List<bool> match(String val) {
+  List<bool> match(String val, {bool exact = false}) {
     for (var component in components) {
-      final m = component.match(val);
+      final m = component.match(val, exact: exact);
       if (m[0]) return m;
     }
     return [false, false];
@@ -70,7 +79,7 @@ class ElementModel {
 
   List<Widget> getEditors({required Function onChanged}) {
     return components.map((c) => c.editor(
-      key: ValueKey("${key}_${c.getType()}_${c.getName()}"),
+      key: ValueKey("editor_${c.getType()}_${c.getName()}"),
       onChanged: (val) => onChanged(),
     )).toList();
   }

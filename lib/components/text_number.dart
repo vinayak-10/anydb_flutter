@@ -11,32 +11,53 @@ class TextNumber extends GenInterface {
   Map<String, String> format = {"prefix": "", "suffix": ""};
   String? rawFormat;
   Map<String, bool> access = {"confirmWrite": false, "readOnly": false};
+  Map<String, dynamic>? oSchema;
+  dynamic repoIntf;
 
   @override
   String getType() => "number";
 
   @override
-  void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
-    name = jsonObj['name']?.toString() ?? "";
-    id = jsonObj['id']?.toString() ?? "";
-    value = jsonObj['defaultValue']?.toString() ?? "";
-    constraint = jsonObj['constraint'];
-    observers = jsonObj['observers'] is List ? jsonObj['observers'] : [];
-    searchable = jsonObj['searchable'] ?? false;
+  String getName() => name;
 
-    final fmt = jsonObj['format'];
+  @override
+  String getId() => id;
+
+  @override
+  void init(Map<String, dynamic> jsonObj, dynamic repoIntf) {
+    oSchema = jsonObj;
+    this.repoIntf = repoIntf;
+    final Map<String, dynamic> jo = jsonObj;
+    name = jo['name']?.toString() ?? "";
+    id = jo['id']?.toString() ?? "";
+    value = jo['defaultValue']?.toString() ?? "";
+    constraint = jo['constraint'];
+    observers = jo['observers'] is List ? jo['observers'] : [];
+    searchable = jo['searchable'] ?? false;
+
+    final fmt = jo['format'];
     if (fmt is Map) {
-      format["prefix"] = fmt['prefix']?.toString() ?? "";
-      format["suffix"] = fmt['suffix']?.toString() ?? "";
+      final Map<String, dynamic> fmtMap = Map<String, dynamic>.from(fmt);
+      format["prefix"] = fmtMap['prefix']?.toString() ?? "";
+      format["suffix"] = fmtMap['suffix']?.toString() ?? "";
     } else if (fmt is String) {
       rawFormat = fmt;
     }
 
-    final acc = jsonObj['access'];
+    final acc = jo['access'];
     if (acc is Map) {
-      access["confirmWrite"] = acc['confirmWrite'] ?? false;
-      access["readOnly"] = acc['readOnly'] ?? false;
+      final Map<String, dynamic> accMap = Map<String, dynamic>.from(acc);
+      access["confirmWrite"] = accMap['confirmWrite'] ?? false;
+      access["readOnly"] = accMap['readOnly'] ?? false;
     }
+  }
+
+  @override
+  GenInterface clone() {
+    final c = TextNumber();
+    c.init(oSchema!, repoIntf);
+    c.populate(fetch());
+    return c;
   }
 
 
@@ -53,52 +74,73 @@ class TextNumber extends GenInterface {
   }
 
   @override
-  List<bool> match(String val) {
+  List<bool> match(String val, {bool exact = false}) {
     if (searchable) {
-      if (value == val) return [true, true];
-      if (value.contains(val)) return [true, false];
+      if (exact) {
+        if (value == val) return [true, true];
+      } else {
+        if (value == val) return [true, true];
+        if (value.contains(val)) return [true, false];
+      }
     }
     return [false, false];
   }
 
-  @override
-  Map<String, dynamic> validate() {
-    bool valid = true;
-    List<String> failedConstraints = [];
+    @override
+    Map<String, dynamic> validate() {
+      bool valid = true;
+      List<String> failedConstraints = [];
 
-    constraint.forEach((c, cVal) {
-      bool pass = true;
-      switch (c) {
-        case "non-null":
-          pass = (cVal == true && value.isNotEmpty);
-          break;
-        case "maxsize":
-          pass = value.length <= (cVal as int);
-          break;
-        case "maxvalue":
-          final intVal = int.tryParse(value);
-          pass = intVal != null && intVal <= (cVal as int);
-          break;
-        case "+":
-          final intVal = int.tryParse(value);
-          pass = intVal != null && intVal >= 0;
-          break;
-        case "-":
-          final intVal = int.tryParse(value);
-          pass = intVal != null && intVal < 0;
-          break;
+      if (constraint is Map) {
+        final Map<String, dynamic> cMap = Map<String, dynamic>.from(constraint);
+        cMap.forEach((c, cVal) {
+          bool pass = true;
+          switch (c) {
+            case "non-null":
+              pass = (cVal == true && value.isNotEmpty);
+              break;
+            case "maxsize":
+              pass = value.length <= (cVal as int);
+              break;
+            case "maxvalue":
+              final intVal = int.tryParse(value);
+              pass = intVal != null && intVal <= (cVal as int);
+              break;
+            case "+":
+              final intVal = int.tryParse(value);
+              pass = intVal != null && intVal >= 0;
+              break;
+            case "-":
+              final intVal = int.tryParse(value);
+              pass = intVal != null && intVal < 0;
+              break;
+          }
+          if (!pass) {
+            valid = false;
+            failedConstraints.add(c);
+          }
+        });
       }
-      if (!pass) {
-        valid = false;
-        failedConstraints.add(c);
-      }
-    });
 
-    return {'name': name, 'valid': valid, 'constraint': failedConstraints};
-  }
+      return {'name': name, 'valid': valid, 'constraint': failedConstraints};
+    }
 
   @override
-  Widget editor({required Key key, Function? onChanged}) {
+  String getValue() => value;
+
+  @override
+  List<dynamic> getObservers() => observers;
+
+  @override
+  Widget editor({
+    required Key key, 
+    required Function(dynamic) onChanged, 
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs, 
+    int? index, 
+    bool? autoFocus, 
+    bool? refresh
+  }) {
     return _TextNumberEditor(
       key: key,
       label: name,
@@ -109,13 +151,16 @@ class TextNumber extends GenInterface {
       confirmWrite: access["confirmWrite"]!,
       onChanged: (txt) {
         value = txt;
-        if (onChanged != null) onChanged(txt);
+        onChanged(txt);
+        if (cbNotifyParent != null) {
+          cbNotifyParent(this, {name: txt}, observers);
+        }
       },
     );
   }
 
   @override
-  Widget display({bool onlyValue = false}) {
+  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
     final displayValue = "${format['prefix']}$value${format['suffix']}";
     if (onlyValue) return Text(displayValue);
     return Padding(
@@ -156,13 +201,30 @@ class _TextNumberEditor extends StatefulWidget {
 
 class _TextNumberEditorState extends State<_TextNumberEditor> {
   late TextEditingController _controller;
+  late FocusNode _focusNode;
   bool _isLocked = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialValue);
+    _focusNode = FocusNode();
     _isLocked = widget.confirmWrite;
+  }
+
+  @override
+  void didUpdateWidget(_TextNumberEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != _controller.text && !_focusNode.hasFocus) {
+      _controller.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -189,6 +251,7 @@ class _TextNumberEditorState extends State<_TextNumberEditor> {
       padding: const EdgeInsets.all(8.0),
       child: TextField(
         controller: _controller,
+        focusNode: _focusNode,
         keyboardType: TextInputType.number,
         decoration: InputDecoration(
           labelText: widget.label,
