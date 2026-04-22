@@ -46,8 +46,7 @@ class GoogleDriveService {
   // OAuth Constants for Linux/Manual Flow
   static const String _clientId = "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com";
   // Note: For Desktop App client types, a secret is mandatory. 
-  // For iOS/Android client types, pass null to use PKCE (recommended for avoiding secrets in code).
-  static const String? _clientSecret = null; 
+  static const String? _clientSecret = "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"; 
 
   GoogleUser? get currentUser => _currentUser;
 
@@ -85,7 +84,12 @@ class GoogleDriveService {
       try {
         final creds = AccessCredentials.fromJson(jsonDecode(credsJson));
         final id = ClientId(_clientId, _clientSecret);
-        _httpClient = autoRefreshingClient(id, creds, http.Client());
+        
+        if (creds.refreshToken != null) {
+          _httpClient = autoRefreshingClient(id, creds, http.Client());
+        } else {
+          _httpClient = authenticatedClient(http.Client(), creds);
+        }
         
         // Fetch user info to populate _currentUser
         final response = await _httpClient!.get(Uri.parse('https://www.googleapis.com/oauth2/v2/userinfo'));
@@ -131,10 +135,17 @@ class GoogleDriveService {
     
     try {
       final client = await clientViaUserConsent(id, scopes, (url) async {
-        if (await canLaunchUrl(Uri.parse(url))) {
-          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        final uri = Uri.parse(url);
+        final modifiedUrl = uri.replace(queryParameters: {
+          ...uri.queryParameters,
+          'access_type': 'offline',
+          'prompt': 'consent',
+        }).toString();
+
+        if (await canLaunchUrl(Uri.parse(modifiedUrl))) {
+          await launchUrl(Uri.parse(modifiedUrl), mode: LaunchMode.externalApplication);
         } else {
-          throw "Could not launch $url";
+          throw "Could not launch $modifiedUrl";
         }
       }, listenPort: 8080); // <--- Fixed port for predictable redirect URI
 
