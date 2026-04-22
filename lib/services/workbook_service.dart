@@ -68,85 +68,112 @@ class WorkbookService {
     const int gap = 1;
     const int col = 0;
 
+    // Matches workbook.js exactly
+    // 0. Add Report Name at top
     ws.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row)).value = TextCellValue("Report Type");
     ws.cell(CellIndex.indexByColumnRow(columnIndex: col + 1, rowIndex: row)).value = TextCellValue(jo['name'] ?? "");
     row += 1;
 
+    // 1. Add Header (AOA)
     final List<dynamic> headerData = jo['header'] ?? [];
     for (var headerRow in headerData) {
       if (headerRow is List) {
         for (int c = 0; c < headerRow.length; c++) {
-          ws.cell(CellIndex.indexByColumnRow(columnIndex: col + c, rowIndex: row)).value = TextCellValue(headerRow[c].toString());
+          _setCellValue(ws, col + c, row, headerRow[c]);
         }
         row++;
       }
     }
 
+    // 2.1 Add Summary / Formulas - Header
     row += gap;
     final Map<String, dynamic> summary = jo['summary'] ?? {};
     final List<String> summaryKeys = summary.keys.toList();
     for (int i = 0; i < summaryKeys.length; i++) {
       ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(summaryKeys[i].toUpperCase());
     }
-    row += gap;
-
+    
+    // JS: row += gap (row is now 5 if there were 2 header rows)
+    row += gap; 
+    
     final List<dynamic> tableData = jo['data'] ?? [];
     final List<String> columnNames = tableData.isNotEmpty 
         ? (tableData.first as Map<String, dynamic>).keys.toList() 
         : [];
     
-    final int sr = row + 5; 
+    // JS Logic for sr (start row):
+    // sr = row (summary_val_row) + 2 (gaps) + 1 (header)
+    // sr is 1-indexed for Excel
+    final int sr = row + 2 + 1; 
     final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
     debugPrint("WorkbookService: formula range sr=$sr, er=$er in sheet '$sheetName'");
-// 2.2 Add Summary / Formulas
-final Map<String, dynamic> formulasMap = jo['summaryFormulas'] ?? jo['summary'] ?? {};
-final List<dynamic> formulaValues = formulasMap.values.toList();
 
-for (int i = 0; i < formulaValues.length; i++) {
-  final vs = formulaValues[i].toString();
-  final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
-  if (vs.contains("SUM(") || vs.contains("COUNT(") || vs.contains("ROUND(")) {
-    final formulated = FormulaEngine.formulate(vs, columnNames, sr, er, sheetName: sheetName);
-    cell.value = FormulaCellValue(formulated ?? vs);
-  } else {
-    cell.value = TextCellValue(vs);
-  }
-}
+    // 2.2 Add Summary / Formulas - Values
+    final Map<String, dynamic> formulasMap = jo['summaryFormulas'] ?? jo['summary'] ?? {};
+    final List<dynamic> formulaValues = formulasMap.values.toList();
+    
+    for (int i = 0; i < formulaValues.length; i++) {
+      final vs = _unwrap(formulaValues[i]).toString();
+      final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
+      final formulated = FormulaEngine.formulate(vs, columnNames, sr, er, sheetName: sheetName);
+      
+      String formulaStr = formulated ?? vs;
+      if (formulaStr.startsWith('=')) {
+        formulaStr = formulaStr.substring(1);
+      }
+      cell.value = FormulaCellValue(formulaStr);
+    }
 
-
+    // 3. Add Table content
     row += gap; row += gap;
     final Map<String, dynamic> source = jo['source'] ?? {};
     final sourceType = source['type'] ?? 'database';
 
-    if (sourceType == 'database') {
+    if (sourceType == 'database' || sourceType == 'report') {
+       // Table Header
        for (int i = 0; i < columnNames.length; i++) {
          ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(columnNames[i]);
        }
        row++;
-       for (var rowMap in tableData) {
+       // Table Data
+       for (var rowData in tableData) {
+         final Map<String, dynamic> rowMap = Map<String, dynamic>.from(rowData as Map);
          for (int i = 0; i < columnNames.length; i++) {
-           ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(rowMap[columnNames[i]]?.toString() ?? '');
-         }
-         row++;
-       }
-    } else if (sourceType == 'report') {
-       for (int i = 0; i < columnNames.length; i++) {
-         ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(columnNames[i]);
-       }
-       row++;
-       for (var rowMap in tableData) {
-         for (int i = 0; i < columnNames.length; i++) {
-           final val = rowMap[columnNames[i]]?.toString() ?? '';
+           final val = _unwrap(rowMap[columnNames[i]]);
            final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
-           if (val.startsWith('=')) {
-              cell.value = FormulaCellValue(val);
+           
+           if (sourceType == 'report' && val is String && val.startsWith('=')) {
+              cell.value = FormulaCellValue(val.startsWith('=') ? val.substring(1) : val);
            } else {
-              cell.value = TextCellValue(val);
+              _setCellValue(ws, col + i, row, val);
            }
          }
          row++;
        }
     }
+  }
+
+  void _setCellValue(Sheet sheet, int c, int r, dynamic val) {
+    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
+    final unwrapped = _unwrap(val);
+    
+    if (unwrapped is num) {
+      cell.value = DoubleCellValue(unwrapped.toDouble());
+    } else if (unwrapped is String) {
+      final n = double.tryParse(unwrapped.replaceAll(',', ''));
+      if (n != null) {
+        cell.value = DoubleCellValue(n);
+      } else {
+        cell.value = TextCellValue(unwrapped);
+      }
+    } else {
+      cell.value = TextCellValue(unwrapped.toString());
+    }
+  }
+
+  dynamic _unwrap(dynamic val) {
+    if (val is List && val.isNotEmpty) return _unwrap(val.first);
+    return val ?? "";
   }
 
   Future<void> openReport(String? path) async {
@@ -229,7 +256,6 @@ for (int i = 0; i < formulaValues.length; i++) {
     final String month = DateFormat('MMM').format(dt);
     final String rest = DateFormat('dd_yyyy_HH_mm_ss').format(dt);
     
-    // Get timezone offset in GMT format
     final offset = dt.timeZoneOffset;
     final String hours = offset.inHours.abs().toString().padLeft(2, '0');
     final String mins = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');

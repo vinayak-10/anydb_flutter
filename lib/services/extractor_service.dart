@@ -46,8 +46,12 @@ class ExtractorDatabase extends Extractor {
     debugPrint("ExtractorDatabase: Segregated ${activeElements.length} Active elements.");
 
     for (var element in activeElements) {
+      if (element.isEmpty) continue;
+      final recordValue = element.values.first;
+      if (recordValue is! Map) continue;
+
       List<Map<String, dynamic>> trows = [];
-      _flatten(element, 0, trows);
+      _flatten(recordValue, 0, trows);
       
       if (trows.isNotEmpty) {
         final refrow = trows[0];
@@ -65,12 +69,19 @@ class ExtractorDatabase extends Extractor {
     }
     
     debugPrint("ExtractorDatabase: Flattened into ${_data.length} total rows.");
+    
+    // Reset _rows and populate from filtered _data
+    _rows.clear();
     _rows.addAll(_filter(_data, columns));
-    debugPrint("ExtractorDatabase: Filtered into ${_rows.length} rows based on columns.");
 
+    // APPLY ALL SCHEMA PREDICATES SEQUENTIALLY (Match RN logic)
     for (var p in predicates) {
-      await applyPredicate(p as Map<String, dynamic>);
+      if (p is Map<String, dynamic>) {
+        await applyPredicate(p);
+      }
     }
+    
+    debugPrint("ExtractorDatabase: Final population complete. Rows: ${_rows.length}");
   }
 
   List<Map<String, dynamic>> _segregate(List<Map<String, dynamic>> records, {List<String> types = const ["Active"]}) {
@@ -119,12 +130,13 @@ class ExtractorDatabase extends Extractor {
           _flatten(value, index, keyValues);
           break;
         case "array":
-          if (key.split(':').length > 1) {
+          if (key.contains(':')) {
              for (int vi = 0; vi < value.length; vi++) {
                _flatten(value[vi], index + vi, keyValues);
              }
           } else {
-             sv(keyValues, index, key, value.toString());
+             // Corrected: Restore stable flattening - keep arrays as values
+             sv(keyValues, index, key, value);
           }
           break;
         default:
@@ -154,8 +166,6 @@ class ExtractorDatabase extends Extractor {
       for (var column in cols) {
         final String destKey = (column is Map ? (column['title'] ?? column['column']) : column).toString();
         final String srcKey = (column is Map ? (column['column'] ?? column['title']) : column).toString();
-        
-        // Fetch from source key (e.g. 'Amount'), store in dest key (e.g. 'Paid Amount')
         one[destKey] = row[srcKey] ?? _findValueInsensitive(row, srcKey);
       }
       filtered.add(one);
@@ -165,20 +175,17 @@ class ExtractorDatabase extends Extractor {
 
   @override
   Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName}) async {
-    if (_rows.isEmpty) await populateRecords();
-    
     final operation = pred['operation'];
     
     switch (operation) {
       case "date":
         if (data == null) return {};
         final DateTime d = data is DateTime ? data : DateTime.parse(data.toString());
-        
-        // Find the correct key in the already filtered _rows (usually the title)
         final String searchKey = pred['column'].toString();
         
         final predicated = _rows.where((row) {
-          final rd = _parseDate(row[searchKey] ?? _findValueInsensitive(row, searchKey));
+          final val = row[searchKey] ?? _findValueInsensitive(row, searchKey);
+          final rd = _parseDate(_unwrap(val));
           return rd != null && rd.day == d.day && rd.month == d.month && rd.year == d.year;
         }).toList();
 
@@ -208,18 +215,19 @@ class ExtractorDatabase extends Extractor {
       case "convert":
         if (pred['parameter']?['to'] == 'date') {
           for (var r in _rows) {
-            if (r.containsKey(pred['column'])) {
-              final dt = _parseDate(r[pred['column']]);
-              if (dt != null) r[pred['column']] = DateFormat('yyyy-MM-dd').format(dt);
-            }
+            final colKey = pred['column'].toString();
+            final val = r[colKey] ?? _findValueInsensitive(r, colKey);
+            final dt = _parseDate(_unwrap(val));
+            if (dt != null) r[colKey] = DateFormat('yyyy-MM-dd').format(dt);
           }
         }
         break;
 
       case "sort":
+        final colKey = pred['column'].toString();
         _rows.sort((a, b) {
-          final valA = a[pred['column']]?.toString() ?? "";
-          final valB = b[pred['column']]?.toString() ?? "";
+          final valA = _unwrap(a[colKey] ?? _findValueInsensitive(a, colKey))?.toString() ?? "";
+          final valB = _unwrap(b[colKey] ?? _findValueInsensitive(b, colKey))?.toString() ?? "";
           return valA.compareTo(valB);
         });
         break;
@@ -246,6 +254,11 @@ class ExtractorDatabase extends Extractor {
       if (k.toLowerCase() == key.toLowerCase()) return row[k];
     }
     return null;
+  }
+  
+  dynamic _unwrap(dynamic val) {
+    if (val is List && val.isNotEmpty) return _unwrap(val.first);
+    return val;
   }
 }
 

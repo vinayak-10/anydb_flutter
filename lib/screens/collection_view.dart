@@ -1159,6 +1159,10 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
 
   String _formatValue(dynamic c) {
     if (c == null) return "";
+    if (c is List) {
+      if (c.isEmpty) return "";
+      return _formatValue(c.first);
+    }
     if (c is DateTime) return DateFormat.yMd().format(c);
     if (c is int && c > 1000000000000) {
        return DateFormat.yMd().format(DateTime.fromMillisecondsSinceEpoch(c));
@@ -1195,6 +1199,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         runSpacing: 16,
         children: summarySchema.entries.map((e) {
           final result = FormulaEngine.evaluate(e.value.toString(), dataRows, headers);
+          debugPrint("UI: Summary Evaluation for '${e.key}': formula='${e.value}', result='$result'");
           
           String display = result.toString();
           if (result is num) {
@@ -1205,7 +1210,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              SelectableText(
                 e.key.toUpperCase(), 
                 style: TextStyle(
                   color: Colors.indigo.shade900, 
@@ -1215,7 +1220,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                 )
               ),
               const SizedBox(height: 4),
-              Text(
+              SelectableText(
                 display, 
                 style: TextStyle(
                   color: Colors.indigo.shade700, 

@@ -77,11 +77,17 @@ class AggregatorReport {
   }
 
   Map<String, dynamic> generateData(Map<String, dynamic> j) {
-    final List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(j['data'] ?? []);
+    final List<dynamic> rawRecords = j['data'] ?? [];
+    final List<Map<String, dynamic>> records = rawRecords.map((r) {
+      final Map<String, dynamic> record = Map<String, dynamic>.from(r as Map);
+      return record.map((k, v) => MapEntry(k, _unwrap(v)));
+    }).toList();
+
     final Map<String, dynamic> calculatedSummary = {};
+    final List<String> dataHeaders = records.isNotEmpty ? records[0].keys.toList() : [];
 
     summary.forEach((title, formula) {
-      calculatedSummary[title] = FormulaEngine.evaluate(formula.toString(), records);
+      calculatedSummary[title] = FormulaEngine.evaluate(formula.toString(), records, dataHeaders);
     });
 
     return {
@@ -92,6 +98,11 @@ class AggregatorReport {
       "summary": calculatedSummary,
       "summaryFormulas": summary, // Keep original formulas for Workbook
     };
+  }
+
+  dynamic _unwrap(dynamic val) {
+    if (val is List && val.isNotEmpty) return _unwrap(val.first);
+    return val;
   }
 
   Map<String, dynamic> generateReport(Map<String, dynamic> j) {

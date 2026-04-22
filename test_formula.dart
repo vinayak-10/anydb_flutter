@@ -1,27 +1,23 @@
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 
 class FormulaEngine {
-  /// Evaluates a formula based on provided data rows.
   static dynamic evaluate(String formula, List<Map<String, dynamic>> data, [List<dynamic>? headers]) {
     if (formula.isEmpty) return "";
     String f = formula.trim();
     if (f.startsWith("=")) f = f.substring(1).trim();
 
     if (f.startsWith("IFERROR(")) {
-      final content = _extractFunctionContent(f, "IFERROR");
-      if (content != null) {
-        final args = _splitArguments(content);
-        if (args.length >= 2) {
-          try {
-            final res = evaluate(args[0], data, headers);
-            if (res == "Error" || res == null) {
-              return args[1].replaceAll('"', '').replaceAll("'", "").trim();
-            }
-            return res;
-          } catch (e) {
-            return args[1].replaceAll('"', '').replaceAll("'", "").trim();
-          }
+      final lastCommaIdx = f.lastIndexOf(",");
+      final lastParenIdx = f.lastIndexOf(")");
+      if (lastCommaIdx != -1 && lastParenIdx > lastCommaIdx) {
+        final inner = f.substring(8, lastCommaIdx).trim();
+        final fallback = f.substring(lastCommaIdx + 1, lastParenIdx).trim();
+        try {
+          final res = evaluate(inner, data, headers);
+          if (res == "Error" || res == null) return fallback.replaceAll("\"", "");
+          return res;
+        } catch (e) {
+          return fallback.replaceAll("\"", "");
         }
       }
     }
@@ -29,7 +25,7 @@ class FormulaEngine {
     try {
       return _evalRecursive(f, data, headers);
     } catch (e) {
-      debugPrint("FormulaEngine: Evaluation error for '$f': $e");
+      print("FormulaEngine: Evaluation error for '\$f': \$e");
       return "Error";
     }
   }
@@ -59,6 +55,7 @@ class FormulaEngine {
     final normalizedSearch = colName.trim().toLowerCase();
     
     if (firstRow.containsKey(colName)) return colName;
+    
     for (var k in firstRow.keys) {
       if (k.trim().toLowerCase() == normalizedSearch) return k;
     }
@@ -75,16 +72,14 @@ class FormulaEngine {
   }
 
   static String? _extractColumn(String part) {
-    // Corrected regex: Allow spaces in column names, and don't stop at them
-    final regex = RegExp(r"\$([^$.(),=<>:!]+)(?:\.START|\.END|(?=[,=\)<>:]|$))");
+    final regex = RegExp(r"\$([^$.(),=<>:!]+)(?:\.START|\.END|(?=[,=\s)<>:]|\$))");
     final match = regex.firstMatch(part);
     return match?.group(1)?.trim();
   }
 
   static String? _extractFunctionContent(String f, String funcName) {
-    int idx = f.indexOf("$funcName(");
-    if (idx == -1) return null;
-    int start = idx + funcName.length + 1;
+    int start = f.indexOf("$funcName(") + funcName.length + 1;
+    if (start < 1) return null;
     
     int level = 1;
     for (int i = start; i < f.length; i++) {
@@ -95,11 +90,6 @@ class FormulaEngine {
     return null;
   }
 
-  static dynamic _unwrap(dynamic val) {
-    if (val is List && val.isNotEmpty) return _unwrap(val.first);
-    return val;
-  }
-
   static double _sum(String formula, List<Map<String, dynamic>> data, [List<dynamic>? headers]) {
     final colName = _extractColumn(formula);
     if (colName == null || data.isEmpty) return 0;
@@ -107,7 +97,7 @@ class FormulaEngine {
     
     double total = 0;
     for (var row in data) {
-      final val = _unwrap(row[actualKey]);
+      final val = row[actualKey];
       if (val != null) {
         String cleaned = val.toString().replaceAll(',', '').trim();
         total += double.tryParse(cleaned) ?? 0;
@@ -123,7 +113,7 @@ class FormulaEngine {
     if (args.length < 2) return 0;
 
     final rangeCol = _extractColumn(args[0]);
-    final criteria = args[1].replaceAll('"', '').replaceAll("'", "").trim().toLowerCase();
+    final criteria = args[1].replaceAll("\"", "").trim().toLowerCase();
     final sumCol = args.length > 2 ? _extractColumn(args[2]) : rangeCol;
 
     if (rangeCol == null || data.isEmpty) return 0;
@@ -131,14 +121,17 @@ class FormulaEngine {
     final sumKey = sumCol != null ? _getActualKey(sumCol, data, headers) : rangeKey;
 
     double total = 0;
+    int matches = 0;
     for (var row in data) {
-      final checkVal = _unwrap(row[rangeKey])?.toString().trim().toLowerCase() ?? "";
+      final checkVal = row[rangeKey]?.toString().trim().toLowerCase() ?? "";
       if (checkVal == criteria) {
-        final val = _unwrap(row[sumKey]);
+        matches++;
+        final val = row[sumKey];
         String cleaned = val?.toString().replaceAll(',', '').trim() ?? '0';
         total += double.tryParse(cleaned) ?? 0;
       }
     }
+    print("FormulaEngine: SUMIF rangeKey='\$rangeKey', criteria='\$criteria', matches=\$matches, total=\$total");
     return total;
   }
 
@@ -149,22 +142,19 @@ class FormulaEngine {
     if (args.length < 2) return 0;
 
     final rangeCol = _extractColumn(args[0]);
-    final criteria = args[1].replaceAll('"', '').replaceAll("'", "").trim().toLowerCase();
+    final criteria = args[1].replaceAll("\"", "").trim().toLowerCase();
     if (rangeCol == null || data.isEmpty) return 0;
 
     final rangeKey = _getActualKey(rangeCol, data, headers);
     
+    int matches = 0;
     if (criteria == "*") {
-      return data.where((row) {
-        final v = _unwrap(row[rangeKey]);
-        return v != null && v.toString().trim().isNotEmpty;
-      }).length;
+      matches = data.where((row) => row[rangeKey] != null && row[rangeKey].toString().trim().isNotEmpty).length;
+    } else {
+      matches = data.where((row) => row[rangeKey]?.toString().trim().toLowerCase() == criteria).length;
     }
-
-    return data.where((row) {
-      final v = _unwrap(row[rangeKey])?.toString().trim().toLowerCase() ?? "";
-      return v == criteria;
-    }).length;
+    print("FormulaEngine: COUNTIF rangeKey='\$rangeKey', criteria='\$criteria', matches=\$matches");
+    return matches;
   }
 
   static int _countFilter(String formula, List<Map<String, dynamic>> data, [List<dynamic>? headers]) {
@@ -182,10 +172,11 @@ class FormulaEngine {
     int count = 0;
     for (var row in data) {
       if (_evaluateCondition(condition, row, data, headers)) {
-        final val = _unwrap(row[targetKey])?.toString() ?? "";
+        final val = row[targetKey]?.toString() ?? "";
         if (val.isNotEmpty) count++;
       }
     }
+    print("FormulaEngine: COUNT(FILTER) targetKey='\$targetKey', condition='\$condition', count=\$count");
     return count;
   }
 
@@ -206,10 +197,11 @@ class FormulaEngine {
            final Set<String> unique = {};
            for (var row in data) {
              if (_evaluateCondition(condition, row, data, headers)) {
-               final val = _unwrap(row[targetKey])?.toString().trim() ?? "";
+               final val = row[targetKey]?.toString().trim() ?? "";
                if (val.isNotEmpty) unique.add(val.toLowerCase());
              }
            }
+           print("FormulaEngine: ROWS(UNIQUE(FILTER)) targetKey='\$targetKey', condition='\$condition', uniqueCount=\${unique.length}");
            return unique.length;
         }
       }
@@ -222,9 +214,10 @@ class FormulaEngine {
     
     final Set<String> unique = {};
     for (var row in data) {
-      final val = _unwrap(row[actualKey])?.toString().trim() ?? "";
+      final val = row[actualKey]?.toString().trim() ?? "";
       if (val.isNotEmpty) unique.add(val.toLowerCase());
     }
+    print("FormulaEngine: ROWS(UNIQUE) actualKey='\$actualKey', uniqueCount=\${unique.length}");
     return unique.length;
   }
 
@@ -247,27 +240,29 @@ class FormulaEngine {
     
     dynamic leftVal;
     if (leftCol != null) {
-      leftVal = _unwrap(row[_getActualKey(leftCol, data, headers)])?.toString().trim().toLowerCase() ?? "";
+      leftVal = row[_getActualKey(leftCol, data, headers)]?.toString().trim().toLowerCase() ?? "";
     } else {
-      leftVal = leftStr.replaceAll('"', '').replaceAll("'", "").trim().toLowerCase();
+      leftVal = leftStr.replaceAll("\"", "").trim().toLowerCase();
     }
     
     dynamic rightVal;
     if (rightCol != null) {
-      rightVal = _unwrap(row[_getActualKey(rightCol, data, headers)])?.toString().trim().toLowerCase() ?? "";
+      rightVal = row[_getActualKey(rightCol, data, headers)]?.toString().trim().toLowerCase() ?? "";
     } else {
-      rightVal = rightStr.replaceAll('"', '').replaceAll("'", "").trim().toLowerCase();
+      rightVal = rightStr.replaceAll("\"", "").trim().toLowerCase();
     }
     
+    bool result = false;
     switch (op) {
-      case "=": return leftVal == rightVal;
-      case "<>": return leftVal != rightVal;
-      case ">=": return _compare(leftVal, rightVal) >= 0;
-      case "<=": return _compare(leftVal, rightVal) <= 0;
-      case ">": return _compare(leftVal, rightVal) > 0;
-      case "<": return _compare(leftVal, rightVal) < 0;
-      default: return leftVal == rightVal;
+      case "=": result = leftVal == rightVal; break;
+      case "<>": result = leftVal != rightVal; break;
+      case ">=": result = _compare(leftVal, rightVal) >= 0; break;
+      case "<=": result = _compare(leftVal, rightVal) <= 0; break;
+      case ">": result = _compare(leftVal, rightVal) > 0; break;
+      case "<": result = _compare(leftVal, rightVal) < 0; break;
+      default: result = leftVal == rightVal;
     }
+    return result;
   }
 
   static int _compare(dynamic v1, dynamic v2) {
@@ -282,7 +277,7 @@ class FormulaEngine {
     if (colName == null || data.isEmpty) return 0;
     final actualKey = _getActualKey(colName, data, headers);
     return data.where((row) {
-      final val = _unwrap(row[actualKey]);
+      final val = row[actualKey];
       if (val == null) return false;
       return double.tryParse(val.toString().replaceAll(',', '')) != null;
     }).length;
@@ -292,10 +287,7 @@ class FormulaEngine {
     final colName = _extractColumn(formula);
     if (colName == null || data.isEmpty) return 0;
     final actualKey = _getActualKey(colName, data, headers);
-    return data.where((row) {
-      final v = _unwrap(row[actualKey]);
-      return v != null && v.toString().trim().isNotEmpty;
-    }).length;
+    return data.where((row) => row[actualKey] != null && row[actualKey].toString().trim().isNotEmpty).length;
   }
 
   static dynamic _round(String formula, List<Map<String, dynamic>> data, [List<dynamic>? headers]) {
@@ -312,18 +304,11 @@ class FormulaEngine {
   static List<String> _splitArguments(String args) {
     List<String> result = [];
     int bracketLevel = 0;
-    bool inQuotes = false;
     int start = 0;
-    
     for (int i = 0; i < args.length; i++) {
-      final char = args[i];
-      if (char == '"' || char == "'") inQuotes = !inQuotes;
-      if (inQuotes) continue;
-      
-      if (char == '(') bracketLevel++;
-      if (char == ')') bracketLevel--;
-      
-      if (char == ',' && bracketLevel == 0) {
+      if (args[i] == '(') bracketLevel++;
+      if (args[i] == ')') bracketLevel--;
+      if (args[i] == ',' && bracketLevel == 0) {
         result.add(args.substring(start, i).trim());
         start = i + 1;
       }
@@ -331,41 +316,32 @@ class FormulaEngine {
     result.add(args.substring(start).trim());
     return result;
   }
+}
 
-  static String? formulate(String formula, List<dynamic>? headers, int startRow, int endRow, {String? sheetName, int startColOffset = 0}) {
-    if (headers == null || headers.isEmpty) return formula;
+void main() {
+  final data = [
+    {"Card Number": "1", "Sex": "Male", "Mode": "Cash", "Paid": "100", "Registered On": "2026-03-13", "Date": "2026-03-13", "Charges": "100", "Discount": "0"},
+    {"Card Number": "2", "Sex": "Female", "Mode": "UPI", "Paid": "200", "Registered On": "2026-03-12", "Date": "2026-03-13", "Charges": "200", "Discount": "0"},
+    {"Card Number": "3", "Sex": "Male", "Mode": "Cash", "Paid": "300", "Registered On": "2026-03-13", "Date": "2026-03-13", "Charges": "300", "Discount": "0"},
+  ];
+  
+  final f1 = 'SUMIF(\$Mode.START:\$Mode.END, "Cash", \$Paid.START:\$Paid.END)';
+  final r1 = FormulaEngine.evaluate(f1, data);
+  print("f1 (SUMIF Cash) -> \$r1");
+  
+  final f2 = 'IFERROR(ROWS(UNIQUE(FILTER(\$Card Number.START:\$Card Number.END,\$Sex.START:\$Sex.END="Male"))),0)';
+  final r2 = FormulaEngine.evaluate(f2, data);
+  print("f2 (Male) -> \$r2");
 
-    String getColumnOf(String colName) {
-      final normalizedSearch = colName.trim().toLowerCase();
-      for (int i = 0; i < headers.length; i++) {
-        if (headers[i].toString().trim().toLowerCase() == normalizedSearch) {
-          int colIdx = i + startColOffset;
-          String columnLetter = "";
-          while (colIdx >= 0) {
-            columnLetter = String.fromCharCode((colIdx % 26) + 65) + columnLetter;
-            colIdx = (colIdx ~/ 26) - 1;
-          }
-          return columnLetter;
-        }
-      }
-      return "";
-    }
+  final f3 = 'IFERROR(ROWS(UNIQUE(FILTER(\$Card Number.START:\$Card Number.END,\$Sex.START:\$Sex.END="Female"))),0)';
+  final r3 = FormulaEngine.evaluate(f3, data);
+  print("f3 (Female) -> \$r3");
+  
+  final f4 = 'COUNTIF(\$Mode.START:\$Mode.END, "Cash")';
+  final r4 = FormulaEngine.evaluate(f4, data);
+  print("f4 (COUNTIF Cash) -> \$r4");
 
-    final regex = RegExp(r"\$([^$.(),=<>:!]+)(?:\.START|\.END)");
-    String result = formula;
-    
-    final matches = regex.allMatches(formula).toList().reversed;
-    for (final match in matches) {
-      final colName = match.group(1)!;
-      final suffix = match.group(0)!.contains(".END") ? ".END" : ".START";
-      
-      String columnLetter = getColumnOf(colName);
-      if (columnLetter.isNotEmpty) {
-        String excelRef = "$columnLetter${suffix == ".START" ? startRow : endRow}";
-        result = result.replaceRange(match.start, match.end, excelRef);
-      }
-    }
-    
-    return result;
-  }
+  final f5 = 'IFERROR(ROWS(UNIQUE(FILTER(\$Card Number.START:\$Card Number.END,\$Registered On.START:\$Registered On.END=\$Date.START))),0)';
+  final r5 = FormulaEngine.evaluate(f5, data);
+  print("f5 (New Patients) -> \$r5");
 }
