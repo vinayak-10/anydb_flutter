@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'storage_service.dart';
+import 'workbook_service.dart';
 
+// Replicates Extractor class from extractor.js
 abstract class Extractor {
   late Map<String, dynamic> source;
   late List<dynamic> predicates;
@@ -13,120 +15,221 @@ abstract class Extractor {
     columns = jsonObj['columns'] ?? [];
   }
 
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data});
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName});
 }
 
 class ExtractorDatabase extends Extractor {
   final List<Map<String, dynamic>> _data = [];
+  final List<Map<String, dynamic>> _rows = [];
   late StorageService _storage;
 
   @override
   void init(Map<String, dynamic> jsonObj) {
     super.init(jsonObj);
     _storage = StorageService();
+    _storage.init(source['name'] ?? "", source['storage'] ?? [{"type": "local"}]);
   }
 
-  Future<void> _prepareData() async {
+  Future<void> reinit() async {
+    return await populateRecords();
+  }
+
+  Future<void> populateRecords() async {
+    _rows.clear();
     _data.clear();
-    
-    // Ensure we have at least local storage if none specified
-    final storageConfig = (source['storage'] as List?) ?? [{"type": "local"}];
-    await _storage.init(source['name'], storageConfig);
-    
+
     final elements = await _storage.fetch();
+    debugPrint("ExtractorDatabase: Fetched ${elements.length} elements from storage.");
 
-    for (var element in elements) {
-      try {
-        if (element.isEmpty) continue;
-        final recordValue = element.values.first;
-        if (recordValue is! Map) continue;
-        
-        List<Map<String, dynamic>> flattenedRows = [];
-        // Extract common fields (Patient Name, Card Number)
-        Map<String, dynamic> commonData = {};
-        _extractCommon(recordValue, commonData);
+    // Segregate Active records only for report (Matching RN default filter)
+    final activeElements = _segregate(elements, types: ["Active"]);
+    debugPrint("ExtractorDatabase: Segregated ${activeElements.length} Active elements.");
 
-        // Extract history rows, passing commonData to ensure it's in every row
-        _flatten(recordValue, 0, flattenedRows, commonData);
-        
-        for (var row in flattenedRows) {
-          // Double check common details are in every transaction row
-          commonData.forEach((k, v) {
-            if (!row.containsKey(k) || row[k] == null || row[k] == "") row[k] = v;
-          });
-          _data.add(row);
-        }
-      } catch (e) {
-        // Silently handle errors in loop as per instructions
-      }
-    }
-    debugPrint("Extractor: Completed in session cache mode.");
-  }
-
-  void _extractCommon(Map e, Map<String, dynamic> target) {
-    for (var key in e.keys) {
-      final value = e[key];
-      if (value is Map) {
-        _extractCommon(value, target);
-      } else if (value is! List) {
-        target[key.toString()] = value;
-      }
-    }
-  }
-
-  void _flatten(Map e, int index, List<Map<String, dynamic>> results, [Map<String, dynamic>? common]) {
-    void sv(int i, String k, dynamic v) {
-      if (i >= results.length) {
-        for (int j = results.length; j <= i; j++) {
-          results.add(common != null ? Map<String, dynamic>.from(common) : {});
-        }
-      }
-      results[i][k] = v;
-    }
-
-    for (var key in e.keys) {
-      final value = e[key];
-      if (value is Map) {
-        if (value.isNotEmpty && value.values.first is List) {
-          // Found a versioned history array (e.g. "Account": {"1.0.0": [...]})
-          final history = value.values.first as List;
-          for (int vi = 0; vi < history.length; vi++) {
-            final tx = history[vi];
-            if (tx is Map) {
-              for (var tk in tx.keys) {
-                sv(vi, tk.toString(), tx[tk]);
-              }
+    for (var element in activeElements) {
+      List<Map<String, dynamic>> trows = [];
+      _flatten(element, 0, trows);
+      
+      if (trows.isNotEmpty) {
+        final refrow = trows[0];
+        final keys = refrow.keys.toList();
+        for (var row in trows) {
+          Map<String, dynamic> sanitizedRow = Map<String, dynamic>.from(row);
+          for (var key in keys) {
+            if (!row.containsKey(key)) {
+              sanitizedRow[key] = refrow[key];
             }
           }
-        } else {
-          _flatten(value, index, results, common);
+          _data.add(sanitizedRow);
         }
-      } else if (value is! List) {
-        sv(index, key.toString(), value);
+      }
+    }
+    
+    debugPrint("ExtractorDatabase: Flattened into ${_data.length} total rows.");
+    _rows.addAll(_filter(_data, columns));
+    debugPrint("ExtractorDatabase: Filtered into ${_rows.length} rows based on columns.");
+
+    for (var p in predicates) {
+      await applyPredicate(p as Map<String, dynamic>);
+    }
+  }
+
+  List<Map<String, dynamic>> _segregate(List<Map<String, dynamic>> records, {List<String> types = const ["Active"]}) {
+    return records.where((rec) {
+      if (rec.isEmpty) return false;
+      final val = rec.values.first;
+      if (val is! Map) return false;
+      
+      final meta = val['__meta__'];
+      final time = meta != null ? meta['time'] : null;
+      
+      bool isArchived = time != null && time.containsKey('a');
+      bool isDeleted = time != null && time.containsKey('d');
+      bool isActive = !isArchived && !isDeleted;
+
+      bool match = false;
+      for (var type in types) {
+        if (type == "Active" && isActive) match = true;
+        if (type == "Archived" && isArchived) match = true;
+        if (type == "Deleted" && isDeleted) match = true;
+      }
+      return match;
+    }).toList();
+  }
+
+  void _flatten(dynamic e, int index, List<Map<String, dynamic>> keyValues) {
+    void sv(List<Map<String, dynamic>> a, int i, String k, dynamic v) {
+      if (i >= a.length) {
+        for (int j = a.length; j <= i; j++) {
+           a.add({});
+        }
+      }
+      a[i][k] = v;
+    }
+
+    if (e is! Map) return;
+    Map tmpe = Map.from(e);
+
+    for (var entry in tmpe.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      final typeofValue = _getJsonType(value);
+
+      switch (typeofValue) {
+        case "object":
+          _flatten(value, index, keyValues);
+          break;
+        case "array":
+          if (key.split(':').length > 1) {
+             for (int vi = 0; vi < value.length; vi++) {
+               _flatten(value[vi], index + vi, keyValues);
+             }
+          } else {
+             sv(keyValues, index, key, value.toString());
+          }
+          break;
+        default:
+          sv(keyValues, index, key, value);
+          break;
       }
     }
   }
 
-  List<Map<String, dynamic>> _filterColumns(List<Map<String, dynamic>> rows) {
-    if (columns.isEmpty) return rows;
-    return rows.map((row) {
-      Map<String, dynamic> filtered = {};
-      for (var col in columns) {
-        String colName = col is Map ? col['title'].toString() : col.toString();
-        // Try exact match, then case-insensitive
-        if (row.containsKey(colName)) {
-          filtered[colName] = row[colName];
-        } else {
-          final key = row.keys.firstWhere((k) => k.toLowerCase() == colName.toLowerCase(), orElse: () => "");
-          filtered[colName] = key.isNotEmpty ? row[key] : "";
-        }
+  String _getJsonType(dynamic o) {
+    if (o == null) return "null";
+    if (o is List) return "array";
+    if (o is bool) return "boolean";
+    if (o is num) return "number";
+    if (o is String) return "string";
+    if (o is Map) return "object";
+    return "undefined";
+  }
+
+  // Corrected port of JS filter(rows, columns)
+  List<Map<String, dynamic>> _filter(List<Map<String, dynamic>> rows, List<dynamic> cols) {
+    if (cols.isEmpty) return List.from(rows);
+
+    List<Map<String, dynamic>> filtered = [];
+    for (var row in rows) {
+      Map<String, dynamic> one = {};
+      for (var column in cols) {
+        final String destKey = (column is Map ? (column['title'] ?? column['column']) : column).toString();
+        final String srcKey = (column is Map ? (column['column'] ?? column['title']) : column).toString();
+        
+        // Fetch from source key (e.g. 'Amount'), store in dest key (e.g. 'Paid Amount')
+        one[destKey] = row[srcKey] ?? _findValueInsensitive(row, srcKey);
       }
-      return filtered;
-    }).toList();
+      filtered.add(one);
+    }
+    return filtered;
+  }
+
+  @override
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName}) async {
+    if (_rows.isEmpty) await populateRecords();
+    
+    final operation = pred['operation'];
+    
+    switch (operation) {
+      case "date":
+        if (data == null) return {};
+        final DateTime d = data is DateTime ? data : DateTime.parse(data.toString());
+        
+        // Find the correct key in the already filtered _rows (usually the title)
+        final String searchKey = pred['column'].toString();
+        
+        final predicated = _rows.where((row) {
+          final rd = _parseDate(row[searchKey] ?? _findValueInsensitive(row, searchKey));
+          return rd != null && rd.day == d.day && rd.month == d.month && rd.year == d.year;
+        }).toList();
+
+        debugPrint("ExtractorDatabase: Date filter ($searchKey) matched ${predicated.length} records.");
+
+        return {
+          "data": predicated,
+          "extra": {
+            "header": [[pred['name'], DateFormat('yyyy-MM-dd').format(d)]],
+            "name": DateFormat('yyyy-MM-dd').format(d),
+            "source": source,
+            "predicate": {...pred, "value": d}
+          }
+        };
+
+      case "generate":
+        return {
+          "data": List.from(_rows),
+          "extra": {
+            "header": [[pred['name']]],
+            "name": pred['name'],
+            "source": source,
+            "predicate": {...pred, "value": ""}
+          }
+        };
+
+      case "convert":
+        if (pred['parameter']?['to'] == 'date') {
+          for (var r in _rows) {
+            if (r.containsKey(pred['column'])) {
+              final dt = _parseDate(r[pred['column']]);
+              if (dt != null) r[pred['column']] = DateFormat('yyyy-MM-dd').format(dt);
+            }
+          }
+        }
+        break;
+
+      case "sort":
+        _rows.sort((a, b) {
+          final valA = a[pred['column']]?.toString() ?? "";
+          final valB = b[pred['column']]?.toString() ?? "";
+          return valA.compareTo(valB);
+        });
+        break;
+    }
+    return {};
   }
 
   DateTime? _parseDate(dynamic val) {
     if (val == null) return null;
+    if (val is DateTime) return val;
     if (val is num) return DateTime.fromMillisecondsSinceEpoch(val.toInt());
     if (val is String) {
       final dt = DateTime.tryParse(val);
@@ -135,93 +238,6 @@ class ExtractorDatabase extends Extractor {
       if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
     }
     return null;
-  }
-
-  @override
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data}) async {
-    await _prepareData();
-    
-    final operation = pred['operation'];
-    final column = pred['column']?.toString() ?? "";
-    List<Map<String, dynamic>> sourceRows = (data is List) ? List<Map<String, dynamic>>.from(data) : _data;
-    
-    List<Map<String, dynamic>> resultData = [];
-    String name = "Report";
-
-    if (operation == 'date') {
-      final effectiveDate = data is DateTime || data is DateTimeRange ? data : DateTime.now();
-      debugPrint("Extractor: Filtering by Date on column '$column' with value $effectiveDate");
-
-      if (effectiveDate is DateTime) {
-        resultData = sourceRows.where((row) {
-          final val = row[column] ?? _findValueInsensitive(row, column);
-          if (val == null) return false;
-          DateTime? rowDate = _parseDate(val);
-          if (rowDate == null) return false;
-          return rowDate.day == effectiveDate.day && rowDate.month == effectiveDate.month && rowDate.year == effectiveDate.year;
-        }).toList();
-        name = "${pred['name']}: ${DateFormat('yyyy-MM-dd').format(effectiveDate)}";
-      } else if (effectiveDate is DateTimeRange) {
-        resultData = sourceRows.where((row) {
-          final val = row[column] ?? _findValueInsensitive(row, column);
-          if (val == null) return false;
-          DateTime? rowDate = _parseDate(val);
-          if (rowDate == null) return false;
-          final start = DateTime(effectiveDate.start.year, effectiveDate.start.month, effectiveDate.start.day);
-          final end = DateTime(effectiveDate.end.year, effectiveDate.end.month, effectiveDate.end.day, 23, 59, 59);
-          return rowDate.isAfter(start.subtract(const Duration(seconds: 1))) && 
-                 rowDate.isBefore(end.add(const Duration(seconds: 1)));
-        }).toList();
-        name = "${pred['name']}: ${DateFormat('yyyy-MM-dd').format(effectiveDate.start)} to ${DateFormat('yyyy-MM-dd').format(effectiveDate.end)}";
-      }
-    } else if (operation == 'sort') {
-      resultData = List<Map<String, dynamic>>.from(sourceRows);
-      final dir = pred['parameter']?['dir'] ?? 'asc';
-      
-      resultData.sort((a, b) {
-        dynamic valA = a[column] ?? _findValueInsensitive(a, column);
-        dynamic valB = b[column] ?? _findValueInsensitive(b, column);
-
-        int compareValues(dynamic v1, dynamic v2) {
-          if (v1 == null && v2 == null) return 0;
-          if (v1 == null) return -1;
-          if (v2 == null) return 1;
-
-          DateTime? dt1 = _parseDate(v1);
-          DateTime? dt2 = _parseDate(v2);
-          if (dt1 != null && dt2 != null) return dt1.compareTo(dt2);
-          
-          if (v1 is num && v2 is num) return v1.compareTo(v2);
-          return v1.toString().toLowerCase().compareTo(v2.toString().toLowerCase());
-        }
-
-        int cmp = compareValues(valA, valB);
-        return dir.toString().toLowerCase() == 'desc' ? -cmp : cmp;
-      });
-      name = pred['name'] ?? "Sorted Report";
-    } else {
-      // Default / Convert / Filter operations
-      resultData = sourceRows;
-      name = pred['name'] ?? "Full Report";
-    }
-
-    debugPrint("Extractor: Operation '$operation' complete. Results: ${resultData.length}");
-
-    // Final step: Only filter columns for the VERY LAST predicate in the chain
-    List<Map<String, dynamic>> finalRows = resultData;
-    if (operation == 'sort' || predicates.last == pred) {
-       finalRows = _filterColumns(resultData);
-    }
-
-    return {
-      'data': finalRows,
-      'extra': {
-        'name': name,
-        'source': source,
-        'header': [[pred['name'] ?? 'Report', name]],
-        'predicate': pred,
-      }
-    };
   }
 
   dynamic _findValueInsensitive(Map<String, dynamic> row, String key) {
@@ -233,22 +249,110 @@ class ExtractorDatabase extends Extractor {
   }
 }
 
-class ExtractorService {
-  Extractor? _extractor;
+class ExtractorReport extends Extractor {
+  final List<Map<String, dynamic>> _rows = [];
+  final WorkbookService _workbookService = WorkbookService();
 
-  void init(Map<String, dynamic> rowSchema) {
-    final type = rowSchema['source']?['type'];
+  @override
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName}) async {
+    if (pred['operation'] == 'date') {
+       if (data == null) return {};
+       final DateTime date = data is DateTime ? data : DateTime.parse(data.toString());
+       
+       // Prepare workbook names etc using getFileName callback
+       final fileMeta = getFileName != null ? getFileName({
+         "extra": {
+           "name": DateFormat('yyyy-MM-dd').format(date),
+           "predicate": {...pred, "value": date}
+         }
+       }) : null;
+
+       await _prepare(pred, date, fileMeta);
+
+       return {
+         "data": _rows,
+         "extra": {
+           "header": [[pred['name'], DateFormat('yyyy-MM-dd').format(date)]],
+           "name": DateFormat('yyyy-MM-dd').format(date),
+           "source": source,
+           "predicate": {...pred, "value": date}
+         }
+       };
+    }
+    return {};
+  }
+
+  Future<void> _prepare(Map<String, dynamic> pred, DateTime date, dynamic fileMeta) async {
+    _rows.clear();
+    if (fileMeta == null) return;
+    
+    // In Flutter, WorkbookService.getSheetNames requires a file path
+    final sheetNames = await _workbookService.getSheetNames(fileMeta['collection'], source['name'] ?? "");
+    
+    for (var sheetName in sheetNames) {
+      Map<String, dynamic> row = {};
+      for (var col in columns) {
+        if (col is Map) {
+          row[col['title']] = col['formula'].toString().replaceAll(source['name'] ?? "", sheetName);
+        }
+      }
+      _rows.add(row);
+    }
+  }
+}
+
+class ExtractorIntf {
+  Extractor? extractor;
+  dynamic pIntf;
+  bool reinited = false;
+
+  void init(Map<String, dynamic> jo, dynamic pintf) {
+    pIntf = pintf;
+    final type = jo['source']?['type'];
     if (type == 'database') {
-      _extractor = ExtractorDatabase();
-      _extractor!.init(rowSchema);
-    } else {
-      _extractor = ExtractorDatabase();
-      _extractor!.init(rowSchema);
+      extractor = ExtractorDatabase();
+    } else if (type == 'report') {
+      extractor = ExtractorReport();
+    }
+    extractor?.init(jo);
+    reinited = false;
+  }
+
+  Future<void> reinit(bool focused) async {
+    if (extractor != null) {
+      bool isInited = reinited;
+      reinited = focused;
+      if (focused && !isInited) {
+        if (extractor is ExtractorDatabase) {
+           await (extractor as ExtractorDatabase).reinit();
+        }
+      }
     }
   }
 
+  Future<Map<String, dynamic>> generate() async {
+    await reinit(true);
+    final pred = extractor?.predicates[0];
+    return await extractor!.applyPredicate(
+      pred, 
+      data: DateTime.now(), 
+      getFileName: pIntf['getFileName']
+    );
+  }
+
+  String predicatedName(Map<String, dynamic> pred, String data) {
+    return data;
+  }
+}
+
+class ExtractorService {
+  final ExtractorIntf _intf = ExtractorIntf();
+
+  void init(Map<String, dynamic> rowSchema, {dynamic getFileName}) {
+    _intf.init(rowSchema, {'getFileName': getFileName});
+  }
+
   Future<Map<String, dynamic>> generate(Map<String, dynamic> pred, {dynamic data}) async {
-    if (_extractor == null) return {'data': [], 'extra': {}};
-    return await _extractor!.applyPredicate(pred, data: data);
+    return await _intf.extractor!.applyPredicate(pred, data: data, getFileName: _intf.pIntf['getFileName']);
   }
 }

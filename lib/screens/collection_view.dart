@@ -11,6 +11,7 @@ import '../services/element_db.dart';
 import '../services/aggregator_service.dart';
 import '../services/invoker_service.dart';
 import '../services/file_service.dart';
+import '../services/io_helper.dart' as io;
 import '../services/web_downloader.dart';
 import '../services/google_drive_service.dart';
 import '../models/element_model.dart';
@@ -145,14 +146,15 @@ class _CollectionViewState extends State<CollectionView> with SingleTickerProvid
       if (result != null) {
         final file = result.files.first;
         dynamic data;
-        final fileService = FileService();
 
         if (kIsWeb || file.path == null) {
           if (file.bytes != null) {
-            data = jsonDecode(utf8.decode(file.bytes!));
+            final jsonStr = utf8.decode(file.bytes!);
+            data = await compute(jsonDecode, jsonStr);
           }
         } else {
-          data = await fileService.readJson(file.path!);
+          final jsonStr = await io.readString(file.path!);
+          data = await compute(jsonDecode, jsonStr);
         }
 
         if (data != null && data is List) {
@@ -182,16 +184,36 @@ class _CollectionViewState extends State<CollectionView> with SingleTickerProvid
 
           if (importMode == null) return;
 
-          await db.importDb(data, wipeFirst: importMode == 'wipe');
-          _dbKeys[_currentTabIndex].currentState?.refresh();
+          // Show loading dialog
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(importMode == 'wipe' ? "Database wiped and reloaded" : "Database merged successfully"),
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-              )
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => const Center(child: CircularProgressIndicator()),
             );
+          }
+
+          try {
+            await db.importDb(data, wipeFirst: importMode == 'wipe');
+            _dbKeys[_currentTabIndex].currentState?.refresh();
+            
+            if (mounted) {
+              Navigator.pop(context); // Close loading dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(importMode == 'wipe' ? "Database wiped and reloaded" : "Database merged successfully"),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                )
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              Navigator.pop(context); // Close loading dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Import Error: $e"), backgroundColor: Colors.red)
+              );
+            }
           }
         } else {
           throw "Invalid file format. Expected a JSON list of records.";
@@ -994,48 +1016,54 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.message, color: Colors.green),
-                title: const Text("Share to WhatsApp / Other Apps"),
+                leading: const Icon(Icons.share, color: Colors.green),
+                title: const Text("Share via..."),
                 onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-                  // ignore: deprecated_member_use
-                  await Share.shareXFiles([XFile(filePath)], text: 'Report: ${widget.report.key}');
+                  try {
+                    // ignore: deprecated_member_use
+                    await Share.shareXFiles([XFile(filePath)], text: 'Report: ${widget.report.key}');
+                  } catch (e) {
+                    messenger.showSnackBar(SnackBar(content: Text("Share Error: $e")));
+                  }
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.email, color: Colors.redAccent),
                 title: const Text("Send via Email"),
                 onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-                  // ignore: deprecated_member_use
-                  await Share.shareXFiles([XFile(filePath)], subject: 'AnyDb Report: ${widget.report.key}');
+                  try {
+                    // ignore: deprecated_member_use
+                    await Share.shareXFiles([XFile(filePath)], subject: 'AnyDb Report: ${widget.report.key}');
+                  } catch (e) {
+                    messenger.showSnackBar(SnackBar(content: Text("Email Error: $e")));
+                  }
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.cloud_upload, color: Colors.blue),
                 title: const Text("Upload to Google Drive"),
                 onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
                   final googleDriveService = ref.read(googleDriveServiceProvider);
                   
-                  // Show loading indicator if possible or just proceed
                   try {
                     await googleDriveService.uploadFile(
                       filePath, 
                       '${widget.report.key}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx',
                       path: ['xyz.maya', 'anydb', widget.schemaTitle, 'Aggregators']
                     );
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Uploaded to Google Drive successfully"))
-                      );
-                    }
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text("Uploaded to Google Drive successfully"))
+                    );
                   } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Upload failed: $e"), backgroundColor: Colors.red)
-                      );
-                    }
+                    messenger.showSnackBar(
+                      SnackBar(content: Text("Upload failed: $e"), backgroundColor: Colors.red)
+                    );
                   }
                 },
               ),
@@ -1045,7 +1073,9 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         ),
       );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Share Error: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Share Error: $e")));
+      }
     }
   }
 
@@ -1058,7 +1088,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       );
 
       final dataPart = result['data'] as Map<String, dynamic>;
-      final records = dataPart['records'] as List<dynamic>;
+      final records = dataPart['data'] as List<dynamic>;
 
       if (records.isEmpty) {
         setState(() {
@@ -1165,8 +1195,12 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         runSpacing: 16,
         children: summarySchema.entries.map((e) {
           final result = FormulaEngine.evaluate(e.value.toString(), dataRows, headers);
+          
           String display = result.toString();
-          if (result is double) display = result.toStringAsFixed(0);
+          if (result is num) {
+            // Format numbers with commas and no decimals (matching common financial reports)
+            display = NumberFormat("#,##,###").format(result);
+          }
 
           return Column(
             mainAxisSize: MainAxisSize.min,

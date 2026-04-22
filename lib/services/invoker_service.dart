@@ -78,18 +78,23 @@ class InvokerService {
     if (!path.startsWith('http') && !path.startsWith('file')) {
       if (!path.contains('/') && !path.contains('\\')) {
         debugPrint("Invoker: Full path is required for $path");
-      } else if (path.startsWith('/')) {
-        path = 'file://$path';
       }
     }
-    debugPrint("Invoker: open URL: $path");
+
+    // open_file_plus on Linux/Android/iOS expects a raw path, not a file:// URI.
+    String finalPath = path;
+    if (finalPath.startsWith('file://')) {
+      finalPath = finalPath.replaceFirst('file://', '');
+    }
+
+    debugPrint("Invoker: opening path: $finalPath");
     try {
-      final result = await OpenFile.open(path);
+      final result = await OpenFile.open(finalPath);
       if (result.type != ResultType.done) {
-        debugPrint("Invoker: URL open fail for $path with err ${result.message}");
+        debugPrint("Invoker: URL open fail for $finalPath with err ${result.message}");
       }
     } catch (e) {
-      debugPrint("Invoker: Open fail for $path with err $e");
+      debugPrint("Invoker: Open fail for $finalPath with err $e");
     }
   }
 

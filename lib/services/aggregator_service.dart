@@ -7,75 +7,26 @@ class AggregatorReport {
   late List<dynamic> header;
   late Map<String, dynamic> summary;
   late List<dynamic> rows;
-  final List<ExtractorService> extractors = [];
+  final List<ExtractorIntf> extractor = [];
+  dynamic pIntf;
   
-  void init(Map<String, dynamic> jo) {
+  void init(Map<String, dynamic> jo, dynamic pintf) {
     key = jo['name'] ?? '';
-    header = _prepareHeader(jo['header'] ?? {});
-    summary = _prepareSummary(jo['summary'] ?? []);
-    rows = jo['row'] ?? [];
+    pIntf = pintf;
+    header = jo.containsKey("header") ? _prepareHeader(jo['header']) : [];
+    summary = jo.containsKey("summary") ? _prepareSummary(jo['summary']) : {};
+    rows = jo['row'] as List? ?? [];
 
-    extractors.clear();
-    for (var row in rows) {
-      final ext = ExtractorService();
-      ext.init(Map<String, dynamic>.from(row));
-      extractors.add(ext);
+    extractor.clear();
+    final rowList = jo['row'] as List? ?? [];
+    for (var row in rowList) {
+      final ext = ExtractorIntf();
+      ext.init(Map<String, dynamic>.from(row), {
+        'generate': (pd) => pIntf['generate'](generateReport(pd)),
+        'getFileName': (j) => pIntf['getFileName'](generateMeta(j))
+      });
+      extractor.add(ext);
     }
-  }
-
-  List<String> getColumns() {
-    if (rows.isEmpty) return [];
-    final firstRow = rows[0];
-    final cols = firstRow['columns'] as List<dynamic>? ?? [];
-    return cols.map((c) => c is Map ? c['title'].toString() : c.toString()).toList();
-  }
-
-  Future<Map<String, dynamic>> generate({dynamic date, required WorkbookService workbook}) async {
-    if (extractors.isEmpty) return {'data': [], 'extra': {}};
-    
-    final rowSchema = rows[0];
-    final predicates = rowSchema['predicates'] as List<dynamic>? ?? [];
-    
-    Map<String, dynamic> result = {'data': [], 'extra': {}};
-    dynamic currentData = date;
-
-    // Apply ALL predicates in sequence
-    for (var pred in predicates) {
-      result = await extractors[0].generate(pred, data: currentData);
-      currentData = result['data']; // Result of one predicate is input for next
-    }
-    
-    // Calculate Summary values using FormulaEngine
-    final List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(result['data'] ?? []);
-    final Map<String, dynamic> calculatedSummary = {};
-    summary.forEach((title, formula) {
-      calculatedSummary[title] = FormulaEngine.evaluate(formula.toString(), records);
-    });
-
-    return {
-      'meta': {
-        'collection': key,
-        'entry': result['extra']['name'],
-        'predicate': result['extra']['predicate'],
-      },
-      'data': {
-        'name': key,
-        'header': [...header, ...result['extra']['header']],
-        'records': records,
-        'summary': calculatedSummary,
-      }
-    };
-  }
-
-  Future<String> generateWorkbook({dynamic date, required WorkbookService workbook}) async {
-    final reportData = await generate(date: date, workbook: workbook);
-    final meta = {
-      'aggregator': key,
-      'collection': key,
-      'entry': reportData['meta']['entry'],
-    };
-    
-    return await workbook.write(meta, reportData['data']);
   }
 
   List<dynamic> _prepareHeader(dynamic h) {
@@ -89,45 +40,117 @@ class AggregatorReport {
     return [];
   }
 
-  Map<String, dynamic> _prepareSummary(dynamic s) {
-    final Map<String, dynamic> result = {};
-    if (s is List) {
-      for (var item in s) {
-        if (item is Map) {
-          result[item['title']] = item['formula'];
+  Map<String, dynamic> _prepareSummary(dynamic jos) {
+    final Map<String, dynamic> summary = {};
+    if (jos is List) {
+      for (var s in jos) {
+        if (s is Map) {
+          summary[s['title']] = s['formula'];
         }
       }
     }
-    return result;
+    return summary;
+  }
+
+  Map<String, dynamic> applyMeta(Map<String, dynamic> meta) {
+    Map<String, dynamic> nmeta = Map<String, dynamic>.from(meta);
+    String n = "$key ${extractor[0].predicatedName(nmeta['predicate'] ?? {}, nmeta['entry'] ?? '')}";
+    nmeta['collection'] = n.replaceAll(' ', '_');
+    return nmeta;
+  }
+
+  Future<Map<String, dynamic>> generate() async {
+    try {
+      final s = await extractor[0].generate();
+      return generateReport(s);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> generateMeta(Map<String, dynamic> j) {
+    return {
+      "collection": key,
+      "entry": j['extra']['name'],
+      "predicate": j['extra']['predicate']
+    };
+  }
+
+  Map<String, dynamic> generateData(Map<String, dynamic> j) {
+    final List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(j['data'] ?? []);
+    final Map<String, dynamic> calculatedSummary = {};
+
+    summary.forEach((title, formula) {
+      calculatedSummary[title] = FormulaEngine.evaluate(formula.toString(), records);
+    });
+
+    return {
+      "name": key,
+      "source": j['extra']['source'],
+      "header": [...header, ...j['extra']['header']],
+      "data": records,
+      "summary": calculatedSummary,
+      "summaryFormulas": summary, // Keep original formulas for Workbook
+    };
+  }
+
+  Map<String, dynamic> generateReport(Map<String, dynamic> j) {
+    return {
+      "meta": generateMeta(j),
+      "data": generateData(j)
+    };
+  }
+
+  List<String> getColumns() {
+    // Ported helper for UI
+    if (extractor.isEmpty) return [];
+    final firstExt = extractor[0];
+    final cols = firstExt.extractor?.columns ?? [];
+    return cols.map((c) => c is Map ? c['title'].toString() : c.toString()).toList();
   }
 }
 
 class AggregatorService {
   late String key;
   final List<AggregatorReport> reports = [];
-  final WorkbookService _workbook = WorkbookService();
-  late List<dynamic> share;
+  final WorkbookService workbook = WorkbookService();
+  late Map<String, dynamic> share;
+  String? reportPath;
 
-  String? get lastReportPath => _workbook.lastReportPath;
-  Future<void> openReport([String? path]) => _workbook.openReport(path);
+  String? get lastReportPath => workbook.lastReportPath;
 
-  void init(Map<String, dynamic> jo) {
-    key = jo['name'] ?? '';
-    share = jo['share'] ?? [];
-    final rawSchema = jo['schema'];
-    List<dynamic>? schema;
-    if (rawSchema is List) {
-      schema = rawSchema;
-    } else if (rawSchema is Map) {
-      schema = [rawSchema];
-    }
+  void init(dynamic jo) {
+    if (jo == null) return;
     
-    reports.clear();
-    if (schema != null) {
-      for (var element in schema) {
-        if (element['type'] == 'report') {
+    if (jo is Map) {
+      key = jo['name'] ?? '';
+      share = jo['share'] is Map ? Map<String, dynamic>.from(jo['share']) : {};
+      
+      final schemaList = jo['schema'] as List? ?? [];
+      reports.clear();
+      
+      for (var element in schemaList) {
+        if (element is Map && element['type'] == 'report') {
           final report = AggregatorReport();
-          report.init(element);
+          report.init(Map<String, dynamic>.from(element), {
+            'generate': (pd) => generateReport(pd),
+            'getFileName': (meta) => getFileName(meta)
+          });
+          reports.add(report);
+        }
+      }
+    } else if (jo is List) {
+      // If it's a list, treat it as a collection of reports without a top-level name
+      key = "Aggregator";
+      share = {};
+      reports.clear();
+      for (var element in jo) {
+        if (element is Map && element['type'] == 'report') {
+          final report = AggregatorReport();
+          report.init(Map<String, dynamic>.from(element), {
+            'generate': (pd) => generateReport(pd),
+            'getFileName': (meta) => getFileName(meta)
+          });
           reports.add(report);
         }
       }
@@ -135,29 +158,51 @@ class AggregatorService {
   }
 
   Future<Map<String, dynamic>> generate(AggregatorReport report, {dynamic date}) async {
-    return await report.generate(date: date, workbook: _workbook);
+    // In RN, date selection is handled inside AggregatorReportDisplay via extractor.display
+    // Here we bridge it by allowing an optional date override.
+    await report.extractor[0].reinit(true); // Ensure data is populated
+    
+    final s = await report.extractor[0].extractor!.applyPredicate(
+      report.extractor[0].extractor!.predicates[0], 
+      data: date ?? DateTime.now(),
+      getFileName: (meta) => getFileName(meta)
+    );
+    return report.generateReport(s);
   }
 
   Future<String> generateWorkbook(AggregatorReport report, {dynamic date}) async {
-    return await report.generateWorkbook(date: date, workbook: _workbook);
+    final reportData = await generate(report, date: date);
+    return await generateReport(reportData);
   }
 
-  Future<String> generateReport(String reportName, Map<String, dynamic> data) async {
-    final report = reports.firstWhere((r) => r.key == reportName);
+  Future<String> generateReport(Map<String, dynamic> pd) async {
+    // Find the report that matches this metadata
+    final report = _findReportByMeta(pd['meta']);
+    Map<String, dynamic> nmeta = report.applyMeta(pd['meta']);
+    nmeta["aggregator"] = key;
     
-    final meta = {
-      'aggregator': key,
-      'collection': key,
-      'entry': reportName,
-    };
-
-    final reportData = {
-      'name': report.key,
-      'header': report.header,
-      'data': data['records'] ?? [],
-      'summary': report.summary,
-    };
-
-    return await _workbook.write(meta, reportData);
+    try {
+      final fp = await workbook.write(nmeta, pd['data']);
+      reportPath = fp;
+      return fp;
+    } catch (e) {
+      rethrow;
+    }
   }
+
+  Map<String, dynamic> getFileName(Map<String, dynamic> meta) {
+    final report = _findReportByMeta(meta);
+    Map<String, dynamic> nmeta = report.applyMeta(meta);
+    return {"aggregator": key, "collection": nmeta['collection']};
+  }
+
+  AggregatorReport _findReportByMeta(Map<String, dynamic> meta) {
+    final String reportName = meta['collection'] ?? '';
+    for (var r in reports) {
+      if (r.key == reportName) return r;
+    }
+    return reports.last; // Fallback
+  }
+
+  Future<void> openReport([String? path]) => workbook.openReport(path);
 }

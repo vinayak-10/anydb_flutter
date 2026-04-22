@@ -70,22 +70,51 @@ class ElementDb {
     return <dynamic>[];
   }
 
-  Future<int> initDb({bool forced = false}) async {
+  List<Map<String, dynamic>> segregate(List<Map<String, dynamic>> records, {List<String> types = const ["Active"]}) {
+    return records.where((rec) {
+      if (rec.isEmpty) return false;
+      final val = rec.values.first;
+      if (val is! Map) return false;
+
+      final meta = val['__meta__'];
+      final time = meta != null ? meta['time'] : null;
+
+      bool isArchived = time != null && time.containsKey('a');
+      bool isDeleted = time != null && time.containsKey('d');
+      bool isActive = !isArchived && !isDeleted;
+
+      bool match = false;
+      for (var type in types) {
+        if (type == "Active" && isActive) match = true;
+        if (type == "Archived" && isArchived) match = true;
+        if (type == "Deleted" && isDeleted) match = true;
+      }
+      return match;
+    }).toList();
+  }
+
+  Future<int> initDb({bool forced = false, List<String> filter = const ["Active"]}) async {
     if (initialized && !forced && elements.isNotEmpty) {
       return elements.length;
     }
 
     elements = [];
     final allData = await storage.fetch();
+
+    // 1. Trigger Database Start (Ported from RN)
+    await _triggerService?.trigger('onDbStart', allData);
+
+    // 2. Segregate/Filter records (Ported from RN)
+    final filteredData = segregate(allData, types: filter);
+
     final now = DateTime.now().millisecondsSinceEpoch;
     const purgeThreshold = 72 * 60 * 60 * 1000; // 72 hours in ms
 
-    for (var data in allData) {
-      if (data.isEmpty) continue;
+    for (var data in filteredData) {
       final key = data.keys.first;
       final val = data.values.first as Map<String, dynamic>;
-      
-      // Auto-purge logic: If marked for delete > 72 hours ago, remove from storage
+
+      // Auto-purge logic for truly deleted items
       final meta = val['__meta__'];
       if (meta != null && meta['time'] != null && meta['time']['d'] != null) {
         final deleteTime = meta['time']['d'] as int;
@@ -99,11 +128,12 @@ class ElementDb {
       element.init(dbSchema, intf);
       element.populate(data);
       elements.add(element);
-      metaService.add(data);
     }
 
+    initialized = true;
     return elements.length;
   }
+
 
   Future<void> markArchive(ElementModel element) async {
     final data = element.fetch();
