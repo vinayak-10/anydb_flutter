@@ -4,18 +4,52 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:googleapis_auth/auth_io.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'platform_check.dart';
+
+/// A unified user model to bridge official GoogleSignInAccount and manual OAuth flows
+class GoogleUser {
+  final String id;
+  final String email;
+  final String? displayName;
+  final String? photoUrl;
+
+  GoogleUser({
+    required this.id,
+    required this.email,
+    this.displayName,
+    this.photoUrl,
+  });
+
+  factory GoogleUser.fromOfficial(GoogleSignInAccount official) {
+    return GoogleUser(
+      id: official.id,
+      email: official.email,
+      displayName: official.displayName,
+      photoUrl: official.photoUrl,
+    );
+  }
+}
 
 class GoogleDriveService {
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
-  GoogleSignInAccount? _currentUser;
+  GoogleUser? _currentUser;
   http.Client? _httpClient;
   
   static Completer<void>? _initCompleter;
+  
+  // OAuth Constants for Linux/Manual Flow
+  static const String _clientId = "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com";
+  // Note: For Desktop App client types, a secret is mandatory. 
+  // For iOS/Android client types, pass null to use PKCE (recommended for avoiding secrets in code).
+  static const String? _clientSecret = null; 
 
-  GoogleSignInAccount? get currentUser => _currentUser;
+  GoogleUser? get currentUser => _currentUser;
 
   Future<void> init() async {
     if (_initCompleter != null && !_initCompleter!.isCompleted) return _initCompleter!.future;
@@ -23,46 +57,65 @@ class GoogleDriveService {
     
     _initCompleter = Completer<void>();
     try {
-      debugPrint("GoogleDriveService: Initializing API...");
-      // For v7.2.0+, initialize is mandatory.
-      // On Web, clientId is required here. On mobile, it's typically configured in native files.
-      await _googleSignIn.initialize(
-        clientId: kIsWeb ? "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com" : null,
-      );
-      
-      // attemptLightweightAuthentication is the new signInSilently
-      _currentUser = await _googleSignIn.attemptLightweightAuthentication();
-      if (_currentUser != null) {
-        debugPrint("GoogleDriveService: Restored session for ${_currentUser!.displayName}");
+      if (kIsWeb) {
+        await _googleSignIn.initialize(clientId: _clientId);
       }
+      
+      if (!isLinux()) {
+        final official = await _googleSignIn.attemptLightweightAuthentication();
+        if (official != null) {
+          _currentUser = GoogleUser.fromOfficial(official);
+        }
+      } else {
+        await _restoreLinuxSession();
+      }
+      
       _initCompleter!.complete();
     } catch (e) {
-      if (e is! UnimplementedError) {
-        debugPrint("GoogleDriveService: Initialization error: $e");
-        _initCompleter!.completeError(e);
-        _initCompleter = null; 
-        rethrow;
-      } else {
-        debugPrint("GoogleDriveService: initialize() not implemented on this platform, skipping.");
-        _initCompleter!.complete();
-      }
+      debugPrint("GoogleDriveService: Init error: $e");
+      _initCompleter!.complete(); // Complete anyway to unblock UI
     }
     return _initCompleter!.future;
   }
 
-  Future<GoogleSignInAccount?> login() async {
+  Future<void> _restoreLinuxSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final credsJson = prefs.getString('google_drive_creds');
+    if (credsJson != null) {
+      try {
+        final creds = AccessCredentials.fromJson(jsonDecode(credsJson));
+        final id = ClientId(_clientId, _clientSecret);
+        _httpClient = autoRefreshingClient(id, creds, http.Client());
+        
+        // Fetch user info to populate _currentUser
+        final response = await _httpClient!.get(Uri.parse('https://www.googleapis.com/oauth2/v2/userinfo'));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          _currentUser = GoogleUser(
+            id: data['id'],
+            email: data['email'],
+            displayName: data['name'],
+            photoUrl: data['picture'],
+          );
+        }
+      } catch (e) {
+        debugPrint("GoogleDriveService: Linux session restoration failed: $e");
+      }
+    }
+  }
+
+  Future<GoogleUser?> login() async {
     try {
       await init();
-      
-      final List<String> scopes = [drive.DriveApi.driveFileScope];
+      final List<String> scopes = [drive.DriveApi.driveFileScope, 'email', 'profile'];
 
-      // authenticate() is the new signIn() in v7.x
-      _currentUser = await _googleSignIn.authenticate();
-      
-      if (_currentUser != null) {
-        debugPrint("GoogleDriveService: Authenticated as ${_currentUser!.displayName}");
-        
-        // Authorization is separate from Authentication in v7.x
+      if (isLinux()) {
+        return await _loginLinux(scopes);
+      }
+
+      final official = await _googleSignIn.authenticate();
+      if (official != null) {
+        _currentUser = GoogleUser.fromOfficial(official);
         final auth = await _googleSignIn.authorizationClient.authorizeScopes(scopes);
         _httpClient = auth.authClient(scopes: scopes);
       }
@@ -73,13 +126,53 @@ class GoogleDriveService {
     }
   }
 
+  Future<GoogleUser?> _loginLinux(List<String> scopes) async {
+    final id = ClientId(_clientId, _clientSecret);
+    
+    try {
+      final client = await clientViaUserConsent(id, scopes, (url) async {
+        if (await canLaunchUrl(Uri.parse(url))) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        } else {
+          throw "Could not launch $url";
+        }
+      }, listenPort: 8080); // <--- Fixed port for predictable redirect URI
+
+      _httpClient = client;
+      final creds = (client as AuthClient).credentials;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('google_drive_creds', jsonEncode(creds.toJson()));
+
+      // Fetch profile
+      final response = await client.get(Uri.parse('https://www.googleapis.com/oauth2/v2/userinfo'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _currentUser = GoogleUser(
+          id: data['id'],
+          email: data['email'],
+          displayName: data['name'],
+          photoUrl: data['picture'],
+        );
+      }
+      return _currentUser;
+    } catch (e) {
+      debugPrint("GoogleDriveService: Linux login error: $e");
+      return null;
+    }
+  }
+
   Future<void> logout() async {
     try {
-      await _googleSignIn.signOut();
-      if (!kIsWeb) {
-        try {
-          await _googleSignIn.disconnect();
-        } catch (_) {}
+      if (!isLinux()) {
+        await _googleSignIn.signOut();
+        if (!kIsWeb) {
+          try {
+            await _googleSignIn.disconnect();
+          } catch (_) {}
+        }
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('google_drive_creds');
       }
     } catch (e) {
       debugPrint("GoogleDriveService: Logout error: $e");
@@ -254,7 +347,7 @@ class GoogleDriveService {
     }
     
     final fileName = '${dbName}_backup_${DateTime.now().millisecondsSinceEpoch}.json';
-    final path = schemaName != null ? ['xyz.maya', 'anydb', schemaName, 'Database'] : ['xyz.maya'];
+    final List<String> path = schemaName != null ? ['xyz.maya', 'anydb', schemaName, 'Database'] : ['xyz.maya'];
     await uploadJson(jsonStr, fileName, path: path);
   }
 
@@ -270,10 +363,10 @@ class GoogleDriveService {
 
 final googleDriveServiceProvider = Provider((ref) => GoogleDriveService());
 
-class GoogleUserNotifier extends Notifier<GoogleSignInAccount?> {
+class GoogleUserNotifier extends Notifier<GoogleUser?> {
   @override
-  GoogleSignInAccount? build() => null;
-  void setUser(GoogleSignInAccount? user) => state = user;
+  GoogleUser? build() => null;
+  void setUser(GoogleUser? user) => state = user;
 }
 
-final googleUserProvider = NotifierProvider<GoogleUserNotifier, GoogleSignInAccount?>(GoogleUserNotifier.new);
+final googleUserProvider = NotifierProvider<GoogleUserNotifier, GoogleUser?>(GoogleUserNotifier.new);

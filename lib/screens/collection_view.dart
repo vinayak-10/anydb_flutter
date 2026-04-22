@@ -1159,8 +1159,10 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           top: BorderSide(color: Colors.indigo.shade200, width: 1),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Wrap(
+        alignment: WrapAlignment.spaceEvenly,
+        spacing: 20,
+        runSpacing: 16,
         children: summarySchema.entries.map((e) {
           final result = FormulaEngine.evaluate(e.value.toString(), dataRows, headers);
           String display = result.toString();
