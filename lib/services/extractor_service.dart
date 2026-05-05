@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:excel/excel.dart';
 import 'storage_service.dart';
 import 'workbook_service.dart';
 
@@ -13,6 +14,41 @@ abstract class Extractor {
     source = jsonObj['source'] ?? {};
     predicates = jsonObj['predicates'] ?? [];
     columns = jsonObj['columns'] ?? [];
+  }
+
+  String predicatedName(Map<String, dynamic> pred, String data) {
+    String name = data;
+    
+    // Find a predicate in this extractor that can provide formatting
+    // If we can't find one that's different from 'pred', we use 'pred' itself.
+    final formatPreds = predicates.where((p) => p['operation'] == pred['operation']).toList();
+    final p = formatPreds.firstWhere((p) => p['name'] != pred['name'], orElse: () => pred);
+
+    if (p['operation'] == 'date') {
+      try {
+        DateTime? d;
+        if (data.contains('-') || data.contains('/') || data.contains('T')) {
+           d = DateTime.tryParse(data);
+        } else {
+           final ms = int.tryParse(data);
+           if (ms != null) d = DateTime.fromMillisecondsSinceEpoch(ms);
+        }
+        d ??= DateTime.now();
+        
+        final type = p['parameter']?['type'];
+        if (type == 'month') {
+          name = DateFormat('MMM yyyy').format(d);
+        } else if (type == 'day') {
+          name = DateFormat('d_MMM yyyy').format(d);
+        } else {
+          // Default formatting if type is missing
+          name = DateFormat('yyyy-MM-dd').format(d);
+        }
+      } catch (e) {
+        debugPrint("Extractor.predicatedName Error: $e for data '$data'");
+      }
+    }
+    return name;
   }
 
   Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName});
@@ -191,11 +227,13 @@ class ExtractorDatabase extends Extractor {
 
         debugPrint("ExtractorDatabase: Date filter ($searchKey) matched ${predicated.length} records.");
 
+        final String formattedDate = predicatedName(pred, d.toIso8601String());
+
         return {
           "data": predicated,
           "extra": {
-            "header": [[pred['name'], DateFormat('yyyy-MM-dd').format(d)]],
-            "name": DateFormat('yyyy-MM-dd').format(d),
+            "header": [[pred['name'], formattedDate]],
+            "name": formattedDate,
             "source": source,
             "predicate": {...pred, "value": d}
           }
@@ -272,10 +310,12 @@ class ExtractorReport extends Extractor {
        if (data == null) return {};
        final DateTime date = data is DateTime ? data : DateTime.parse(data.toString());
        
+       final String formattedName = predicatedName(pred, date.toIso8601String());
+
        // Prepare workbook names etc using getFileName callback
        final fileMeta = getFileName != null ? getFileName({
          "extra": {
-           "name": DateFormat('yyyy-MM-dd').format(date),
+           "name": formattedName,
            "predicate": {...pred, "value": date}
          }
        }) : null;
@@ -285,8 +325,8 @@ class ExtractorReport extends Extractor {
        return {
          "data": _rows,
          "extra": {
-           "header": [[pred['name'], DateFormat('yyyy-MM-dd').format(date)]],
-           "name": DateFormat('yyyy-MM-dd').format(date),
+           "header": [[pred['name'], formattedName]],
+           "name": formattedName,
            "source": source,
            "predicate": {...pred, "value": date}
          }
@@ -299,18 +339,59 @@ class ExtractorReport extends Extractor {
     _rows.clear();
     if (fileMeta == null) return;
     
-    // In Flutter, WorkbookService.getSheetNames requires a file path
-    final sheetNames = await _workbookService.getSheetNames(fileMeta['collection'], source['name'] ?? "");
+    final fileName = fileMeta['collection'];
+    final sourceReportName = source['name'] ?? "";
+    final sheetNames = await _workbookService.getSheetNames(fileName, sourceReportName);
     
     for (var sheetName in sheetNames) {
-      Map<String, dynamic> row = {};
-      for (var col in columns) {
-        if (col is Map) {
-          row[col['title']] = col['formula'].toString().replaceAll(source['name'] ?? "", sheetName);
+      final List<List<dynamic>> sheetData = await _workbookService.read(fileName, sheetName);
+      if (sheetData.length > 5) {
+        // row 4: Summary Headers, row 5: Summary Values
+        final headers = sheetData[4];
+        final values = sheetData[5];
+        
+        Map<String, dynamic> row = {};
+        for (var col in columns) {
+          if (col is Map) {
+            final title = col['title'].toString();
+            // Search for this title in the summary headers of the source sheet
+            int foundIdx = -1;
+            for (int i = 0; i < headers.length; i++) {
+              if (headers[i].toString().toLowerCase() == title.toLowerCase()) {
+                foundIdx = i;
+                break;
+              }
+            }
+            
+            if (foundIdx != -1 && foundIdx < values.length) {
+              row[title] = _unwrapCellValue(values[foundIdx]);
+            } else {
+              // Fallback to formula string if not found in pre-calculated summary
+              row[title] = col['formula'].toString().replaceAll(sourceReportName, sheetName);
+            }
+          }
         }
+        _rows.add(row);
+      } else {
+        // Fallback for empty/invalid sheets
+        Map<String, dynamic> row = {};
+        for (var col in columns) {
+          if (col is Map) {
+            row[col['title']] = col['formula'].toString().replaceAll(sourceReportName, sheetName);
+          }
+        }
+        _rows.add(row);
       }
-      _rows.add(row);
     }
+  }
+
+  dynamic _unwrapCellValue(dynamic cellValue) {
+    if (cellValue == null) return 0;
+    if (cellValue is TextCellValue) return cellValue.value.toString();
+    if (cellValue is DoubleCellValue) return cellValue.value;
+    if (cellValue is IntCellValue) return cellValue.value;
+    if (cellValue is FormulaCellValue) return cellValue.formula;
+    return cellValue.toString();
   }
 }
 
@@ -354,7 +435,8 @@ class ExtractorIntf {
   }
 
   String predicatedName(Map<String, dynamic> pred, String data) {
-    return data;
+    if (extractor == null) return data;
+    return extractor!.predicatedName(pred, data);
   }
 }
 

@@ -1356,9 +1356,70 @@ class _AggregatorViewState extends State<_AggregatorView> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
                 const Text("Available Reports", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
                 const Divider(color: Colors.black12),
+                if (widget.agg.reports.any((r) => r.key.toLowerCase().contains("monthly")))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () async {
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => const Center(
+                            child: Card(
+                              child: Padding(
+                                padding: EdgeInsets.all(24.0),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 16),
+                                    Text("Generating Full Monthly Report...", style: TextStyle(fontWeight: FontWeight.bold)),
+                                    SizedBox(height: 8),
+                                    Text("Processing each day and aggregating totals", style: TextStyle(fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+
+                        try {
+                          final path = await widget.agg.generateMonthlyBatch(_selectedDate);
+                          if (!mounted) return;
+                          Navigator.pop(context); // Close loading dialog
+
+                          if (path.contains("No data")) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(path)));
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text("Monthly Report & All Daily Sheets generated successfully!"),
+                              backgroundColor: Colors.green,
+                            ));
+                            // Trigger refresh in UI by triggering current report generation logic
+                            setState(() {});
+                            await widget.agg.openReport(path);
+                          }
+                        } catch (e) {
+                          if (!mounted) return;
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text("Batch Error: $e"),
+                            backgroundColor: Colors.red,
+                          ));
+                        }
+                      },
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text("GENERATE FULL MONTHLY", style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
                 Expanded(
                   child: ListView.builder(
                     itemCount: widget.agg.reports.length,

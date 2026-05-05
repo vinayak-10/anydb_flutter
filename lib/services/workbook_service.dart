@@ -16,24 +16,54 @@ class WorkbookService {
   String? _lastAggregatorDir;
   String? get lastReportPath => _lastReportPath;
 
-  Future<String> write(Map<String, dynamic> meta, Map<String, dynamic> data) async {
-    final excel = Excel.createExcel();
-    final String entryName = meta['entry'] ?? 'Default';
-    final sheetName = _fileService.sanitizeName(entryName);
-    debugPrint("WorkbookService: Creating report with sheet name '$sheetName'");
+  Future<String> write(Map<String, dynamic> meta, Map<String, dynamic> data, {DateTime? timestamp}) async {
+    final reportName = meta['aggregator'] ?? 'Report';
+    final now = timestamp ?? DateTime.now();
     
-    if (excel.sheets.containsKey('Sheet1')) {
-      excel.delete('Sheet1');
+    // JS Logic: monthly reports and daily reports for the same aggregator 
+    // should probably be in the same file if the name matches.
+    // In RN, Workbook.js uses meta.collection for the filename.
+    final String collectionName = meta['collection'] ?? 'Report';
+    
+    String fileName = meta['fileName'] ?? "";
+    if (fileName.isEmpty) {
+      final String datePattern = formatFilenameDate(now);
+      fileName = "${_fileService.sanitizeName(collectionName)}_$datePattern.xlsx";
     }
     
+    final schemaName = meta['aggregator'] ?? 'Default';
+    final aggregatorDir = await _fileService.getAggregatorPath(schemaName, external: true);
+    _lastAggregatorDir = aggregatorDir;
+    await _fileService.ensureDir(aggregatorDir);
+    
+    final fullPath = p.join(aggregatorDir, fileName);
+    final String targetPath = p.isAbsolute(fullPath) ? fullPath : p.absolute(fullPath);
+    
+    Excel excel;
+    if (!kIsWeb && await io.fileExists(targetPath)) {
+      final bytes = await io.readBytes(targetPath);
+      excel = Excel.decodeBytes(bytes!);
+    } else {
+      excel = Excel.createExcel();
+    }
+
+    final String entryName = meta['entry'] ?? 'Default';
+    final sheetName = _fileService.sanitizeName(entryName);
+    debugPrint("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
+    
+    // In excel library, creating a sheet if it doesn't exist
     final Sheet reportSheet = excel[sheetName];
     _prepareSheet(reportSheet, data, sheetName);
 
-    // Save File logic
-    final reportName = meta['aggregator'] ?? 'Report';
-    final now = DateTime.now();
-    final String datePattern = _formatFilenameDate(now);
-    final String fileName = "${_fileService.sanitizeName(reportName)}_$datePattern.xlsx";
+    // If we have our target sheet and it's not 'Sheet1', delete 'Sheet1'
+    if (sheetName != 'Sheet1' && excel.sheets.containsKey('Sheet1')) {
+      // Only delete if there is at least one other sheet
+      if (excel.sheets.length > 1) {
+        excel.delete('Sheet1');
+      }
+    }
+
+    _lastReportPath = targetPath;
     
     if (kIsWeb) {
       final fileBytes = excel.save();
@@ -45,16 +75,11 @@ class WorkbookService {
       return fileName;
     }
 
-    final schemaName = meta['aggregator'] ?? 'Default';
-    final aggregatorDir = await _fileService.getAggregatorPath(schemaName, external: true);
-    _lastAggregatorDir = aggregatorDir;
-    await _fileService.ensureDir(aggregatorDir);
-    
-    final fullPath = p.join(aggregatorDir, fileName);
-    _lastReportPath = p.isAbsolute(fullPath) ? fullPath : p.absolute(fullPath);
     final fileBytes = excel.save();
     if (fileBytes != null) {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
+      // In JS, copy to external is also done.
+      // But we are already writing to an 'external' path in aggregatorDir.
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 
@@ -102,9 +127,26 @@ class WorkbookService {
         : [];
     
     // JS Logic for sr (start row):
-    // sr = row (summary_val_row) + 2 (gaps) + 1 (header)
-    // sr is 1-indexed for Excel
-    final int sr = row + 2 + 1; 
+    // In RN, row was incremented manually. 
+    // row 0: Report Name
+    // row 1-2: Header (2 rows)
+    // row 3: Gap
+    // row 4: Summary Headers
+    // row 5: Summary Values (Formulas)
+    // row 6: Gap
+    // row 7: Gap
+    // row 8: Table Headers
+    // row 9: Data Start
+    
+    // In our _prepareSheet:
+    // row 0: Report Name (1 row)
+    // row 1-2: Header (len=2) -> row becomes 3
+    // row 4: Summary Headers (gap 1) -> row becomes 5
+    // row 5: Summary Values (Formulas) -> row stays 5
+    // row 7: Table Headers (gap 2) -> row becomes 8
+    // row 9: Data Start (row++) -> data starts at 9
+    
+    const int sr = 9; 
     final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
     debugPrint("WorkbookService: formula range sr=$sr, er=$er in sheet '$sheetName'");
 
@@ -112,16 +154,30 @@ class WorkbookService {
     final Map<String, dynamic> formulasMap = jo['summaryFormulas'] ?? jo['summary'] ?? {};
     final List<dynamic> formulaValues = formulasMap.values.toList();
     
+    // Convert tableData to the format FormulaEngine expects
+    final List<Map<String, dynamic>> records = tableData.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+
     for (int i = 0; i < formulaValues.length; i++) {
       final vs = _unwrap(formulaValues[i]).toString();
       final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
-      final formulated = FormulaEngine.formulate(vs, columnNames, sr, er, sheetName: sheetName);
       
+      // 1. Calculate the static value using our high-precision AST engine
+      final dynamic calculatedValue = FormulaEngine.evaluate(vs, records, columnNames);
+      
+      // 2. Format the Excel formula string
+      final formulated = FormulaEngine.formulate(vs, columnNames, sr, er, sheetName: sheetName);
       String formulaStr = formulated ?? vs;
       if (formulaStr.startsWith('=')) {
         formulaStr = formulaStr.substring(1);
       }
-      cell.value = FormulaCellValue(formulaStr);
+      
+      // 3. Write HYBRID cell: Formula for live updates, Static Value for immediate accuracy
+      cell.setFormula(formulaStr);
+      if (calculatedValue is num) {
+        cell.value = DoubleCellValue(calculatedValue.toDouble());
+      } else {
+        cell.value = TextCellValue(calculatedValue.toString());
+      }
     }
 
     // 3. Add Table content
@@ -158,11 +214,19 @@ class WorkbookService {
     final unwrapped = _unwrap(val);
     
     if (unwrapped is num) {
-      cell.value = DoubleCellValue(unwrapped.toDouble());
+      if (unwrapped % 1 == 0) {
+        cell.value = IntCellValue(unwrapped.toInt());
+      } else {
+        cell.value = DoubleCellValue(unwrapped.toDouble());
+      }
     } else if (unwrapped is String) {
       final n = double.tryParse(unwrapped.replaceAll(',', ''));
       if (n != null) {
-        cell.value = DoubleCellValue(n);
+        if (n % 1 == 0) {
+          cell.value = IntCellValue(n.toInt());
+        } else {
+          cell.value = DoubleCellValue(n);
+        }
       } else {
         cell.value = TextCellValue(unwrapped);
       }
@@ -217,43 +281,82 @@ class WorkbookService {
     }
   }
 
-  Future<List<String>> getSheetNames(String filePath, String type) async {
+  Future<List<String>> getSheetNames(dynamic fileMeta, String type) async {
     try {
-      final bytes = await io.readBytes(filePath);
-      if (bytes == null) return [];
+      String fileName = "";
+      if (fileMeta is Map) {
+        fileName = fileMeta['fileName'] ?? fileMeta['collection'] ?? "";
+      } else {
+        fileName = fileMeta.toString();
+      }
+
+      String targetPath = fileName;
+      if (!p.isAbsolute(fileName) && _lastAggregatorDir != null) {
+        String f = fileName;
+        if (!f.endsWith('.xlsx')) f += '.xlsx';
+        targetPath = p.join(_lastAggregatorDir!, f);
+      }
+
+      final bytes = await io.readBytes(targetPath);
+      if (bytes == null) {
+        debugPrint("WorkbookService: Could not read workbook at $targetPath");
+        return [];
+      }
       final excel = Excel.decodeBytes(bytes);
       List<String> matchedSheets = [];
       for (var table in excel.tables.keys) {
         final sheet = excel.tables[table];
         if (sheet == null) continue;
+        
+        // RN Logic: Check B1 (col 1, row 0) for the report type
         if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
           final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
-          if (cell.value?.toString() == type) matchedSheets.add(table);
+          final val = cell.value?.toString().trim();
+          if (val == type) {
+            matchedSheets.add(table);
+          }
         }
       }
       return matchedSheets;
     } catch (e) {
+      debugPrint("WorkbookService: getSheetNames Error: $e");
       return [];
     }
   }
 
-  Future<List<List<dynamic>>> read(String filePath, String sheetName) async {
+  Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName) async {
     try {
-      final bytes = await io.readBytes(filePath);
+      String fileName = "";
+      if (fileMeta is Map) {
+        fileName = fileMeta['fileName'] ?? fileMeta['collection'] ?? "";
+      } else {
+        fileName = fileMeta.toString();
+      }
+
+      String targetPath = fileName;
+      if (!p.isAbsolute(fileName) && _lastAggregatorDir != null) {
+        String f = fileName;
+        if (!f.endsWith('.xlsx')) f += '.xlsx';
+        targetPath = p.join(_lastAggregatorDir!, f);
+      }
+
+      final bytes = await io.readBytes(targetPath);
       if (bytes == null) return [];
       final excel = Excel.decodeBytes(bytes);
       final sheet = excel.tables[sheetName];
       if (sheet == null) return [];
+
       return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();
     } catch (e) {
+      debugPrint("WorkbookService: read Error: $e");
       return [];
     }
   }
 
-  String _formatFilenameDate(DateTime dt) {
-    // Target Pattern: Sat_Mar_21_2026_12_24_54_GMT_0530
-    final String day = DateFormat('E').format(dt);
-    final String month = DateFormat('MMM').format(dt);
+  String formatFilenameDate(DateTime dt) {
+    // User requested pattern: Sat_Mar_21_2026_12_24_54_GMT_0530
+    final String dayName = DateFormat('E').format(dt);
+    final String monthName = DateFormat('MMM').format(dt);
     final String rest = DateFormat('dd_yyyy_HH_mm_ss').format(dt);
     
     final offset = dt.timeZoneOffset;
@@ -262,6 +365,6 @@ class WorkbookService {
     final String sign = offset.isNegative ? "-" : "";
     final String gmt = "GMT_$sign$hours$mins";
 
-    return "${month}_${dt.year}_${day}_${month}_${rest}_$gmt";
+    return "${dayName}_${monthName}_${rest}_$gmt";
   }
 }
