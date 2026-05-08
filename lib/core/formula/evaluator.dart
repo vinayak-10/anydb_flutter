@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'ast.dart';
 
 class Evaluator implements ExpressionVisitor<dynamic> {
@@ -88,17 +89,30 @@ class Evaluator implements ExpressionVisitor<dynamic> {
   // --- Helper Methods ---
 
   double _toNum(dynamic val) {
-    if (val is num) return val.toDouble();
+    if (val is num) {
+      if (val.isNaN || val.isInfinite) return 0.0;
+      return val.toDouble();
+    }
     if (val == null) return 0.0;
     String s = val.toString().replaceAll(',', '').trim();
-    return double.tryParse(s) ?? 0.0;
+    if (s.isEmpty || s.toLowerCase() == "nan" || s.toLowerCase() == "infinity") return 0.0;
+    try {
+      return double.tryParse(s) ?? 0.0;
+    } catch (e) {
+      debugPrint("Evaluator: _toNum Format Error for '$s': $e");
+      return 0.0;
+    }
   }
 
   int _compare(dynamic v1, dynamic v2) {
     if (v1 is num && v2 is num) return v1.compareTo(v2);
-    final n1 = double.tryParse(v1.toString().replaceAll(',', ''));
-    final n2 = double.tryParse(v2.toString().replaceAll(',', ''));
-    if (n1 != null && n2 != null) return n1.compareTo(n2);
+    try {
+      final n1 = double.tryParse(v1.toString().replaceAll(',', '').trim());
+      final n2 = double.tryParse(v2.toString().replaceAll(',', '').trim());
+      if (n1 != null && n2 != null) return n1.compareTo(n2);
+    } catch (e) {
+      // fallback to string compare
+    }
     return v1.toString().toLowerCase().compareTo(v2.toString().toLowerCase());
   }
 

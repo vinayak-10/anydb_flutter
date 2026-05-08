@@ -51,7 +51,7 @@ abstract class Extractor {
     return name;
   }
 
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName});
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp});
 }
 
 class ExtractorDatabase extends Extractor {
@@ -77,14 +77,16 @@ class ExtractorDatabase extends Extractor {
     final elements = await _storage.fetch();
     debugPrint("ExtractorDatabase: Fetched ${elements.length} elements from storage.");
 
-    // Segregate Active records only for report (Matching RN default filter)
-    final activeElements = _segregate(elements, types: ["Active"]);
-    debugPrint("ExtractorDatabase: Segregated ${activeElements.length} Active elements.");
-
-    for (var element in activeElements) {
+    for (var element in elements) {
       if (element.isEmpty) continue;
       final recordValue = element.values.first;
       if (recordValue is! Map) continue;
+
+      // Check if record is deleted
+      final meta = recordValue['__meta__'];
+      final time = meta != null ? meta['time'] : null;
+      bool isDeleted = time != null && time.containsKey('d');
+      if (isDeleted) continue;
 
       List<Map<String, dynamic>> trows = [];
       _flatten(recordValue, 0, trows);
@@ -112,8 +114,8 @@ class ExtractorDatabase extends Extractor {
 
     // APPLY ALL SCHEMA PREDICATES SEQUENTIALLY (Match RN logic)
     for (var p in predicates) {
-      if (p is Map<String, dynamic>) {
-        await applyPredicate(p);
+      if (p is Map) {
+        await applyPredicate(Map<String, dynamic>.from(p));
       }
     }
     
@@ -210,14 +212,18 @@ class ExtractorDatabase extends Extractor {
   }
 
   @override
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName}) async {
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp}) async {
     final operation = pred['operation'];
     
     switch (operation) {
       case "date":
-        if (data == null) return {};
-        final DateTime d = data is DateTime ? data : DateTime.parse(data.toString());
-        final String searchKey = pred['column'].toString();
+        final String searchKey = pred['column']?.toString() ?? "Date";
+        if (data == null) {
+          // If no data provided (e.g. during initial population), do not filter _rows
+          return {};
+        }
+        
+        final DateTime d = data is DateTime ? data : (DateTime.tryParse(data.toString()) ?? DateTime.now());
         
         final predicated = _rows.where((row) {
           final val = row[searchKey] ?? _findValueInsensitive(row, searchKey);
@@ -227,8 +233,12 @@ class ExtractorDatabase extends Extractor {
 
         debugPrint("ExtractorDatabase: Date filter ($searchKey) matched ${predicated.length} records.");
 
-        final String formattedDate = predicatedName(pred, d.toIso8601String());
-
+        // Force correct Daily sheet naming pattern: "1_Mar 2026"
+        final String formattedDate = DateFormat('d_MMM yyyy').format(d);
+        
+        // During report generation, we typically want to return the predicated subset
+        // without permanently clearing _rows (which might be used for other things).
+        // But for consistency with reinit(), we need a way to apply filters.
         return {
           "data": predicated,
           "extra": {
@@ -252,8 +262,8 @@ class ExtractorDatabase extends Extractor {
 
       case "convert":
         if (pred['parameter']?['to'] == 'date') {
+          final colKey = pred['column'].toString();
           for (var r in _rows) {
-            final colKey = pred['column'].toString();
             final val = r[colKey] ?? _findValueInsensitive(r, colKey);
             final dt = _parseDate(_unwrap(val));
             if (dt != null) r[colKey] = DateFormat('yyyy-MM-dd').format(dt);
@@ -262,12 +272,14 @@ class ExtractorDatabase extends Extractor {
         break;
 
       case "sort":
-        final colKey = pred['column'].toString();
-        _rows.sort((a, b) {
-          final valA = _unwrap(a[colKey] ?? _findValueInsensitive(a, colKey))?.toString() ?? "";
-          final valB = _unwrap(b[colKey] ?? _findValueInsensitive(b, colKey))?.toString() ?? "";
-          return valA.compareTo(valB);
-        });
+        final colKey = pred['column']?.toString() ?? "";
+        if (colKey.isNotEmpty) {
+          _rows.sort((a, b) {
+            final valA = _unwrap(a[colKey] ?? _findValueInsensitive(a, colKey))?.toString() ?? "";
+            final valB = _unwrap(b[colKey] ?? _findValueInsensitive(b, colKey))?.toString() ?? "";
+            return valA.compareTo(valB);
+          });
+        }
         break;
     }
     return {};
@@ -276,13 +288,22 @@ class ExtractorDatabase extends Extractor {
   DateTime? _parseDate(dynamic val) {
     if (val == null) return null;
     if (val is DateTime) return val;
-    if (val is num) return DateTime.fromMillisecondsSinceEpoch(val.toInt());
-    if (val is String) {
-      final dt = DateTime.tryParse(val);
-      if (dt != null) return dt;
-      final ms = int.tryParse(val);
-      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+    if (val is num) {
+       if (val.isNaN || val.isInfinite) return null;
+       return DateTime.fromMillisecondsSinceEpoch(val.toInt());
     }
+    
+    final s = val.toString().trim();
+    if (s.isEmpty || s.toLowerCase() == "nan") return null;
+
+    // 1. Try ISO parsing
+    final dt = DateTime.tryParse(s);
+    if (dt != null) return dt;
+
+    // 2. Try Milliseconds parsing
+    final ms = int.tryParse(s);
+    if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+
     return null;
   }
 
@@ -305,20 +326,19 @@ class ExtractorReport extends Extractor {
   final WorkbookService _workbookService = WorkbookService();
 
   @override
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName}) async {
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp}) async {
     if (pred['operation'] == 'date') {
        if (data == null) return {};
-       final DateTime date = data is DateTime ? data : DateTime.parse(data.toString());
+       final DateTime date = data is DateTime ? data : (DateTime.tryParse(data.toString()) ?? DateTime.now());
        
        final String formattedName = predicatedName(pred, date.toIso8601String());
 
-       // Prepare workbook names etc using getFileName callback
+       // Fix: Pass the meta map AND timestamp, matching updated AggregatorService expectations
        final fileMeta = getFileName != null ? getFileName({
-         "extra": {
-           "name": formattedName,
-           "predicate": {...pred, "value": date}
-         }
-       }) : null;
+         "collection": source['name'] ?? "",
+         "entry": formattedName,
+         "predicate": {...pred, "value": date}
+       }, timestamp: timestamp) : null;
 
        await _prepare(pred, date, fileMeta);
 
@@ -339,50 +359,75 @@ class ExtractorReport extends Extractor {
     _rows.clear();
     if (fileMeta == null) return;
     
-    final fileName = fileMeta['collection'];
+    final fileName = fileMeta['fileName'] ?? fileMeta['collection'];
     final sourceReportName = source['name'] ?? "";
-    final sheetNames = await _workbookService.getSheetNames(fileName, sourceReportName);
+    debugPrint("ExtractorReport: Searching for source sheets '$sourceReportName' in file '$fileName'");
+    
+    final sheetNames = await _workbookService.getSheetNames(fileMeta, sourceReportName);
+    debugPrint("ExtractorReport: Found ${sheetNames.length} source sheets: $sheetNames");
     
     for (var sheetName in sheetNames) {
-      final List<List<dynamic>> sheetData = await _workbookService.read(fileName, sheetName);
-      if (sheetData.length > 5) {
-        // row 4: Summary Headers, row 5: Summary Values
-        final headers = sheetData[4];
-        final values = sheetData[5];
-        
+      final List<List<dynamic>> sheetData = await _workbookService.read(fileMeta, sheetName);
+      if (sheetData.isNotEmpty) {
         Map<String, dynamic> row = {};
         for (var col in columns) {
           if (col is Map) {
-            final title = col['title'].toString();
-            // Search for this title in the summary headers of the source sheet
-            int foundIdx = -1;
-            for (int i = 0; i < headers.length; i++) {
-              if (headers[i].toString().toLowerCase() == title.toLowerCase()) {
-                foundIdx = i;
-                break;
+            final String title = col['title'].toString();
+            final String formula = col['formula'].toString();
+            
+            // Pattern to match cell reference: 'Source'!A7 or Daily!B4
+            // We handle optional single quotes around the sheet name
+            final refRegex = RegExp(r"(?:'([^']+)'|([^!]+))!([A-Z]+)([0-9]+)");
+            final match = refRegex.firstMatch(formula);
+            
+            if (match != null) {
+              // Group 1 or 2 is sheet name, Group 3 is column, Group 4 is row
+              final String colAlpha = match.group(3)!;
+              final int? rowNum = int.tryParse(match.group(4)!);
+              
+              if (rowNum != null) {
+                int colIdx = 0;
+                for (int i = 0; i < colAlpha.length; i++) {
+                  colIdx = colIdx * 26 + (colAlpha.codeUnitAt(i) - 64);
+                }
+                colIdx -= 1; // 0-indexed
+                int rowIdx = rowNum - 1; // 0-indexed
+                
+                if (rowIdx < sheetData.length && colIdx < sheetData[rowIdx].length) {
+                  row[title] = _unwrapCellValue(sheetData[rowIdx][colIdx]);
+                } else {
+                  debugPrint("ExtractorReport: Coordinate $colAlpha$rowNum out of bounds for sheet '$sheetName'");
+                  row[title] = 0;
+                }
+              } else {
+                row[title] = 0;
+              }
+            } else {
+              // Fallback to title matching if no coordinate found
+              final headers = sheetData.length > 4 ? sheetData[4] : [];
+              final values = sheetData.length > 5 ? sheetData[5] : [];
+              
+              int foundIdx = -1;
+              for (int i = 0; i < headers.length; i++) {
+                final h = _unwrapCellValue(headers[i]).toString().trim().toLowerCase();
+                if (h == title.toLowerCase() || h == "total $title".toLowerCase()) {
+                  foundIdx = i;
+                  break;
+                }
+              }
+              
+              if (foundIdx != -1 && foundIdx < values.length) {
+                row[title] = _unwrapCellValue(values[foundIdx]);
+              } else {
+                row[title] = formula.replaceAll(sourceReportName, sheetName);
               }
             }
-            
-            if (foundIdx != -1 && foundIdx < values.length) {
-              row[title] = _unwrapCellValue(values[foundIdx]);
-            } else {
-              // Fallback to formula string if not found in pre-calculated summary
-              row[title] = col['formula'].toString().replaceAll(sourceReportName, sheetName);
-            }
-          }
-        }
-        _rows.add(row);
-      } else {
-        // Fallback for empty/invalid sheets
-        Map<String, dynamic> row = {};
-        for (var col in columns) {
-          if (col is Map) {
-            row[col['title']] = col['formula'].toString().replaceAll(sourceReportName, sheetName);
           }
         }
         _rows.add(row);
       }
     }
+    debugPrint("ExtractorReport: Prepared ${_rows.length} rows for summary.");
   }
 
   dynamic _unwrapCellValue(dynamic cellValue) {
@@ -391,7 +436,14 @@ class ExtractorReport extends Extractor {
     if (cellValue is DoubleCellValue) return cellValue.value;
     if (cellValue is IntCellValue) return cellValue.value;
     if (cellValue is FormulaCellValue) return cellValue.formula;
-    return cellValue.toString();
+    if (cellValue is BoolCellValue) return cellValue.value;
+    if (cellValue is DateCellValue) return cellValue.toString();
+    // Generic fallback for any other CellValue types
+    try {
+      return (cellValue as dynamic).value;
+    } catch (e) {
+      return cellValue.toString();
+    }
   }
 }
 
@@ -424,13 +476,14 @@ class ExtractorIntf {
     }
   }
 
-  Future<Map<String, dynamic>> generate() async {
+  Future<Map<String, dynamic>> generate({DateTime? timestamp}) async {
     await reinit(true);
     final pred = extractor?.predicates[0];
     return await extractor!.applyPredicate(
       pred, 
       data: DateTime.now(), 
-      getFileName: pIntf['getFileName']
+      getFileName: pIntf['getFileName'],
+      timestamp: timestamp
     );
   }
 

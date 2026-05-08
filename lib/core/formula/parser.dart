@@ -70,7 +70,7 @@ class Parser {
 
   Expression _primary() {
     if (_match([TokenType.number])) {
-      return LiteralExpression(double.parse(_previous().value));
+      return LiteralExpression(double.tryParse(_previous().value) ?? 0.0);
     }
 
     if (_match([TokenType.string])) {

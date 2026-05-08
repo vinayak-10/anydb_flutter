@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import '../core/formula_engine.dart';
 import '../services/collection_service.dart';
@@ -1087,7 +1088,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         date: widget.selectedRange ?? widget.selectedDate,
       );
 
-      final dataPart = result['data'] as Map<String, dynamic>;
+      final dataPart = Map<String, dynamic>.from(result['data'] as Map);
       final records = dataPart['data'] as List<dynamic>;
 
       if (records.isEmpty) {
@@ -1296,14 +1297,105 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   }
 }
 
-class _AggregatorViewState extends State<_AggregatorView> {
+class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   DateTime _selectedDate = DateTime.now();
   DateTimeRange? _selectedRange;
+  Map<String, dynamic>? _reportData;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        if (_reportData != null)
+           Expanded(
+             child: Padding(
+               padding: const EdgeInsets.all(16.0),
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_reportData!['name'] ?? "Report", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.indigo)),
+                        Row(
+                          children: [
+                            if (_reportData!['path'] != null)
+                              IconButton(
+                                icon: const Icon(Icons.share, color: Colors.indigo),
+                                onPressed: () {
+                                   _showShareDialog(context, _reportData!['path'], ref);
+                                },
+                                tooltip: "Share",
+                              ),
+                            if (_reportData!['path'] != null)
+                              IconButton(
+                                icon: const Icon(Icons.open_in_new, color: Colors.indigo),
+                                onPressed: () => widget.agg.openReport(_reportData!['path']),
+                                tooltip: "Open",
+                              ),
+                            IconButton(onPressed: () => setState(() => _reportData = null), icon: const Icon(Icons.close)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.vertical,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
+                            columns: [
+                              const DataColumn(label: Text("S.no.", style: TextStyle(fontWeight: FontWeight.bold))),
+                              ...(((_reportData!['data'] ?? []) as List).isNotEmpty 
+                                  ? ((_reportData!['data'] as List)[0] as Map).keys.toList() 
+                                  : ["No Data"]).map((k) => DataColumn(label: Text(k.toString(), style: const TextStyle(fontWeight: FontWeight.bold)))),
+                            ],
+                            rows: ((_reportData!['data'] ?? []) as List).asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final map = entry.value as Map;
+                              return DataRow(cells: [
+                                DataCell(Text((idx + 1).toString())),
+                                ...map.values.map((v) => DataCell(Text(v.toString()))),
+                              ]);
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("REPORT SUMMARY", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
+                          const Divider(),
+                          if (_reportData!['summary'] is Map)
+                            Wrap(
+                              spacing: 20,
+                              runSpacing: 10,
+                              children: (_reportData!['summary'] as Map).entries.map((e) => Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(e.key.toString(), style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                                  Text(e.value.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                ],
+                              )).toList(),
+                            )
+                          else
+                            Text(_reportData!['summary']?.toString() ?? "No Summary Available"),
+                        ],
+                      ),
+                    ),
+                 ],
+               ),
+             ),
+           )
+        else
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -1403,9 +1495,17 @@ class _AggregatorViewState extends State<_AggregatorView> {
                               content: Text("Monthly Report & All Daily Sheets generated successfully!"),
                               backgroundColor: Colors.green,
                             ));
-                            // Trigger refresh in UI by triggering current report generation logic
-                            setState(() {});
-                            await widget.agg.openReport(path);
+                            
+                            // Load the generated monthly data into UI
+                            final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
+                            final result = await widget.agg.generate(monthlyReport, date: _selectedDate);
+                            
+                            setState(() {
+                              _reportData = result['data']; // Use the inner data map
+                              _reportData!['path'] = path; // Save the path for sharing
+                            });
+                            
+                            // Removed: await widget.agg.openReport(path);
                           }
                         } catch (e) {
                           if (!mounted) return;
@@ -1455,15 +1555,64 @@ class _AggregatorViewState extends State<_AggregatorView> {
       ],
     );
   }
+
+  void _showShareDialog(BuildContext context, String filePath, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Export Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.indigo),
+              title: const Text("Share File"),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await Share.shareXFiles([XFile(filePath)], subject: 'Monthly Report');
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_upload, color: Colors.blue),
+              title: const Text("Upload to Google Drive"),
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                Navigator.pop(context);
+                final googleDriveService = ref.read(googleDriveServiceProvider);
+                try {
+                  await googleDriveService.uploadFile(
+                    filePath,
+                    p.basename(filePath),
+                    path: ['xyz.maya', 'anydb', widget.schemaTitle, 'Aggregators']
+                  );
+                  messenger.showSnackBar(const SnackBar(content: Text("Uploaded to Google Drive successfully")));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text("Upload failed: $e"), backgroundColor: Colors.red));
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _AggregatorView extends StatefulWidget {
+class _AggregatorView extends ConsumerStatefulWidget {
   final AggregatorService agg;
   final String schemaTitle;
   const _AggregatorView({required this.agg, required this.schemaTitle});
 
   @override
-  State<_AggregatorView> createState() => _AggregatorViewState();
+  ConsumerState<_AggregatorView> createState() => _AggregatorViewState();
 }
 
 class _RichHeader extends StatefulWidget {

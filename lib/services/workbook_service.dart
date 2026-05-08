@@ -11,10 +11,19 @@ import 'package:path/path.dart' as p;
 import 'io_helper.dart' as io;
 
 class WorkbookService {
+  static final WorkbookService _instance = WorkbookService._internal();
+  factory WorkbookService() => _instance;
+  WorkbookService._internal();
+
   final FileService _fileService = FileService();
   String? _lastReportPath;
   String? _lastAggregatorDir;
+  Excel? _cachedExcel; // Support caching during batch generation
   String? get lastReportPath => _lastReportPath;
+
+  void clearCache() {
+    _cachedExcel = null;
+  }
 
   Future<String> write(Map<String, dynamic> meta, Map<String, dynamic> data, {DateTime? timestamp}) async {
     final reportName = meta['aggregator'] ?? 'Report';
@@ -40,11 +49,15 @@ class WorkbookService {
     final String targetPath = p.isAbsolute(fullPath) ? fullPath : p.absolute(fullPath);
     
     Excel excel;
-    if (!kIsWeb && await io.fileExists(targetPath)) {
+    if (_cachedExcel != null) {
+      excel = _cachedExcel!;
+    } else if (!kIsWeb && await io.fileExists(targetPath)) {
       final bytes = await io.readBytes(targetPath);
       excel = Excel.decodeBytes(bytes!);
+      _cachedExcel = excel;
     } else {
       excel = Excel.createExcel();
+      _cachedExcel = excel;
     }
 
     final String entryName = meta['entry'] ?? 'Default';
@@ -55,11 +68,17 @@ class WorkbookService {
     final Sheet reportSheet = excel[sheetName];
     _prepareSheet(reportSheet, data, sheetName);
 
-    // If we have our target sheet and it's not 'Sheet1', delete 'Sheet1'
-    if (sheetName != 'Sheet1' && excel.sheets.containsKey('Sheet1')) {
-      // Only delete if there is at least one other sheet
-      if (excel.sheets.length > 1) {
-        excel.delete('Sheet1');
+    // Robust sheet cleanup: remove default sheets if they are not our target
+    final List<String> sheetsToDelete = [];
+    for (var sn in excel.sheets.keys) {
+      if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
+        sheetsToDelete.add(sn);
+      }
+    }
+    
+    if (sheetsToDelete.isNotEmpty && excel.sheets.length > sheetsToDelete.length) {
+      for (var sn in sheetsToDelete) {
+        excel.delete(sn);
       }
     }
 
@@ -89,6 +108,11 @@ class WorkbookService {
   }
 
   void _prepareSheet(Sheet ws, Map<String, dynamic> jo, String sheetName) {
+    // Set default column width for the first 30 columns to prevent '###'
+    for (int i = 0; i < 30; i++) {
+      ws.setColumnWidth(i, 20.0);
+    }
+
     int row = 0;
     const int gap = 1;
     const int col = 0;
@@ -111,55 +135,48 @@ class WorkbookService {
     }
 
     // 2.1 Add Summary / Formulas - Header
-    row += gap;
-    final Map<String, dynamic> summary = jo['summary'] ?? {};
+    // We force the summary row to match AnyDB schema expectations (Row 6 / A7)
+    // regardless of the number of header rows.
+    int targetSummaryHeaderRow = 5;
+    if (row < targetSummaryHeaderRow) {
+      row = targetSummaryHeaderRow;
+    } else {
+      row += gap;
+    }
+
+    final Map<String, dynamic> summary = Map<String, dynamic>.from(jo['summary'] ?? {});
     final List<String> summaryKeys = summary.keys.toList();
     for (int i = 0; i < summaryKeys.length; i++) {
       ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(summaryKeys[i].toUpperCase());
     }
     
-    // JS: row += gap (row is now 5 if there were 2 header rows)
-    row += gap; 
+    row += gap; // Summary Values row (should be 6)
     
     final List<dynamic> tableData = jo['data'] ?? [];
     final List<String> columnNames = tableData.isNotEmpty 
-        ? (tableData.first as Map<String, dynamic>).keys.toList() 
+        ? Map<String, dynamic>.from(tableData.first as Map).keys.toList() 
         : [];
     
-    // JS Logic for sr (start row):
-    // In RN, row was incremented manually. 
-    // row 0: Report Name
-    // row 1-2: Header (2 rows)
-    // row 3: Gap
-    // row 4: Summary Headers
-    // row 5: Summary Values (Formulas)
-    // row 6: Gap
-    // row 7: Gap
-    // row 8: Table Headers
-    // row 9: Data Start
-    
-    // In our _prepareSheet:
-    // row 0: Report Name (1 row)
-    // row 1-2: Header (len=2) -> row becomes 3
-    // row 4: Summary Headers (gap 1) -> row becomes 5
-    // row 5: Summary Values (Formulas) -> row stays 5
-    // row 7: Table Headers (gap 2) -> row becomes 8
-    // row 9: Data Start (row++) -> data starts at 9
-    
-    const int sr = 9; 
-    final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
-    debugPrint("WorkbookService: formula range sr=$sr, er=$er in sheet '$sheetName'");
-
     // 2.2 Add Summary / Formulas - Values
-    final Map<String, dynamic> formulasMap = jo['summaryFormulas'] ?? jo['summary'] ?? {};
+    final Map<String, dynamic> formulasMap = Map<String, dynamic>.from(jo['summaryFormulas'] ?? jo['summary'] ?? {});
     final List<dynamic> formulaValues = formulasMap.values.toList();
     
     // Convert tableData to the format FormulaEngine expects
     final List<Map<String, dynamic>> records = tableData.map((r) => Map<String, dynamic>.from(r as Map)).toList();
 
+    final int summaryValRow = row;
+    debugPrint("WorkbookService: Summary Values at Row $summaryValRow (A${summaryValRow + 1})");
+    final int tableHeaderRow = summaryValRow + gap + gap;
+    final int dataStartRow = tableHeaderRow + 1;
+    
+    // Excel is 1-indexed.
+    final int sr = dataStartRow + 1; 
+    final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
+    debugPrint("WorkbookService: formula range sr=$sr, er=$er in sheet '$sheetName'");
+
     for (int i = 0; i < formulaValues.length; i++) {
       final vs = _unwrap(formulaValues[i]).toString();
-      final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
+      final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: summaryValRow));
       
       // 1. Calculate the static value using our high-precision AST engine
       final dynamic calculatedValue = FormulaEngine.evaluate(vs, records, columnNames);
@@ -174,14 +191,18 @@ class WorkbookService {
       // 3. Write HYBRID cell: Formula for live updates, Static Value for immediate accuracy
       cell.setFormula(formulaStr);
       if (calculatedValue is num) {
-        cell.value = DoubleCellValue(calculatedValue.toDouble());
+        if (calculatedValue % 1 == 0) {
+          cell.value = IntCellValue(calculatedValue.toInt());
+        } else {
+          cell.value = DoubleCellValue(calculatedValue.toDouble());
+        }
       } else {
         cell.value = TextCellValue(calculatedValue.toString());
       }
     }
 
     // 3. Add Table content
-    row += gap; row += gap;
+    row = tableHeaderRow;
     final Map<String, dynamic> source = jo['source'] ?? {};
     final sourceType = source['type'] ?? 'database';
 
@@ -214,6 +235,10 @@ class WorkbookService {
     final unwrapped = _unwrap(val);
     
     if (unwrapped is num) {
+      if (unwrapped.isNaN || unwrapped.isInfinite) {
+        cell.value = IntCellValue(0);
+        return;
+      }
       if (unwrapped % 1 == 0) {
         cell.value = IntCellValue(unwrapped.toInt());
       } else {
@@ -222,7 +247,9 @@ class WorkbookService {
     } else if (unwrapped is String) {
       final n = double.tryParse(unwrapped.replaceAll(',', ''));
       if (n != null) {
-        if (n % 1 == 0) {
+        if (n.isNaN || n.isInfinite) {
+          cell.value = IntCellValue(0);
+        } else if (n % 1 == 0) {
           cell.value = IntCellValue(n.toInt());
         } else {
           cell.value = DoubleCellValue(n);
@@ -284,10 +311,13 @@ class WorkbookService {
   Future<List<String>> getSheetNames(dynamic fileMeta, String type) async {
     try {
       String fileName = "";
+      String collection = "";
       if (fileMeta is Map) {
         fileName = fileMeta['fileName'] ?? fileMeta['collection'] ?? "";
+        collection = fileMeta['collection'] ?? "";
       } else {
         fileName = fileMeta.toString();
+        collection = fileName;
       }
 
       String targetPath = fileName;
@@ -297,9 +327,25 @@ class WorkbookService {
         targetPath = p.join(_lastAggregatorDir!, f);
       }
 
+      // If exact file doesn't exist, try to find the latest matching the collection
+      if (!await io.fileExists(targetPath) && collection.isNotEmpty && _lastAggregatorDir != null) {
+        final dir = io.listDir(_lastAggregatorDir!);
+        final sanitizedCollection = collection.replaceAll(' ', '_');
+        final matches = dir.where((e) {
+           final base = p.basename(e.path);
+           return (base.startsWith(collection) || base.startsWith(sanitizedCollection)) && base.endsWith('.xlsx');
+        }).toList();
+        
+        if (matches.isNotEmpty) {
+          matches.sort((a, b) => b.path.compareTo(a.path)); // Latest first
+          targetPath = matches.first.path;
+          debugPrint("WorkbookService: Discovered existing workbook for discovery at $targetPath");
+        }
+      }
+
       final bytes = await io.readBytes(targetPath);
       if (bytes == null) {
-        debugPrint("WorkbookService: Could not read workbook at $targetPath");
+        debugPrint("WorkbookService: Could not read workbook for discovery at $targetPath");
         return [];
       }
       final excel = Excel.decodeBytes(bytes);
@@ -311,8 +357,9 @@ class WorkbookService {
         // RN Logic: Check B1 (col 1, row 0) for the report type
         if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
           final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
-          final val = cell.value?.toString().trim();
-          if (val == type) {
+          final val = _unwrapValue(cell.value);
+          debugPrint("WorkbookService: Sheet '$table' B1='${val.toString().trim()}' (Target='$type')");
+          if (val.toString().trim().toLowerCase() == type.toLowerCase()) {
             matchedSheets.add(table);
           }
         }
@@ -324,13 +371,31 @@ class WorkbookService {
     }
   }
 
+  dynamic _unwrapValue(dynamic cellValue) {
+    if (cellValue == null) return "";
+    if (cellValue is TextCellValue) return cellValue.value.toString();
+    if (cellValue is DoubleCellValue) return cellValue.value;
+    if (cellValue is IntCellValue) return cellValue.value;
+    if (cellValue is FormulaCellValue) return cellValue.formula;
+    if (cellValue is BoolCellValue) return cellValue.value;
+    if (cellValue is DateCellValue) return cellValue.toString();
+    try {
+      return (cellValue as dynamic).value;
+    } catch (e) {
+      return cellValue.toString();
+    }
+  }
+
   Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName) async {
     try {
       String fileName = "";
+      String collection = "";
       if (fileMeta is Map) {
         fileName = fileMeta['fileName'] ?? fileMeta['collection'] ?? "";
+        collection = fileMeta['collection'] ?? "";
       } else {
         fileName = fileMeta.toString();
+        collection = fileName;
       }
 
       String targetPath = fileName;
@@ -338,6 +403,22 @@ class WorkbookService {
         String f = fileName;
         if (!f.endsWith('.xlsx')) f += '.xlsx';
         targetPath = p.join(_lastAggregatorDir!, f);
+      }
+
+      // If exact file doesn't exist, try to find the latest matching the collection
+      if (!await io.fileExists(targetPath) && collection.isNotEmpty && _lastAggregatorDir != null) {
+        final dir = io.listDir(_lastAggregatorDir!);
+        final sanitizedCollection = collection.replaceAll(' ', '_');
+        final matches = dir.where((e) {
+           final base = p.basename(e.path);
+           return (base.startsWith(collection) || base.startsWith(sanitizedCollection)) && base.endsWith('.xlsx');
+        }).toList();
+
+        if (matches.isNotEmpty) {
+          matches.sort((a, b) => b.path.compareTo(a.path)); // Latest first
+          targetPath = matches.first.path;
+          debugPrint("WorkbookService: Discovered existing workbook for read at $targetPath");
+        }
       }
 
       final bytes = await io.readBytes(targetPath);

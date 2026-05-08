@@ -185,7 +185,9 @@ class SimpleAccount extends GenInterface {
     final String notifierId = notifier.getId();
 
     for (var idx in observerIndexes) {
-      final c = cs.getComponentAtIndex(idx is int ? idx : int.parse(idx.toString()));
+      final parsedIdx = idx is int ? idx : int.tryParse(idx.toString());
+      if (parsedIdx == null) continue;
+      final c = cs.getComponentAtIndex(parsedIdx);
       if (c == null) continue;
 
       final targetId = c.getId();
