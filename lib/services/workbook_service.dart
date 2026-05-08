@@ -312,24 +312,32 @@ class WorkbookService {
     try {
       String fileName = "";
       String collection = "";
+      String aggregator = "";
       if (fileMeta is Map) {
         fileName = fileMeta['fileName'] ?? fileMeta['collection'] ?? "";
         collection = fileMeta['collection'] ?? "";
+        aggregator = fileMeta['aggregator'] ?? "";
       } else {
         fileName = fileMeta.toString();
         collection = fileName;
       }
 
+      String? currentDir = _lastAggregatorDir;
+      if (currentDir == null && aggregator.isNotEmpty) {
+        currentDir = await _fileService.getAggregatorPath(aggregator, external: true);
+        _lastAggregatorDir = currentDir;
+      }
+
       String targetPath = fileName;
-      if (!p.isAbsolute(fileName) && _lastAggregatorDir != null) {
+      if (!p.isAbsolute(fileName) && currentDir != null) {
         String f = fileName;
         if (!f.endsWith('.xlsx')) f += '.xlsx';
-        targetPath = p.join(_lastAggregatorDir!, f);
+        targetPath = p.join(currentDir, f);
       }
 
       // If exact file doesn't exist, try to find the latest matching the collection
-      if (!await io.fileExists(targetPath) && collection.isNotEmpty && _lastAggregatorDir != null) {
-        final dir = io.listDir(_lastAggregatorDir!);
+      if (!await io.fileExists(targetPath) && collection.isNotEmpty && currentDir != null) {
+        final dir = io.listDir(currentDir);
         final sanitizedCollection = collection.replaceAll(' ', '_');
         final matches = dir.where((e) {
            final base = p.basename(e.path);
@@ -390,24 +398,32 @@ class WorkbookService {
     try {
       String fileName = "";
       String collection = "";
+      String aggregator = "";
       if (fileMeta is Map) {
         fileName = fileMeta['fileName'] ?? fileMeta['collection'] ?? "";
         collection = fileMeta['collection'] ?? "";
+        aggregator = fileMeta['aggregator'] ?? "";
       } else {
         fileName = fileMeta.toString();
         collection = fileName;
       }
 
+      String? currentDir = _lastAggregatorDir;
+      if (currentDir == null && aggregator.isNotEmpty) {
+        currentDir = await _fileService.getAggregatorPath(aggregator, external: true);
+        _lastAggregatorDir = currentDir;
+      }
+
       String targetPath = fileName;
-      if (!p.isAbsolute(fileName) && _lastAggregatorDir != null) {
+      if (!p.isAbsolute(fileName) && currentDir != null) {
         String f = fileName;
         if (!f.endsWith('.xlsx')) f += '.xlsx';
-        targetPath = p.join(_lastAggregatorDir!, f);
+        targetPath = p.join(currentDir, f);
       }
 
       // If exact file doesn't exist, try to find the latest matching the collection
-      if (!await io.fileExists(targetPath) && collection.isNotEmpty && _lastAggregatorDir != null) {
-        final dir = io.listDir(_lastAggregatorDir!);
+      if (!await io.fileExists(targetPath) && collection.isNotEmpty && currentDir != null) {
+        final dir = io.listDir(currentDir);
         final sanitizedCollection = collection.replaceAll(' ', '_');
         final matches = dir.where((e) {
            final base = p.basename(e.path);

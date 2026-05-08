@@ -248,7 +248,7 @@ class AggregatorService {
     return result['path'];
   }
 
-  Future<String> generateMonthlyBatch(DateTime monthDate) async {
+  Future<String> generateMonthlyBatch(DateTime monthDate, {bool force = false}) async {
     try {
       workbook.clearCache();
       // 1. Identify reports
@@ -290,8 +290,14 @@ class AggregatorService {
 
       if (aggregatorDir.isNotEmpty) {
          final fullPath = p.join(aggregatorDir, initialMeta['fileName']);
-         await io.deleteFile(fullPath);
+         if (force) {
+           await io.deleteFile(fullPath);
+         }
       }
+
+      // Pre-check existing sheets in the workbook to avoid redundant generation
+      final existingSheets = await workbook.getSheetNames(initialMeta, dailyReport.extractor[0].extractor?.source['name'] ?? "Daily");
+      debugPrint("AggregatorService: Found ${existingSheets.length} existing daily sheets in workbook.");
 
       // A. Generate an initial EMPTY Monthly Summary to reserve the first sheet position
       // Use an empty data set to avoid NaN errors before daily sheets are available
@@ -306,15 +312,24 @@ class AggregatorService {
 
       final placeholderMeta = getFileName({
         "collection": key,
-        "entry": DateFormat('MMM yyyy').format(monthDate),
+        "entry": DateFormat('MMM_yyyy').format(monthDate),
         "predicate": {"value": monthDate}
       }, timestamp: batchTimestamp);
 
       await workbook.write(placeholderMeta, initialSummaryData, timestamp: batchTimestamp);
+
       // B. Loop through each day and generate Daily reports
       // 3. Loop through each day
       for (int d = 1; d <= daysInMonth; d++) {
         final date = DateTime(year, month, d);
+        final String daySheetName = DateFormat('d_MMM yyyy').format(date);
+        
+        if (!force && existingSheets.contains(daySheetName)) {
+           debugPrint("AggregatorService: Skipping day $d, sheet '$daySheetName' already exists.");
+           generatedDays++; // Still count it for summary finalization
+           continue;
+        }
+
         debugPrint("AggregatorService: Processing day $d ($date)...");
         try {
           final dailyData = await dailyReport.extractor[0].extractor!.applyPredicate(
