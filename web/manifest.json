@@ -1,6 +1,6 @@
 {
-    "name": "anydb_flutter",
-    "short_name": "anydb_flutter",
+    "name": "anydb",
+    "short_name": "anydb",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

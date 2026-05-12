@@ -1,4 +1,4 @@
-# anydb_flutter
+# anydb
 
 A new Flutter project.
 
