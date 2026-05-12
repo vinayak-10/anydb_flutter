@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
 import 'element_db.dart';
 import '../core/value_extractor.dart';
 import 'storage_service.dart';

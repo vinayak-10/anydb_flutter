@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "59875824101",
+    "project_id": "loyal-flames-450705-u4",
+    "storage_bucket": "loyal-flames-450705-u4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:59875824101:android:5e19e1d40d304fdd4b1f0c",
+        "android_client_info": {
+          "package_name": "com.example.anydb_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDOKwwVFJX6R3fyPymHPFDPcio_EPax97g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

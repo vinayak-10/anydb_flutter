@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:excel/excel.dart';
 import 'storage_service.dart';
 import 'workbook_service.dart';
+import '../core/cell_helper.dart';
+import '../core/logger.dart';
 
 // Replicates Extractor class from extractor.js
 abstract class Extractor {
@@ -51,7 +53,7 @@ abstract class Extractor {
     return name;
   }
 
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp});
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp, bool force = false});
 }
 
 class ExtractorDatabase extends Extractor {
@@ -75,18 +77,17 @@ class ExtractorDatabase extends Extractor {
     _data.clear();
 
     final elements = await _storage.fetch();
-    debugPrint("ExtractorDatabase: Fetched ${elements.length} elements from storage.");
+    logger.log("ExtractorDatabase: Fetched ${elements.length} raw elements from storage.");
 
-    for (var element in elements) {
+    // IMPORTANT: Include Active, Archived, and Deleted for report (Matching RN historical data extraction)
+    // In ManyDB, we typically want ALL patient records ever created, regardless of current state.
+    final allElements = _segregate(elements, types: ["Active", "Archived", "Deleted"]);
+    logger.log("ExtractorDatabase: Segregated ${allElements.length} Total elements (Active/Archived/Deleted).");
+
+    for (var element in allElements) {
       if (element.isEmpty) continue;
       final recordValue = element.values.first;
       if (recordValue is! Map) continue;
-
-      // Check if record is deleted
-      final meta = recordValue['__meta__'];
-      final time = meta != null ? meta['time'] : null;
-      bool isDeleted = time != null && time.containsKey('d');
-      if (isDeleted) continue;
 
       List<Map<String, dynamic>> trows = [];
       _flatten(recordValue, 0, trows);
@@ -95,31 +96,49 @@ class ExtractorDatabase extends Extractor {
         final refrow = trows[0];
         final keys = refrow.keys.toList();
         for (var row in trows) {
-          Map<String, dynamic> sanitizedRow = Map<String, dynamic>.from(row);
-          for (var key in keys) {
-            if (!row.containsKey(key)) {
-              sanitizedRow[key] = refrow[key];
-            }
-          }
+          Map<String, dynamic> sanitizedRow = {};
+          // Fill from refrow (first row of this record) to ensure common fields are present
+          refrow.forEach((k, v) => sanitizedRow[k] = v);
+          // Overwrite with current row specific fields
+          row.forEach((k, v) => sanitizedRow[k] = v);
+          
           _data.add(sanitizedRow);
         }
       }
     }
     
-    debugPrint("ExtractorDatabase: Flattened into ${_data.length} total rows.");
-    
+    logger.log("ExtractorDatabase: Flattened into ${_data.length} total rows from ${allElements.length} records.");
+
     // Reset _rows and populate from filtered _data
     _rows.clear();
     _rows.addAll(_filter(_data, columns));
 
+    // SPECIAL CASE: For Daily Reports, we might only want rows that have a value for 'Date'
+    // after filtering, to avoid counting placeholder records in summary.
+    final List<Map<String, dynamic>> workingRows = [];
+    for (var r in _rows) {
+      final dateVal = r['Date'] ?? _findValueInsensitive(r, 'Date');
+      if (dateVal != null && dateVal.toString().isNotEmpty) {
+        workingRows.add(r);
+      }
+    }
+
+    if (workingRows.isNotEmpty && workingRows.length < _rows.length) {
+       logger.log("ExtractorDatabase: Refined rows to ${workingRows.length} (had date value).");
+       _rows.clear();
+       _rows.addAll(workingRows);
+    }
+
     // APPLY ALL SCHEMA PREDICATES SEQUENTIALLY (Match RN logic)
+
     for (var p in predicates) {
       if (p is Map) {
+        logger.log("ExtractorDatabase: Applying sequential predicate: ${p['operation']} (${p['name']})");
         await applyPredicate(Map<String, dynamic>.from(p));
       }
     }
     
-    debugPrint("ExtractorDatabase: Final population complete. Rows: ${_rows.length}");
+    logger.log("ExtractorDatabase: Final population complete. Filtered Rows: ${_rows.length}");
   }
 
   List<Map<String, dynamic>> _segregate(List<Map<String, dynamic>> records, {List<String> types = const ["Active"]}) {
@@ -169,12 +188,11 @@ class ExtractorDatabase extends Extractor {
           break;
         case "array":
           if (key.contains(':')) {
-             for (int vi = 0; vi < value.length; vi++) {
-               _flatten(value[vi], index + vi, keyValues);
-             }
+            for (int vi = 0; vi < value.length; vi++) {
+              _flatten(value[vi], index + vi, keyValues);
+            }
           } else {
-             // Corrected: Restore stable flattening - keep arrays as values
-             sv(keyValues, index, key, value);
+            sv(keyValues, index, key, value);
           }
           break;
         default:
@@ -212,7 +230,7 @@ class ExtractorDatabase extends Extractor {
   }
 
   @override
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp}) async {
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp, bool force = false}) async {
     final operation = pred['operation'];
     
     switch (operation) {
@@ -224,18 +242,17 @@ class ExtractorDatabase extends Extractor {
         }
         
         final DateTime d = data is DateTime ? data : (DateTime.tryParse(data.toString()) ?? DateTime.now());
-        
-        final predicated = _rows.where((row) {
-          final val = row[searchKey] ?? _findValueInsensitive(row, searchKey);
-          final rd = _parseDate(_unwrap(val));
-          return rd != null && rd.day == d.day && rd.month == d.month && rd.year == d.year;
-        }).toList();
-
-        debugPrint("ExtractorDatabase: Date filter ($searchKey) matched ${predicated.length} records.");
-
         // Force correct Daily sheet naming pattern: "1_Mar 2026"
         final String formattedDate = DateFormat('d_MMM yyyy').format(d);
         
+        final predicated = _rows.where((row) {
+          final val = row[searchKey] ?? _findValueInsensitive(row, searchKey);
+          final rd = _parseDate(CellHelper.unwrap(val));
+          return rd != null && rd.day == d.day && rd.month == d.month && rd.year == d.year;
+        }).toList();
+
+        logger.log("ExtractorDatabase: Date filter ($searchKey) matched ${predicated.length} records for $formattedDate.");
+
         // During report generation, we typically want to return the predicated subset
         // without permanently clearing _rows (which might be used for other things).
         // But for consistency with reinit(), we need a way to apply filters.
@@ -265,7 +282,7 @@ class ExtractorDatabase extends Extractor {
           final colKey = pred['column'].toString();
           for (var r in _rows) {
             final val = r[colKey] ?? _findValueInsensitive(r, colKey);
-            final dt = _parseDate(_unwrap(val));
+            final dt = _parseDate(CellHelper.unwrap(val));
             if (dt != null) r[colKey] = DateFormat('yyyy-MM-dd').format(dt);
           }
         }
@@ -275,8 +292,8 @@ class ExtractorDatabase extends Extractor {
         final colKey = pred['column']?.toString() ?? "";
         if (colKey.isNotEmpty) {
           _rows.sort((a, b) {
-            final valA = _unwrap(a[colKey] ?? _findValueInsensitive(a, colKey))?.toString() ?? "";
-            final valB = _unwrap(b[colKey] ?? _findValueInsensitive(b, colKey))?.toString() ?? "";
+            final valA = CellHelper.unwrap(a[colKey] ?? _findValueInsensitive(a, colKey))?.toString() ?? "";
+            final valB = CellHelper.unwrap(b[colKey] ?? _findValueInsensitive(b, colKey))?.toString() ?? "";
             return valA.compareTo(valB);
           });
         }
@@ -314,11 +331,6 @@ class ExtractorDatabase extends Extractor {
     }
     return null;
   }
-  
-  dynamic _unwrap(dynamic val) {
-    if (val is List && val.isNotEmpty) return _unwrap(val.first);
-    return val;
-  }
 }
 
 class ExtractorReport extends Extractor {
@@ -326,21 +338,21 @@ class ExtractorReport extends Extractor {
   final WorkbookService _workbookService = WorkbookService();
 
   @override
-  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp}) async {
+  Future<Map<String, dynamic>> applyPredicate(Map<String, dynamic> pred, {dynamic data, dynamic getFileName, DateTime? timestamp, bool force = false}) async {
     if (pred['operation'] == 'date') {
        if (data == null) return {};
        final DateTime date = data is DateTime ? data : (DateTime.tryParse(data.toString()) ?? DateTime.now());
-       
+
        final String formattedName = predicatedName(pred, date.toIso8601String());
 
-       // Fix: Pass the meta map AND timestamp, matching updated AggregatorService expectations
        final fileMeta = getFileName != null ? getFileName({
          "collection": source['name'] ?? "",
          "entry": formattedName,
          "predicate": {...pred, "value": date}
        }, timestamp: timestamp) : null;
 
-       await _prepare(pred, date, fileMeta);
+       await _prepare(pred, date, fileMeta, formattedName, timestamp: timestamp, force: force);
+
 
        return {
          "data": _rows,
@@ -355,20 +367,26 @@ class ExtractorReport extends Extractor {
     return {};
   }
 
-  Future<void> _prepare(Map<String, dynamic> pred, DateTime date, dynamic fileMeta) async {
+  Future<void> _prepare(Map<String, dynamic> pred, DateTime date, dynamic fileMeta, String targetSheetName, {DateTime? timestamp, bool force = false}) async {
     _rows.clear();
     if (fileMeta == null) return;
     
+    // During a batch, the collection might be the aggregator name, 
+    // while individual extractors might have their own source name.
+    // We try to find the workbook using both, but prioritizing the passed fileMeta.
+    
     final fileName = fileMeta['fileName'] ?? fileMeta['collection'];
     final sourceReportName = source['name'] ?? "";
-    debugPrint("ExtractorReport: Searching for source sheets '$sourceReportName' in file '$fileName'");
+    logger.log("ExtractorReport: Searching for source sheets '$sourceReportName' in file '$fileName' (timestamp: $timestamp)");
     
     final sheetNames = await _workbookService.getSheetNames(fileMeta, sourceReportName);
-    debugPrint("ExtractorReport: Found ${sheetNames.length} source sheets: $sheetNames");
+    logger.log("ExtractorReport: Found ${sheetNames.length} source sheets: $sheetNames");
     
     for (var sheetName in sheetNames) {
+      logger.log("ExtractorReport: Reading source sheet '$sheetName'...");
       final List<List<dynamic>> sheetData = await _workbookService.read(fileMeta, sheetName);
       if (sheetData.isNotEmpty) {
+        logger.log("ExtractorReport: Sheet '$sheetName' has ${sheetData.length} rows.");
         Map<String, dynamic> row = {};
         for (var col in columns) {
           if (col is Map) {
@@ -394,56 +412,43 @@ class ExtractorReport extends Extractor {
                 int rowIdx = rowNum - 1; // 0-indexed
                 
                 if (rowIdx < sheetData.length && colIdx < sheetData[rowIdx].length) {
-                  row[title] = _unwrapCellValue(sheetData[rowIdx][colIdx]);
+                  final val = CellHelper.unwrap(sheetData[rowIdx][colIdx]);
+                  row[title] = val;
+                  logger.log("ExtractorReport: Sheet '$sheetName' ($colAlpha$rowNum) -> $title = $val");
                 } else {
-                  debugPrint("ExtractorReport: Coordinate $colAlpha$rowNum out of bounds for sheet '$sheetName'");
+                  logger.log("ExtractorReport: Coordinate $colAlpha$rowNum out of bounds for sheet '$sheetName'");
                   row[title] = 0;
                 }
-              } else {
+                } else {
                 row[title] = 0;
-              }
-            } else {
-              // Fallback to title matching if no coordinate found
-              final headers = sheetData.length > 4 ? sheetData[4] : [];
-              final values = sheetData.length > 5 ? sheetData[5] : [];
-              
-              int foundIdx = -1;
-              for (int i = 0; i < headers.length; i++) {
-                final h = _unwrapCellValue(headers[i]).toString().trim().toLowerCase();
+                }
+                } else {
+                // Fallback to title matching if no coordinate found
+                final headers = sheetData.length > 5 ? sheetData[5] : [];
+                final values = sheetData.length > 6 ? sheetData[6] : [];
+
+                int foundIdx = -1;
+                for (int i = 0; i < headers.length; i++) {
+                final h = CellHelper.unwrap(headers[i]).toString().trim().toLowerCase();
                 if (h == title.toLowerCase() || h == "total $title".toLowerCase()) {
                   foundIdx = i;
                   break;
                 }
-              }
-              
-              if (foundIdx != -1 && foundIdx < values.length) {
-                row[title] = _unwrapCellValue(values[foundIdx]);
-              } else {
+                }
+
+                if (foundIdx != -1 && foundIdx < values.length) {
+                row[title] = CellHelper.unwrap(values[foundIdx]);
+                } else {
                 row[title] = formula.replaceAll(sourceReportName, sheetName);
-              }
-            }
+                }
+                }
+
           }
         }
         _rows.add(row);
       }
     }
     debugPrint("ExtractorReport: Prepared ${_rows.length} rows for summary.");
-  }
-
-  dynamic _unwrapCellValue(dynamic cellValue) {
-    if (cellValue == null) return 0;
-    if (cellValue is TextCellValue) return cellValue.value.toString();
-    if (cellValue is DoubleCellValue) return cellValue.value;
-    if (cellValue is IntCellValue) return cellValue.value;
-    if (cellValue is FormulaCellValue) return cellValue.formula;
-    if (cellValue is BoolCellValue) return cellValue.value;
-    if (cellValue is DateCellValue) return cellValue.toString();
-    // Generic fallback for any other CellValue types
-    try {
-      return (cellValue as dynamic).value;
-    } catch (e) {
-      return cellValue.toString();
-    }
   }
 }
 

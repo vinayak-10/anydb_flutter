@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'workbook_service.dart';
 import 'extractor_service.dart';
 import 'file_service.dart';
 import '../core/formula_engine.dart';
+import '../core/logger.dart';
 import 'package:path/path.dart' as p;
 import 'io_helper.dart' as io;
 
@@ -27,8 +29,8 @@ class AggregatorReport {
     for (var row in rowList) {
       final ext = ExtractorIntf();
       ext.init(Map<String, dynamic>.from(row), {
-        'generate': (pd, {DateTime? timestamp}) => pIntf['generate'](generateReport(pd), timestamp: timestamp),
-        'getFileName': (j, {DateTime? timestamp}) => pIntf['getFileName'](generateMeta(j), timestamp: timestamp)
+        'generate': (pd, {DateTime? timestamp}) => pIntf['generate'](pd, timestamp: timestamp),
+        'getFileName': (j, {DateTime? timestamp}) => pIntf['getFileName'](j, timestamp: timestamp)
       });
       extractor.add(ext);
     }
@@ -46,26 +48,23 @@ class AggregatorReport {
   }
 
   Map<String, dynamic> _prepareSummary(dynamic jos) {
-    final Map<String, dynamic> summary = {};
+    final Map<String, dynamic> summaryMap = {};
     if (jos is List) {
       for (var s in jos) {
         if (s is Map) {
-          summary[s['title']] = s['formula'];
+          summaryMap[s['title']] = s['formula'];
         }
       }
     }
-    return summary;
+    return summaryMap;
   }
 
   Map<String, dynamic> applyMeta(Map<String, dynamic> meta) {
     Map<String, dynamic> nmeta = Map<String, dynamic>.from(meta);
     
-    // JS Logic: Filenames are typically aggregator-scoped.
-    // We force the collection name to be consistent for all sheets in a month.
     String formattedName = "";
     dynamic dateVal = nmeta['predicate']?['value'];
     if (dateVal == null && nmeta['entry'] != null) {
-       // Try parsing from entry if predicate value is missing
        dateVal = DateTime.tryParse(nmeta['entry']);
     }
 
@@ -84,7 +83,7 @@ class AggregatorReport {
   Future<Map<String, dynamic>> generate({DateTime? timestamp}) async {
     try {
       final s = await extractor[0].generate(timestamp: timestamp);
-      return generateReport(s);
+      return pIntf['generate'](s, timestamp: timestamp);
     } catch (e) {
       rethrow;
     }
@@ -96,14 +95,14 @@ class AggregatorReport {
         return {
           "collection": j['collection']?.toString() ?? key,
           "entry": j['entry']?.toString() ?? 'Default',
-          "predicate": j['predicate']
+          "predicate": j['predicate'] ?? {}
         };
       }
-      final extra = j['extra'] as Map?;
+      final extra = j['extra'] as Map? ?? {};
       return {
         "collection": key,
-        "entry": extra?['name']?.toString() ?? extra?['entry']?.toString() ?? 'Default',
-        "predicate": extra?['predicate']
+        "entry": extra['name']?.toString() ?? extra['entry']?.toString() ?? 'Default',
+        "predicate": extra['predicate'] ?? {}
       };
     } catch (e) {
       debugPrint("AggregatorService: generateMeta Error: $e");
@@ -113,31 +112,13 @@ class AggregatorReport {
 
   Map<String, dynamic> generateData(Map<String, dynamic> j) {
     final List<dynamic> rawRecords = j['data'] ?? [];
+    logger.log("AggregatorReport: Generating data for $key. Records: ${rawRecords.length}");
+
     final List<Map<String, dynamic>> records = rawRecords.map((r) {
       try {
-        final Map<String, dynamic> record = Map<String, dynamic>.from(r as Map);
-        return record.map((k, v) {
-          final unwrapped = _unwrap(v);
-          if (unwrapped is String) {
-            final clean = unwrapped.replaceAll(',', '').trim();
-            if (clean.isNotEmpty) {
-              try {
-                final n = double.tryParse(clean);
-                if (n != null) {
-                  if (n.isNaN || n.isInfinite) return MapEntry(k, 0);
-                  if (n % 1 == 0) return MapEntry(k, n.toInt());
-                  return MapEntry(k, n);
-                }
-              } catch (e) {
-
-                debugPrint("AggregatorService: Error parsing record value '$unwrapped' for key '$k': $e");
-              }
-            }
-          }
-          return MapEntry(k, unwrapped);
-        });
+        return Map<String, dynamic>.from(r as Map);
       } catch (e) {
-        debugPrint("AggregatorService: Failed to process record: $e");
+        logger.log("AggregatorReport: Failed to process record: $e");
         return <String, dynamic>{};
       }
     }).toList();
@@ -146,29 +127,24 @@ class AggregatorReport {
     final List<String> dataHeaders = records.isNotEmpty ? records[0].keys.toList() : [];
 
     summary.forEach((title, formula) {
-      calculatedSummary[title] = FormulaEngine.evaluate(formula.toString(), records, dataHeaders);
+      final val = FormulaEngine.evaluate(formula.toString(), records, dataHeaders);
+      calculatedSummary[title] = val;
+      logger.log("AggregatorReport: Summary '$title' = $val (Formula: $formula)");
     });
 
     return {
+      "meta": generateMeta(j),
       "name": key,
-      "source": j['extra']['source'],
-      "header": [...header, ...j['extra']['header']],
+      "source": j['extra']?['source'] ?? (extractor.isNotEmpty ? extractor[0].extractor?.source : {}),
+      "header": [...header, ...(j['extra']?['header'] ?? [])],
       "data": records,
       "summary": calculatedSummary,
-      "summaryFormulas": summary, // Keep original formulas for Workbook
+      "summaryFormulas": summary,
     };
-  }
-
-  dynamic _unwrap(dynamic val) {
-    if (val is List && val.isNotEmpty) return _unwrap(val.first);
-    return val;
   }
 
   Map<String, dynamic> generateReport(Map<String, dynamic> j) {
-    return {
-      "meta": generateMeta(j),
-      "data": generateData(j)
-    };
+    return generateData(j);
   }
 
   List<String> getColumns() {
@@ -178,17 +154,19 @@ class AggregatorReport {
     final cols = firstExt.extractor?.columns ?? [];
     return cols.map((c) => c is Map ? c['title'].toString() : c.toString()).toList();
   }
+
 }
 
 class AggregatorService {
   late String key;
   final List<AggregatorReport> reports = [];
-  final WorkbookService workbook = WorkbookService();
+  final workbook = WorkbookService();
   final FileService _fileService = FileService();
   late Map<String, dynamic> share;
   String? reportPath;
 
   String? get lastReportPath => workbook.lastReportPath;
+
 
   void init(dynamic jo) {
     if (jo == null) return;
@@ -211,7 +189,6 @@ class AggregatorService {
         }
       }
     } else if (jo is List) {
-      // If it's a list, treat it as a collection of reports without a top-level name
       key = "Aggregator";
       share = {};
       reports.clear();
@@ -228,18 +205,41 @@ class AggregatorService {
     }
   }
 
-  Future<Map<String, dynamic>> generate(AggregatorReport report, {dynamic date, DateTime? timestamp}) async {
-    // In RN, date selection is handled inside AggregatorReportDisplay via extractor.display
-    // Here we bridge it by allowing an optional date override.
-    await report.extractor[0].reinit(true); // Ensure data is populated
+  Future<Map<String, dynamic>> generate(AggregatorReport report, {dynamic date, DateTime? timestamp, bool force = false}) async {
+    final DateTime targetDate = date is DateTime ? date : (date is DateTimeRange ? date.start : DateTime.now());
+    logger.log("AggregatorService: Generating report '${report.key}' for date ${targetDate.toIso8601String()}");
+
+    final meta = getFileName({
+      "predicate": {"value": targetDate}
+    }, timestamp: timestamp);
     
+    final entryName = report.extractor[0].predicatedName(report.extractor[0].extractor?.predicates[0] ?? {}, targetDate.toIso8601String());
+    final sheetName = _fileService.sanitizeName(entryName);
+
+    // FIX: For monthly reports, ensure the sheet name is 'MMM_yyyy' (e.g., Feb_2026)
+    // while daily reports keep their 'd_MMM yyyy' pattern.
+    String finalSheetName = sheetName;
+    if (report.key.toLowerCase().contains('monthly')) {
+      finalSheetName = DateFormat('MMM_yyyy').format(targetDate);
+    }
+
+    logger.log("AggregatorService: Target Sheet Name: $finalSheetName (Original: $sheetName)");
+    
+    logger.log("AggregatorService: Fetching data from source (force: $force)...");
+    await report.extractor[0].reinit(true);
     final s = await report.extractor[0].extractor!.applyPredicate(
       report.extractor[0].extractor!.predicates[0], 
-      data: date ?? DateTime.now(),
+      data: targetDate,
       getFileName: (meta, {DateTime? timestamp}) => getFileName(meta, timestamp: timestamp),
-      timestamp: timestamp
+      timestamp: timestamp,
+      force: force
     );
-    return report.generateReport(s);
+    
+    // Inject the corrected sheetName for workbook writing
+    s['extra'] ??= {};
+    s['extra']['name'] = finalSheetName;
+
+    return report.generateData(s);
   }
 
   Future<String> generateWorkbook(AggregatorReport report, {dynamic date, DateTime? timestamp}) async {
@@ -251,7 +251,9 @@ class AggregatorService {
   Future<String> generateMonthlyBatch(DateTime monthDate, {bool force = false}) async {
     try {
       workbook.clearCache();
-      // 1. Identify reports
+      final monthStr = DateFormat('MMM yyyy').format(monthDate);
+      logger.log("AggregatorService: Starting monthly batch for $monthStr (force: $force)");
+      
       AggregatorReport? dailyReport;
       AggregatorReport? monthlyReport;
 
@@ -267,7 +269,6 @@ class AggregatorService {
         throw "Batch generation requires both a Database (Daily) and a Report (Monthly) definition.";
       }
 
-      // 2. Fetch data once for efficiency
       await dailyReport.extractor[0].reinit(true);
 
       final year = monthDate.year;
@@ -276,11 +277,8 @@ class AggregatorService {
 
       int generatedDays = 0;
       String lastPath = "";
-      
-      // IMPORTANT: Lock the timestamp for the entire batch to ensure all sheets go into the same file
       final DateTime batchTimestamp = DateTime.now();
       
-      // Ensure we start with a fresh file if one already exists for this month
       final initialMeta = getFileName({
         "predicate": {"value": monthDate}
       }, timestamp: batchTimestamp);
@@ -295,13 +293,11 @@ class AggregatorService {
          }
       }
 
-      // Pre-check existing sheets in the workbook to avoid redundant generation
-      final existingSheets = await workbook.getSheetNames(initialMeta, dailyReport.extractor[0].extractor?.source['name'] ?? "Daily");
-      debugPrint("AggregatorService: Found ${existingSheets.length} existing daily sheets in workbook.");
-
-      // A. Generate an initial EMPTY Monthly Summary to reserve the first sheet position
-      // Use an empty data set to avoid NaN errors before daily sheets are available
       final initialSummaryData = {
+        "meta": monthlyReport.generateMeta({
+          "predicate": {"value": monthDate},
+          "extra": {"name": DateFormat('MMM yyyy').format(monthDate)}
+        }),
         "name": monthlyReport.key,
         "source": monthlyReport.extractor[0].extractor?.source,
         "header": monthlyReport.header,
@@ -318,24 +314,15 @@ class AggregatorService {
 
       await workbook.write(placeholderMeta, initialSummaryData, timestamp: batchTimestamp);
 
-      // B. Loop through each day and generate Daily reports
-      // 3. Loop through each day
       for (int d = 1; d <= daysInMonth; d++) {
         final date = DateTime(year, month, d);
-        final String daySheetName = DateFormat('d_MMM yyyy').format(date);
-        
-        if (!force && existingSheets.contains(daySheetName)) {
-           debugPrint("AggregatorService: Skipping day $d, sheet '$daySheetName' already exists.");
-           generatedDays++; // Still count it for summary finalization
-           continue;
-        }
-
-        debugPrint("AggregatorService: Processing day $d ($date)...");
         try {
+          logger.log("AggregatorService: Processing day $d of $daysInMonth...");
           final dailyData = await dailyReport.extractor[0].extractor!.applyPredicate(
             dailyReport.extractor[0].extractor!.predicates[0],
             data: date,
             getFileName: (meta, {DateTime? timestamp}) => getFileName(meta, timestamp: timestamp ?? batchTimestamp),
+            force: force
           );
 
           if (dailyData['data'] != null && (dailyData['data'] as List).isNotEmpty) {
@@ -343,21 +330,19 @@ class AggregatorService {
             final result = await generateReport(reportData, timestamp: batchTimestamp);
             lastPath = result['path'];
             generatedDays++;
-            debugPrint("AggregatorService: Generated day $d. Success count: $generatedDays");
           }
         } catch (e, stack) {
           debugPrint("AggregatorService: Error processing day $d: $e");
           debugPrint("Stack Trace: $stack");
-          // Continue to next day
         }
       }
 
-      // C. Re-generate the Monthly Summary now that Daily sheets exist
       if (generatedDays > 0) {
-        debugPrint("AggregatorService: All dailies generated ($generatedDays days). Finalizing Monthly summary.");
-        final monthlyDataFull = await generate(monthlyReport, date: monthDate, timestamp: batchTimestamp);
+        logger.log("AggregatorService: Finished processing $generatedDays days. Generating final monthly summary...");
+        final monthlyDataFull = await generate(monthlyReport, date: monthDate, timestamp: batchTimestamp, force: true);
         final result = await generateReport(monthlyDataFull, timestamp: batchTimestamp);
         lastPath = result['path'];
+        logger.log("AggregatorService: Monthly batch complete. Path: $lastPath");
         workbook.clearCache();
         return lastPath;
       }
@@ -372,58 +357,40 @@ class AggregatorService {
   }
 
   Future<Map<String, dynamic>> generateReport(Map<String, dynamic> pd, {DateTime? timestamp}) async {
-    // JS Logic: always use the last report to apply meta for workbook write
     if (reports.isEmpty) throw "No reports defined in aggregator";
     final report = reports.last;
-    Map<String, dynamic> nmeta = report.applyMeta(pd['meta']);
+    final Map<String, dynamic> metaObj = (pd['meta'] as Map<String, dynamic>?) ?? {};
+    Map<String, dynamic> nmeta = report.applyMeta(metaObj);
     nmeta["aggregator"] = key;
     
     try {
-      final fp = await workbook.write(nmeta, pd['data'], timestamp: timestamp);
+      final fp = await workbook.write(nmeta, pd, timestamp: timestamp);
       reportPath = fp;
-      return {
-        "path": fp,
-        "data": pd // Pass the full data map from generateData
-      };
+      
+      final Map<String, dynamic> result = Map<String, dynamic>.from(pd);
+      result['path'] = fp;
+      return result;
     } catch (e) {
       rethrow;
     }
   }
 
   Map<String, dynamic> getFileName(Map<String, dynamic> meta, {DateTime? timestamp}) {
-    // JS Logic: always use the last report to apply meta for filenames
-    // This ensures that all sheets (Daily and Monthly) go into the same workbook file.
     if (reports.isEmpty) return {"aggregator": key, "collection": key};
     final report = reports.last;
     Map<String, dynamic> nmeta = report.applyMeta(meta);
     final String collection = nmeta['collection'] ?? key;
     
     String fileName = "";
-    if (timestamp != null) {
-      final datePattern = workbook.formatFilenameDate(timestamp);
-      fileName = "${_fileService.sanitizeName(collection)}_$datePattern.xlsx";
-    } else {
-      // Search for the most recent file matching this collection
-      fileName = _findLatestFile(collection);
-      if (fileName.isEmpty) {
-        // Fallback to current time if none found
-        final datePattern = workbook.formatFilenameDate(DateTime.now());
-        fileName = "${_fileService.sanitizeName(collection)}_$datePattern.xlsx";
-      }
-    }
+    final ts = timestamp ?? DateTime.now();
+    final datePattern = workbook.formatFilenameDate(ts);
+    fileName = "${_fileService.sanitizeName(collection)}_$datePattern.xlsx";
     
     return {
       "aggregator": key, 
       "collection": collection,
       "fileName": fileName
     };
-  }
-
-  String _findLatestFile(String collection) {
-    if (lastReportPath != null && lastReportPath!.contains(collection)) {
-      return p.basename(lastReportPath!);
-    }
-    return "";
   }
 
   Future<void> openReport([String? path]) => workbook.openReport(path);

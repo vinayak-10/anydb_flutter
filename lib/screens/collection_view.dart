@@ -24,17 +24,17 @@ import '../components/drawer_content.dart';
 import '../components/overlapping_screen.dart';
 import 'element_editor.dart';
 
-class CollectionView extends StatefulWidget {
+class CollectionView extends ConsumerStatefulWidget {
   final List<AppContent> contents;
   final String title;
 
   const CollectionView({super.key, required this.contents, required this.title});
 
   @override
-  State<CollectionView> createState() => _CollectionViewState();
+  ConsumerState<CollectionView> createState() => _CollectionViewState();
 }
 
-class _CollectionViewState extends State<CollectionView> with SingleTickerProviderStateMixin {
+class _CollectionViewState extends ConsumerState<CollectionView> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _currentTabIndex = 0;
   bool _isSearching = false;
@@ -102,8 +102,8 @@ class _CollectionViewState extends State<CollectionView> with SingleTickerProvid
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Confirm Done"),
-        content: const Text("This will trigger database closure actions (like auto-reports or backups). You can continue working after this."),
+        title: const Text("Finalize Day"),
+        content: const Text("This will export the database locally, backup to Google Drive, and generate your Daily and Monthly reports. Continue?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("PROCEED")),
@@ -112,11 +112,75 @@ class _CollectionViewState extends State<CollectionView> with SingleTickerProvid
     );
 
     if (confirmed == true) {
-      await db.close();
+      // Show loading indicator
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Database closure actions performed successfully"))
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(child: CircularProgressIndicator()),
         );
+      }
+
+      try {
+        // 1. Export database locally
+        await _exportDb(db);
+
+        // 2. Cloud Backup to Google Drive
+        try {
+          final data = await db.exportDb();
+          final jsonStr = jsonEncode(data);
+          final googleDriveService = ref.read(googleDriveServiceProvider);
+          
+          if (googleDriveService.isLoggedIn) {
+            await googleDriveService.uploadJson(
+              jsonStr, 
+              "${db.key}_backup_${DateTime.now().millisecondsSinceEpoch}.json",
+              path: ['xyz.maya', 'anydb', widget.title, 'Database']
+            );
+          } else {
+             throw "Not logged into Google Drive";
+          }
+        } catch (cloudErr) {
+          if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text("Cloud Backup Skip: $cloudErr"), backgroundColor: Colors.orange)
+             );
+          }
+        }
+
+        // 3. Generate Reports
+        final aggregatorContent = widget.contents.firstWhere((c) => c.type == ContentType.aggregator);
+        final agg = aggregatorContent.service as AggregatorService;
+        
+        // Daily Report (Current Day)
+        final dailyReport = agg.reports.firstWhere(
+          (r) => r.key.toLowerCase().contains("daily"), 
+          orElse: () => agg.reports.first
+        );
+        await agg.generateWorkbook(dailyReport, date: DateTime.now());
+        
+        // Monthly Report (Current Month till date)
+        final monthlyReport = agg.reports.firstWhere(
+          (r) => r.key.toLowerCase().contains("monthly"), 
+          orElse: () => agg.reports.last
+        );
+        await agg.generateWorkbook(monthlyReport, date: DateTime.now());
+
+        await db.close();
+        
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Database finalized and reports generated successfully!"), backgroundColor: Colors.green)
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Action Failed: $e"), backgroundColor: Colors.red)
+          );
+        }
       }
     }
   }
@@ -265,22 +329,26 @@ class _CollectionViewState extends State<CollectionView> with SingleTickerProvid
     }
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: _selectedKeys.isNotEmpty 
         ? AppBar(
-            backgroundColor: Colors.orange.shade100,
-            title: Text("Selected (${_selectedKeys.length})"),
+            backgroundColor: Colors.orange.shade50,
+            elevation: 0,
+            title: Text("Selected (${_selectedKeys.length})", style: const TextStyle(color: Colors.black87)),
             leading: IconButton(
-              icon: const Icon(Icons.close), 
+              icon: const Icon(Icons.close, color: Colors.black87), 
               onPressed: () => setState(() => _selectedKeys.clear())
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.delete), 
+                icon: const Icon(Icons.delete, color: Colors.red), 
                 onPressed: () => _handleBatchDelete()
               ),
             ],
           )
         : AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
             toolbarHeight: 110.0,
             centerTitle: false,
             leading: _isSearching 
@@ -455,10 +523,13 @@ class _CollectionViewState extends State<CollectionView> with SingleTickerProvid
         }).toList(),
       ),
       bottomNavigationBar: Container(
-        color: Theme.of(context).colorScheme.surface,
+        color: Colors.white,
         child: TabBar(
           controller: _tabController,
           isScrollable: widget.contents.length > 3,
+          labelColor: Colors.deepPurple,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Colors.deepPurple,
           tabs: widget.contents.map<Widget>((c) => Tab(
             text: c.name,
             icon: Icon(c.type == ContentType.database ? Icons.storage : Icons.assessment),
@@ -508,7 +579,7 @@ class _DatabaseViewState extends State<_DatabaseView> {
   }
 
   Future<void> _init({bool forced = false}) async {
-    await widget.db.initDb(forced: forced);
+    await widget.db.initDb(forced: forced, filter: [_currentFilter]);
     if (mounted) setState(() => _initialized = true);
   }
 
@@ -579,9 +650,11 @@ class _DatabaseViewState extends State<_DatabaseView> {
         .toList();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Column(
         children: [
-          Padding(
+          Container(
+            color: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -591,17 +664,29 @@ class _DatabaseViewState extends State<_DatabaseView> {
                   child: ChoiceChip(
                     label: Text(f, style: const TextStyle(fontSize: 12)),
                     selected: _currentFilter == f,
-                    onSelected: (selected) => setState(() => _currentFilter = f),
+                    backgroundColor: Colors.white,
+                    selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                    onSelected: (selected) {
+                      if (selected && _currentFilter != f) {
+                        setState(() {
+                          _currentFilter = f;
+                          _initialized = false;
+                        });
+                        _init(forced: true);
+                      }
+                    },
                   ),
                 )
               ).toList(),
             ),
           ),
+          const Divider(height: 1, color: Colors.black12),
           Expanded(
             child: ListView.separated(
               controller: _listScrollController,
               itemCount: filteredElements.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
               itemBuilder: (context, index) {
                 final element = filteredElements[index];
                 if (element.components.isNotEmpty && element.components.first is ListHeader) {
@@ -629,113 +714,98 @@ class _DatabaseViewState extends State<_DatabaseView> {
                   final isSelected = widget.selectedKeys.contains(element.key);
 
                   return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Card(
-                      elevation: isSelected ? 4 : 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        side: isSelected
-                          ? BorderSide(color: Colors.orange.shade700, width: 2.5)
-                          : const BorderSide(color: Colors.black12, width: 1),
-                      ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: widget.selectedKeys.isNotEmpty 
-                          ? () => widget.onToggleSelection(element.key)
-                          : () => _openEditor(element),
-                        onLongPress: () => widget.onToggleSelection(element.key),
-                        child: Padding(
-                          padding: const EdgeInsets.all(28.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (isSelected)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 12.0, top: 4.0),
-                                      child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 28),
+                    color: isSelected ? Colors.orange.shade50 : Colors.white,
+                    child: InkWell(
+                      onTap: widget.selectedKeys.isNotEmpty 
+                        ? () => widget.onToggleSelection(element.key)
+                        : () => _openEditor(element),
+                      onLongPress: () => widget.onToggleSelection(element.key),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (isSelected)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 12.0, top: 4.0),
+                                    child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 28),
+                                  ),
+                                Expanded(
+                                  child: DefaultTextStyle(
+                                    style: TextStyle(
+                                      fontSize: 22, 
+                                      fontWeight: FontWeight.w900, 
+                                      color: statusColor,
+                                      letterSpacing: -0.2
                                     ),
-                                  Expanded(
-                                    child: DefaultTextStyle(                                      style: TextStyle(
-                                        fontSize: 22, 
-                                        fontWeight: FontWeight.w900, 
-                                        color: statusColor,
-                                        letterSpacing: -0.2
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
                                     ),
                                   ),
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_horiz, size: 32),
-                                    onSelected: (val) => _handleCardAction(val, element),
-                                    itemBuilder: (context) => [
-                                      if (isArchived || isDeleted)
-                                        const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
-                                      if (!isArchived)
-                                        const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
-                                      if (!isDeleted)
-                                        const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
-                                      const PopupMenuDivider(),
-                                      const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 24),
-                              
-                              if (elementWidgets.isNotEmpty)
-                                DefaultTextStyle(
-                                  style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                  child: _buildGroupedSection(context, "PATIENT DETAILS", 
-                                    Wrap(spacing: 20, children: elementWidgets[0]),
-                                    color: Colors.white,
-                                    isOutlined: true,
-                                    headingColor: Colors.blueGrey.shade900
-                                  ),
                                 ),
-                              
-                              const SizedBox(height: 24),
-                              
-                              _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
-                                DefaultTextStyle(
-                                  style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
-                                      if (elementWidgets.length > 2) ...[
-                                        const Divider(height: 32, color: Colors.black12),
-                                        Wrap(spacing: 20, children: elementWidgets[2]),
-                                      ],
-                                    ],
-                                  ),
+                                PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_horiz, size: 32),
+                                  onSelected: (val) => _handleCardAction(val, element),
+                                  itemBuilder: (context) => [
+                                    if (isArchived || isDeleted)
+                                      const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
+                                    if (!isArchived)
+                                      const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
+                                    if (!isDeleted)
+                                      const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
+                                    const PopupMenuDivider(),
+                                    const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
+                                  ],
                                 ),
-                                color: Colors.orange.shade50,
-                                headingColor: Colors.deepOrange.shade800
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            if (elementWidgets.isNotEmpty)
+                              DefaultTextStyle(
+                                style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                child: _buildGroupedSection(context, "PATIENT DETAILS", 
+                                  Wrap(spacing: 20, children: elementWidgets[0]),
+                                  color: Colors.white,
+                                  isOutlined: true,
+                                  headingColor: Colors.blueGrey.shade900
+                                ),
                               ),
-                            ],
-                          ),
+                            
+                            const SizedBox(height: 16),
+                            
+                            _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
+                              DefaultTextStyle(
+                                style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
+                                    if (elementWidgets.length > 2) ...[
+                                      const Divider(height: 24, color: Colors.black12),
+                                      Wrap(spacing: 20, children: elementWidgets[2]),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              color: Colors.orange.shade50.withOpacity(0.5),
+                              headingColor: Colors.deepOrange.shade800
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   );
                 }
                 final isSelected = widget.selectedKeys.contains(element.key);
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: isSelected
-                    ? RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.orange.shade700, width: 2)
-                      )
-                    : null,
+                return Container(
+                  color: isSelected ? Colors.orange.shade50 : Colors.white,
                   child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     leading: isSelected ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
                     title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                     subtitle: Column(
@@ -816,7 +886,10 @@ class _ElementViewState extends State<ElementView> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
         title: titleWidget,
         actions: [
           IconButton(
@@ -830,18 +903,19 @@ class _ElementViewState extends State<ElementView> {
         ],
       ),
       body: ListView.builder(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
         itemCount: widget.element.components.length,
         itemBuilder: (context, index) {
           final c = widget.element.components[index];
           if (c.getType() == 'list-header') return const SizedBox.shrink();
 
           return Card(
-            margin: const EdgeInsets.symmetric(vertical: 8),
+            margin: const EdgeInsets.only(bottom: 4),
             elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Colors.black12),
+            color: Colors.white,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.zero,
+              side: BorderSide(color: Colors.black12),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -1080,16 +1154,17 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     }
   }
 
-  void _generate() async {
+  void _generate({bool force = false}) async {
     setState(() => _isGenerating = true);
     try {
       final result = await widget.agg.generate(
         widget.report,
         date: widget.selectedRange ?? widget.selectedDate,
+        force: force,
       );
 
-      final dataPart = Map<String, dynamic>.from(result['data'] as Map);
-      final records = dataPart['data'] as List<dynamic>;
+      // result is the standardized Map payload
+      final List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(result['data'] as List);
 
       if (records.isEmpty) {
         setState(() {
@@ -1168,7 +1243,17 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     if (c is int && c > 1000000000000) {
        return DateFormat.yMd().format(DateTime.fromMillisecondsSinceEpoch(c));
     }
-    return c.toString();
+    if (c is num) {
+      if (c % 1 == 0) return c.toInt().toString();
+      return c.toStringAsFixed(2);
+    }
+    final s = c.toString();
+    final n = double.tryParse(s.replaceAll(',', ''));
+    if (n != null) {
+      if (n % 1 == 0) return n.toInt().toString();
+      return n.toStringAsFixed(2);
+    }
+    return s;
   }
 
   Widget _buildSummaryFooter() {
@@ -1189,7 +1274,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.indigo.shade50,
+        color: Colors.white,
         border: Border(
           top: BorderSide(color: Colors.indigo.shade200, width: 1),
         ),
@@ -1202,12 +1287,6 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           final result = FormulaEngine.evaluate(e.value.toString(), dataRows, headers);
           debugPrint("UI: Summary Evaluation for '${e.key}': formula='${e.value}', result='$result'");
           
-          String display = result.toString();
-          if (result is num) {
-            // Format numbers with commas and no decimals (matching common financial reports)
-            display = NumberFormat("#,##,###").format(result);
-          }
-
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1222,7 +1301,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               ),
               const SizedBox(height: 4),
               SelectableText(
-                display, 
+                _formatValue(result), 
                 style: TextStyle(
                   color: Colors.indigo.shade700, 
                   fontSize: 18, 
@@ -1239,9 +1318,17 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
         title: Text("Report: ${widget.report.key}"),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.blue),
+            onPressed: _isGenerating ? null : () => _generate(force: true),
+            tooltip: "Recalculate from Database",
+          ),
           if (_aoa.isNotEmpty)
             TextButton.icon(
               icon: const Icon(Icons.open_in_new, color: Colors.blue),
@@ -1271,7 +1358,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            color: Colors.blueGrey.shade50,
+            color: Colors.white,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1286,6 +1373,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               ],
             ),
           ),
+          const Divider(height: 1, color: Colors.black12),
           Expanded(
             child: _isGenerating 
               ? const Center(child: CircularProgressIndicator())
@@ -1297,6 +1385,15 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   }
 }
 
+class _AggregatorView extends ConsumerStatefulWidget {
+  final AggregatorService agg;
+  final String schemaTitle;
+  const _AggregatorView({required this.agg, required this.schemaTitle});
+
+  @override
+  ConsumerState<_AggregatorView> createState() => _AggregatorViewState();
+}
+
 class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   DateTime _selectedDate = DateTime.now();
   DateTimeRange? _selectedRange;
@@ -1304,7 +1401,9 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Column(
       children: [
         if (_reportData != null)
            Expanded(
@@ -1345,7 +1444,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                         child: SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: DataTable(
-                            headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
+                            headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
                             columns: [
                               const DataColumn(label: Text("S.no.", style: TextStyle(fontWeight: FontWeight.bold))),
                               ...(((_reportData!['data'] ?? []) as List).isNotEmpty 
@@ -1357,7 +1456,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                               final map = entry.value as Map;
                               return DataRow(cells: [
                                 DataCell(Text((idx + 1).toString())),
-                                ...map.values.map((v) => DataCell(Text(v.toString()))),
+                                ...map.values.map((v) => DataCell(Text(_formatValue(v)))),
                               ]);
                             }).toList(),
                           ),
@@ -1382,7 +1481,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(e.key.toString(), style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                                  Text(e.value.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                  Text(_formatValue(e.value), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                                 ],
                               )).toList(),
                             )
@@ -1406,6 +1505,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                 const SizedBox(height: 16),
                 Card(
                   elevation: 0,
+                  color: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Colors.black12)),
                   child: Padding(
                     padding: const EdgeInsets.all(8.0),
@@ -1484,31 +1584,30 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                         );
 
                         try {
-                          final path = await widget.agg.generateMonthlyBatch(_selectedDate);
-                          if (!mounted) return;
-                          Navigator.pop(context); // Close loading dialog
+                          final path = await widget.agg.generateMonthlyBatch(_selectedDate, force: true);
+                          
+                          // Load the generated monthly data into UI
+                          final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
+                          final result = await widget.agg.generate(monthlyReport, date: _selectedDate, force: true);
+                          
+                          if (!context.mounted) return;
+                          setState(() {
+                            _reportData = result;
+                            _reportData!['path'] = path; // Save the path for sharing
+                          });
 
-                          if (path.contains("No data")) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(path)));
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text("Monthly Report & All Daily Sheets generated successfully!"),
-                              backgroundColor: Colors.green,
-                            ));
-                            
-                            // Load the generated monthly data into UI
-                            final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
-                            final result = await widget.agg.generate(monthlyReport, date: _selectedDate);
-                            
-                            setState(() {
-                              _reportData = result['data']; // Use the inner data map
-                              _reportData!['path'] = path; // Save the path for sharing
-                            });
-                            
-                            // Removed: await widget.agg.openReport(path);
-                          }
+                          // Ensure table is rendered before closing progress indicator
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                             if (context.mounted) {
+                                Navigator.pop(context); // Close loading dialog
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                  content: Text("Monthly Report & All Daily Sheets generated successfully!"),
+                                  backgroundColor: Colors.green,
+                                ));
+                             }
+                          });
                         } catch (e) {
-                          if (!mounted) return;
+                          if (!context.mounted) return;
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text("Batch Error: $e"),
@@ -1553,7 +1652,31 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
           ),
         ),
       ],
+    ),
     );
+  }
+
+  String _formatValue(dynamic c) {
+    if (c == null) return "";
+    if (c is List) {
+      if (c.isEmpty) return "";
+      return _formatValue(c.first);
+    }
+    if (c is DateTime) return DateFormat.yMd().format(c);
+    if (c is int && c > 1000000000000) {
+       return DateFormat.yMd().format(DateTime.fromMillisecondsSinceEpoch(c));
+    }
+    if (c is num) {
+      if (c % 1 == 0) return c.toInt().toString();
+      return c.toStringAsFixed(2);
+    }
+    final s = c.toString();
+    final n = double.tryParse(s.replaceAll(',', ''));
+    if (n != null) {
+      if (n % 1 == 0) return n.toInt().toString();
+      return n.toStringAsFixed(2);
+    }
+    return s;
   }
 
   void _showShareDialog(BuildContext context, String filePath, WidgetRef ref) {
@@ -1573,9 +1696,12 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
               onTap: () async {
                 Navigator.pop(context);
                 try {
-                  await Share.shareXFiles([XFile(filePath)], subject: 'Monthly Report');
+                  // Standard share dialog for all platforms
+                  // ignore: deprecated_member_use
+                  await Share.shareXFiles([XFile(filePath)], text: 'Monthly Report');
                 } catch (e) {
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
                 }
               },
             ),
@@ -1606,14 +1732,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   }
 }
 
-class _AggregatorView extends ConsumerStatefulWidget {
-  final AggregatorService agg;
-  final String schemaTitle;
-  const _AggregatorView({required this.agg, required this.schemaTitle});
 
-  @override
-  ConsumerState<_AggregatorView> createState() => _AggregatorViewState();
-}
 
 class _RichHeader extends StatefulWidget {
   final String title;

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'formula/lexer.dart';
 import 'formula/parser.dart';
 import 'formula/evaluator.dart';
+import 'logger.dart';
 
 class FormulaEngine {
   /// Evaluates a formula based on provided data rows using AST-based engine.
@@ -17,9 +18,11 @@ class FormulaEngine {
       final expression = parser.parse();
       final evaluator = Evaluator(data, headers);
       
-      return evaluator.evaluate(expression);
+      final result = evaluator.evaluate(expression);
+      logger.log("FormulaEngine: '$f' -> $result (Rows: ${data.length})");
+      return result;
     } catch (e) {
-      debugPrint("FormulaEngine Error: $e for formula '$formula'");
+      logger.log("FormulaEngine Error: $e for formula '$formula'");
       return "Error";
     }
   }

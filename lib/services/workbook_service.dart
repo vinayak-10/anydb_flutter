@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 import 'file_service.dart';
 import 'invoker_service.dart';
 import '../core/formula_engine.dart';
+import '../core/cell_helper.dart';
+import '../core/logger.dart';
 import 'package:path/path.dart' as p;
 import 'io_helper.dart' as io;
 
@@ -62,7 +64,7 @@ class WorkbookService {
 
     final String entryName = meta['entry'] ?? 'Default';
     final sheetName = _fileService.sanitizeName(entryName);
-    debugPrint("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
+    logger.log("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
     
     // In excel library, creating a sheet if it doesn't exist
     final Sheet reportSheet = excel[sheetName];
@@ -172,10 +174,10 @@ class WorkbookService {
     // Excel is 1-indexed.
     final int sr = dataStartRow + 1; 
     final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
-    debugPrint("WorkbookService: formula range sr=$sr, er=$er in sheet '$sheetName'");
+    logger.log("WorkbookService: Sheet '$sheetName' formula range sr=$sr, er=$er. Records: ${tableData.length}");
 
     for (int i = 0; i < formulaValues.length; i++) {
-      final vs = _unwrap(formulaValues[i]).toString();
+      final vs = CellHelper.unwrap(formulaValues[i]).toString();
       final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: summaryValRow));
       
       // 1. Calculate the static value using our high-precision AST engine
@@ -216,11 +218,18 @@ class WorkbookService {
        for (var rowData in tableData) {
          final Map<String, dynamic> rowMap = Map<String, dynamic>.from(rowData as Map);
          for (int i = 0; i < columnNames.length; i++) {
-           final val = _unwrap(rowMap[columnNames[i]]);
+           final val = CellHelper.unwrap(rowMap[columnNames[i]]);
            final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
            
-           if (sourceType == 'report' && val is String && val.startsWith('=')) {
-              cell.value = FormulaCellValue(val.startsWith('=') ? val.substring(1) : val);
+           // Check if it's a formula reference (starts with ! or contains ! and looks like a cell ref)
+           bool isFormula = val is String && (val.startsWith('=') || val.contains('!'));
+
+           if (sourceType == 'report' && isFormula) {
+              String formulaStr = val.toString();
+              if (formulaStr.startsWith('=')) {
+                formulaStr = formulaStr.substring(1);
+              }
+              cell.value = FormulaCellValue(formulaStr);
            } else {
               _setCellValue(ws, col + i, row, val);
            }
@@ -232,7 +241,7 @@ class WorkbookService {
 
   void _setCellValue(Sheet sheet, int c, int r, dynamic val) {
     final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
-    final unwrapped = _unwrap(val);
+    final unwrapped = CellHelper.unwrap(val);
     
     if (unwrapped is num) {
       if (unwrapped.isNaN || unwrapped.isInfinite) {
@@ -260,11 +269,6 @@ class WorkbookService {
     } else {
       cell.value = TextCellValue(unwrapped.toString());
     }
-  }
-
-  dynamic _unwrap(dynamic val) {
-    if (val is List && val.isNotEmpty) return _unwrap(val.first);
-    return val ?? "";
   }
 
   Future<void> openReport(String? path) async {
@@ -335,6 +339,12 @@ class WorkbookService {
         targetPath = p.join(currentDir, f);
       }
 
+      // Check Cache first
+      if (_cachedExcel != null && _lastReportPath == targetPath) {
+        debugPrint("WorkbookService: Using cached excel for getSheetNames: $targetPath");
+        return _getMatchedSheets(_cachedExcel!, type);
+      }
+
       // If exact file doesn't exist, try to find the latest matching the collection
       if (!await io.fileExists(targetPath) && collection.isNotEmpty && currentDir != null) {
         final dir = io.listDir(currentDir);
@@ -345,10 +355,20 @@ class WorkbookService {
         }).toList();
         
         if (matches.isNotEmpty) {
-          matches.sort((a, b) => b.path.compareTo(a.path)); // Latest first
+          // FIX: Sort by modification time to ensure we pick the truly 'latest' file
+          matches.sort((a, b) {
+            final statA = io.getFileStatSync(a.path);
+            final statB = io.getFileStatSync(b.path);
+            return statB.modified.compareTo(statA.modified);
+          });
           targetPath = matches.first.path;
           debugPrint("WorkbookService: Discovered existing workbook for discovery at $targetPath");
         }
+      }
+
+      // Check Cache again after potential discovery
+      if (_cachedExcel != null && _lastReportPath == targetPath) {
+        return _getMatchedSheets(_cachedExcel!, type);
       }
 
       final bytes = await io.readBytes(targetPath);
@@ -357,41 +377,29 @@ class WorkbookService {
         return [];
       }
       final excel = Excel.decodeBytes(bytes);
-      List<String> matchedSheets = [];
-      for (var table in excel.tables.keys) {
-        final sheet = excel.tables[table];
-        if (sheet == null) continue;
-        
-        // RN Logic: Check B1 (col 1, row 0) for the report type
-        if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
-          final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
-          final val = _unwrapValue(cell.value);
-          debugPrint("WorkbookService: Sheet '$table' B1='${val.toString().trim()}' (Target='$type')");
-          if (val.toString().trim().toLowerCase() == type.toLowerCase()) {
-            matchedSheets.add(table);
-          }
-        }
-      }
-      return matchedSheets;
+      return _getMatchedSheets(excel, type);
     } catch (e) {
       debugPrint("WorkbookService: getSheetNames Error: $e");
       return [];
     }
   }
 
-  dynamic _unwrapValue(dynamic cellValue) {
-    if (cellValue == null) return "";
-    if (cellValue is TextCellValue) return cellValue.value.toString();
-    if (cellValue is DoubleCellValue) return cellValue.value;
-    if (cellValue is IntCellValue) return cellValue.value;
-    if (cellValue is FormulaCellValue) return cellValue.formula;
-    if (cellValue is BoolCellValue) return cellValue.value;
-    if (cellValue is DateCellValue) return cellValue.toString();
-    try {
-      return (cellValue as dynamic).value;
-    } catch (e) {
-      return cellValue.toString();
+  List<String> _getMatchedSheets(Excel excel, String type) {
+    List<String> matchedSheets = [];
+    for (var table in excel.tables.keys) {
+      final sheet = excel.tables[table];
+      if (sheet == null) continue;
+      
+      // RN Logic: Check B1 (col 1, row 0) for the report type
+      if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
+        final val = CellHelper.unwrap(cell.value);
+        if (val.toString().trim().toLowerCase() == type.toLowerCase()) {
+          matchedSheets.add(table);
+        }
+      }
     }
+    return matchedSheets;
   }
 
   Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName) async {
@@ -421,6 +429,15 @@ class WorkbookService {
         targetPath = p.join(currentDir, f);
       }
 
+      // Check Cache first
+      if (_cachedExcel != null && _lastReportPath == targetPath) {
+        debugPrint("WorkbookService: Using cached excel for read: $targetPath");
+        final sheet = _cachedExcel!.tables[sheetName];
+        if (sheet != null) {
+          return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();
+        }
+      }
+
       // If exact file doesn't exist, try to find the latest matching the collection
       if (!await io.fileExists(targetPath) && collection.isNotEmpty && currentDir != null) {
         final dir = io.listDir(currentDir);
@@ -431,9 +448,22 @@ class WorkbookService {
         }).toList();
 
         if (matches.isNotEmpty) {
-          matches.sort((a, b) => b.path.compareTo(a.path)); // Latest first
+          // FIX: Sort by modification time to ensure we pick the truly 'latest' file
+          matches.sort((a, b) {
+            final statA = io.getFileStatSync(a.path);
+            final statB = io.getFileStatSync(b.path);
+            return statB.modified.compareTo(statA.modified);
+          });
           targetPath = matches.first.path;
           debugPrint("WorkbookService: Discovered existing workbook for read at $targetPath");
+        }
+      }
+
+      // Check Cache again after potential discovery
+      if (_cachedExcel != null && _lastReportPath == targetPath) {
+        final sheet = _cachedExcel!.tables[sheetName];
+        if (sheet != null) {
+          return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();
         }
       }
 

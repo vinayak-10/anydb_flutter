@@ -1,7 +1,7 @@
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:open_file_plus/open_file_plus.dart';
+import 'package:open_filex/open_filex.dart';
 import 'platform_check.dart';
 import 'web_downloader.dart';
 
@@ -52,7 +52,7 @@ class InvokerService {
     }
   }
 
-  /// Replicates Invoker.open from JS (using open_file_plus)
+  /// Replicates Invoker.open from JS (using open_filex)
   static Future<void> open(String path) async {
     if (kIsWeb) {
       debugPrint("Invoker: Web open/download: $path");
@@ -81,7 +81,7 @@ class InvokerService {
       }
     }
 
-    // open_file_plus on Linux/Android/iOS expects a raw path, not a file:// URI.
+    // open_filex on Linux/Android/iOS expects a raw path, not a file:// URI.
     String finalPath = path;
     if (finalPath.startsWith('file://')) {
       finalPath = finalPath.replaceFirst('file://', '');
@@ -89,7 +89,7 @@ class InvokerService {
 
     debugPrint("Invoker: opening path: $finalPath");
     try {
-      final result = await OpenFile.open(finalPath);
+      final result = await OpenFilex.open(finalPath);
       if (result.type != ResultType.done) {
         debugPrint("Invoker: URL open fail for $finalPath with err ${result.message}");
       }

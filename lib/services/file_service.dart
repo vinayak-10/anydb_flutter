@@ -64,6 +64,11 @@ class FileService {
     return p.join(schemaDir, 'logs');
   }
 
+  Future<String> getLogPath(String year, String month, {bool external = true}) async {
+    final root = external ? await getExternalRoot() : await getInternalRoot();
+    return p.join(root, 'Logs', year, month);
+  }
+
   Future<void> ensureDir(String path) async {
     if (kIsWeb) return;
     if (!await io.dirExists(path)) {

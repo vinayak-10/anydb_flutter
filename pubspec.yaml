@@ -49,8 +49,8 @@ dependencies:
   flutter_riverpod: ^3.3.1
   path: ^1.9.1
   http: ^1.6.0
-  open_file_plus: ^3.4.1+1
   extension_google_sign_in_as_googleapis_auth: ^3.0.0
+  open_filex: ^4.5.0
 
 dev_dependencies:
   flutter_test:
@@ -75,8 +75,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  assets:
-    - assets/RKM_Physio (1).json
+  # assets:
+  #   - assets/RKM_Physio (1).json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

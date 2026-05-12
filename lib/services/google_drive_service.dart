@@ -46,7 +46,7 @@ class GoogleDriveService {
   // OAuth Constants for Linux/Manual Flow
   static const String _clientId = "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com";
   // Note: For Desktop App client types, a secret is mandatory. 
-  static const String? _clientSecret = "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"; 
+  static const String _clientSecret = "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"; 
 
   GoogleUser? get currentUser => _currentUser;
 
@@ -56,9 +56,11 @@ class GoogleDriveService {
     
     _initCompleter = Completer<void>();
     try {
-      if (kIsWeb) {
-        await _googleSignIn.initialize(clientId: _clientId);
-      }
+      // In 7.x, we must call initialize before other methods
+      await _googleSignIn.initialize(
+        clientId: isIOS() || isMacOS() || kIsWeb ? _clientId : null,
+        serverClientId: _clientId,
+      );
       
       if (!isLinux()) {
         final official = await _googleSignIn.attemptLightweightAuthentication();
@@ -118,11 +120,14 @@ class GoogleDriveService {
       }
 
       final official = await _googleSignIn.authenticate();
-      if (official != null) {
-        _currentUser = GoogleUser.fromOfficial(official);
-        final auth = await _googleSignIn.authorizationClient.authorizeScopes(scopes);
-        _httpClient = auth.authClient(scopes: scopes);
-      }
+      if (official == null) return null;
+      _currentUser = GoogleUser.fromOfficial(official);
+      
+      // In 7.x, we get the authorization client from the account, 
+      // authorize the scopes, and then use the extension method on the result.
+      final authz = await official.authorizationClient.authorizeScopes(scopes);
+      _httpClient = authz.authClient(scopes: scopes);
+      
       return _currentUser;
     } catch (error) {
       debugPrint('Google Sign-In Error: $error');

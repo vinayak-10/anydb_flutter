@@ -27,6 +27,11 @@ Future<void> writeString(String path, String content) async {
   await file.writeAsString(content);
 }
 
+Future<void> appendString(String path, String content) async {
+  final file = io.File(path);
+  await file.writeAsString(content, mode: io.FileMode.append);
+}
+
 Future<void> writeBytes(String path, Uint8List bytes) async {
   final file = io.File(path);
   await file.writeAsBytes(bytes);
@@ -57,6 +62,10 @@ Future<void> deleteFile(String path) async {
 
 Future<void> renameFile(String source, String dest) async {
   await io.File(source).rename(dest);
+}
+
+io.FileStat getFileStatSync(String path) {
+  return io.File(path).statSync();
 }
 
 List<io.FileSystemEntity> listDir(String path) {

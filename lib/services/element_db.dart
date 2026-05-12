@@ -71,7 +71,10 @@ class ElementDb {
   }
 
   List<Map<String, dynamic>> segregate(List<Map<String, dynamic>> records, {List<String> types = const ["Active"]}) {
+    if (types.contains("All")) return records;
+
     return records.where((rec) {
+
       if (rec.isEmpty) return false;
       final val = rec.values.first;
       if (val is! Map) return false;
