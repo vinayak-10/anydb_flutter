@@ -3,6 +3,10 @@ allprojects {
         google()
         mavenCentral()
     }
+    // Suppress obsolete Java 8 warnings from modern JDKs
+    tasks.withType<JavaCompile> {
+        options.compilerArgs.add("-Xlint:-options")
+    }
 }
 
 val newBuildDir: Directory =

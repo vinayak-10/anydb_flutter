@@ -11,6 +11,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'platform_check.dart';
+import '../core/logger.dart';
 
 /// A unified user model to bridge official GoogleSignInAccount and manual OAuth flows
 class GoogleUser {
@@ -44,9 +45,10 @@ class GoogleDriveService {
   static Completer<void>? _initCompleter;
   
   // OAuth Constants for Linux/Manual Flow
-  static const String _clientId = "147495577253-vdubk4el5gt3kv0rehttchu1f5ka2v2b.apps.googleusercontent.com";
+  static const String _clientId = "59875824101-8i46efacu12v4g9vvseu7k59711qe0u9.apps.googleusercontent.com";
   // Note: For Desktop App client types, a secret is mandatory. 
-  static const String _clientSecret = "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"; 
+  // This is now securely provided at compile-time via --dart-define-from-file=secrets.json
+  static const String _clientSecret = String.fromEnvironment('GOOGLE_CLIENT_SECRET', defaultValue: ''); 
 
   GoogleUser? get currentUser => _currentUser;
 
@@ -56,15 +58,21 @@ class GoogleDriveService {
     
     _initCompleter = Completer<void>();
     try {
+      logger.log("GoogleDriveService: Initializing with clientId: ${isAndroid() ? 'FROM_SERVICES_JSON' : _clientId}");
+      
       // In 7.x, we must call initialize before other methods
+      // For Android, clientId is picked from google-services.json if provided as null.
+      // Providing a mismatching serverClientId (different project) causes ApiException 10.
       await _googleSignIn.initialize(
         clientId: isIOS() || isMacOS() || kIsWeb ? _clientId : null,
-        serverClientId: _clientId,
+        serverClientId: _clientId, // Passing serverClientId (Web Client ID) is often required for modern Android auth
       );
       
       if (!isLinux()) {
+        logger.log("GoogleDriveService: Attempting lightweight authentication...");
         final official = await _googleSignIn.attemptLightweightAuthentication();
         if (official != null) {
+          logger.log("GoogleDriveService: Silently signed in as ${official.email}");
           _currentUser = GoogleUser.fromOfficial(official);
         }
       } else {
@@ -73,7 +81,7 @@ class GoogleDriveService {
       
       _initCompleter!.complete();
     } catch (e) {
-      debugPrint("GoogleDriveService: Init error: $e");
+      logger.log("GoogleDriveService: Init error: $e");
       _initCompleter!.complete(); // Complete anyway to unblock UI
     }
     return _initCompleter!.future;
@@ -119,18 +127,21 @@ class GoogleDriveService {
         return await _loginLinux(scopes);
       }
 
+      logger.log("GoogleDriveService: Starting official sign-in flow...");
       final official = await _googleSignIn.authenticate();
-      if (official == null) return null;
+      
       _currentUser = GoogleUser.fromOfficial(official);
+      logger.log("GoogleDriveService: Authenticated as ${official.email}. Authorizing scopes...");
       
       // In 7.x, we get the authorization client from the account, 
       // authorize the scopes, and then use the extension method on the result.
       final authz = await official.authorizationClient.authorizeScopes(scopes);
       _httpClient = authz.authClient(scopes: scopes);
       
+      logger.log("GoogleDriveService: Authorization successful.");
       return _currentUser;
     } catch (error) {
-      debugPrint('Google Sign-In Error: $error');
+      logger.log('GoogleDriveService: Login Error: $error');
       return null;
     }
   }
