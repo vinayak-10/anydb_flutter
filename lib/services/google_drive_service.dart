@@ -61,21 +61,12 @@ class GoogleDriveService {
       logger.log("GoogleDriveService: Initializing with clientId: ${isAndroid() ? 'FROM_SERVICES_JSON' : _clientId}");
       
       // In 7.x, we must call initialize before other methods
-      // For Android, clientId is picked from google-services.json if provided as null.
-      // Providing a mismatching serverClientId (different project) causes ApiException 10.
       await _googleSignIn.initialize(
         clientId: isIOS() || isMacOS() || kIsWeb ? _clientId : null,
         serverClientId: _clientId, // Passing serverClientId (Web Client ID) is often required for modern Android auth
       );
       
-      if (!isLinux()) {
-        logger.log("GoogleDriveService: Attempting lightweight authentication...");
-        final official = await _googleSignIn.attemptLightweightAuthentication();
-        if (official != null) {
-          logger.log("GoogleDriveService: Silently signed in as ${official.email}");
-          _currentUser = GoogleUser.fromOfficial(official);
-        }
-      } else {
+      if (isLinux()) {
         await _restoreLinuxSession();
       }
       
@@ -85,6 +76,35 @@ class GoogleDriveService {
       _initCompleter!.complete(); // Complete anyway to unblock UI
     }
     return _initCompleter!.future;
+  }
+
+  /// Attempts to restore a previous session silently without showing a UI modal.
+  Future<GoogleUser?> restoreSession() async {
+    try {
+      await init();
+      
+      final prefs = await SharedPreferences.getInstance();
+      final wasLoggedIn = prefs.getBool('was_logged_in') ?? false;
+      
+      if (!wasLoggedIn) {
+        logger.log("GoogleDriveService: Skipping session restoration (user not previously logged in).");
+        return null;
+      }
+
+      if (isLinux()) return _currentUser;
+
+      logger.log("GoogleDriveService: Attempting silent session restoration...");
+      // In 7.x, attemptLightweightAuthentication is the replacement for signInSilently
+      final official = await _googleSignIn.attemptLightweightAuthentication();
+      if (official != null) {
+        logger.log("GoogleDriveService: Session restored for ${official.email}");
+        _currentUser = GoogleUser.fromOfficial(official);
+      }
+      return _currentUser;
+    } catch (e) {
+      logger.log("GoogleDriveService: Session restoration skip: $e");
+      return null;
+    }
   }
 
   Future<void> _restoreLinuxSession() async {
@@ -124,23 +144,43 @@ class GoogleDriveService {
       final List<String> scopes = [drive.DriveApi.driveFileScope, 'email', 'profile'];
 
       if (isLinux()) {
-        return await _loginLinux(scopes);
+        final user = await _loginLinux(scopes);
+        if (user != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('was_logged_in', true);
+        }
+        return user;
       }
 
       logger.log("GoogleDriveService: Starting official sign-in flow...");
       final official = await _googleSignIn.authenticate();
-      
       _currentUser = GoogleUser.fromOfficial(official);
-      logger.log("GoogleDriveService: Authenticated as ${official.email}. Authorizing scopes...");
       
-      // In 7.x, we get the authorization client from the account, 
-      // authorize the scopes, and then use the extension method on the result.
-      final authz = await official.authorizationClient.authorizeScopes(scopes);
+      logger.log("GoogleDriveService: Authenticated as ${official.email}. Checking Drive permissions...");
+      
+      // In 7.x, check if we already have the scopes using authorizationForScopes.
+      GoogleSignInClientAuthorization? authz = await official.authorizationClient.authorizationForScopes(scopes);
+      
+      if (authz == null) {
+        logger.log("GoogleDriveService: Requesting explicit permission for Drive scopes...");
+        // This will trigger the modal asking for permission (authorization)
+        authz = await official.authorizationClient.authorizeScopes(scopes);
+      } else {
+        logger.log("GoogleDriveService: Drive permissions already granted.");
+      }
+      
+      // authClient is an extension method on GoogleSignInClientAuthorization
       _httpClient = authz.authClient(scopes: scopes);
       
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('was_logged_in', true);
+
       logger.log("GoogleDriveService: Authorization successful.");
       return _currentUser;
     } catch (error) {
+      if (error.toString().contains("code 16") || error.toString().contains("Account reauth failed")) {
+         logger.log("GoogleDriveService: ERROR - ACCOUNT REAUTH FAILED (Code 16). This usually means the SHA-1/SHA-256 fingerprint in the Google Console does not match the app's signature.");
+      }
       logger.log('GoogleDriveService: Login Error: $error');
       return null;
     }
@@ -190,6 +230,9 @@ class GoogleDriveService {
 
   Future<void> logout() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('was_logged_in');
+
       if (!isLinux()) {
         await _googleSignIn.signOut();
         if (!kIsWeb) {
@@ -198,7 +241,6 @@ class GoogleDriveService {
           } catch (_) {}
         }
       } else {
-        final prefs = await SharedPreferences.getInstance();
         await prefs.remove('google_drive_creds');
       }
     } catch (e) {

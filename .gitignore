@@ -46,3 +46,10 @@ app.*.map.json
 
 # OAuth Secrets
 secrets.json
+
+# Keystores
+*.jks
+*.keystore
+*.p12
+*.pfx
+key.properties

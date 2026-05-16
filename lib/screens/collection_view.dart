@@ -43,6 +43,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
   final TextEditingController _searchController = TextEditingController();
   final List<GlobalKey<_DatabaseViewState>> _dbKeys = [];
   final Set<String> _selectedKeys = {};
+  Map<String, dynamic>? _preloadedReportData;
 
   @override
   void initState() {
@@ -157,21 +158,45 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           (r) => r.key.toLowerCase().contains("daily"), 
           orElse: () => agg.reports.first
         );
-        await agg.generateWorkbook(dailyReport, date: DateTime.now());
+        final dailyPath = await agg.generateWorkbook(dailyReport, date: DateTime.now());
         
         // Monthly Report (Current Month till date)
         final monthlyReport = agg.reports.firstWhere(
           (r) => r.key.toLowerCase().contains("monthly"), 
           orElse: () => agg.reports.last
         );
-        await agg.generateWorkbook(monthlyReport, date: DateTime.now());
+        final monthlyPath = await agg.generateWorkbook(monthlyReport, date: DateTime.now());
+
+        // Load the Daily result for UI
+        final dailyResult = await agg.generate(dailyReport, date: DateTime.now());
+        dailyResult['path'] = dailyPath;
 
         await db.close();
         
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
+          
+          setState(() {
+            _preloadedReportData = dailyResult;
+            final aggIdx = widget.contents.indexWhere((c) => c.type == ContentType.aggregator);
+            if (aggIdx != -1) {
+              _tabController.animateTo(aggIdx);
+            }
+          });
+
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Database finalized and reports generated successfully!"), backgroundColor: Colors.green)
+            SnackBar(
+              content: const Text("Database finalized and reports generated!"), 
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 10),
+              action: SnackBarAction(
+                label: "OPEN MONTHLY",
+                textColor: Colors.white,
+                onPressed: () async {
+                   await agg.openReport(monthlyPath);
+                },
+              ),
+            )
           );
         }
       } catch (e) {
@@ -518,7 +543,11 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
               },
             );
           } else {
-            return _AggregatorView(agg: c.service as AggregatorService, schemaTitle: widget.title);
+            return _AggregatorView(
+              agg: c.service as AggregatorService, 
+              schemaTitle: widget.title,
+              initialReportData: _preloadedReportData,
+            );
           }
         }).toList(),
       ),
@@ -1388,7 +1417,8 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
 class _AggregatorView extends ConsumerStatefulWidget {
   final AggregatorService agg;
   final String schemaTitle;
-  const _AggregatorView({required this.agg, required this.schemaTitle});
+  final Map<String, dynamic>? initialReportData;
+  const _AggregatorView({required this.agg, required this.schemaTitle, this.initialReportData});
 
   @override
   ConsumerState<_AggregatorView> createState() => _AggregatorViewState();
@@ -1398,6 +1428,24 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   DateTime _selectedDate = DateTime.now();
   DateTimeRange? _selectedRange;
   Map<String, dynamic>? _reportData;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialReportData != null) {
+      _reportData = widget.initialReportData;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AggregatorView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialReportData != oldWidget.initialReportData && widget.initialReportData != null) {
+      setState(() {
+        _reportData = widget.initialReportData;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1422,7 +1470,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                               IconButton(
                                 icon: const Icon(Icons.share, color: Colors.indigo),
                                 onPressed: () {
-                                   _showShareDialog(context, _reportData!['path'], ref);
+                                   _showShareDialog(context, _reportData!['path']);
                                 },
                                 tooltip: "Share",
                               ),
@@ -1679,7 +1727,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
     return s;
   }
 
-  void _showShareDialog(BuildContext context, String filePath, WidgetRef ref) {
+  void _showShareDialog(BuildContext context, String filePath) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

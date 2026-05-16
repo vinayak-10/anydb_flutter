@@ -17,7 +17,7 @@ final fileServiceProvider = Provider((ref) => FileService());
 
 final appInitProvider = FutureProvider<void>((ref) async {
   final googleDriveService = ref.read(googleDriveServiceProvider);
-  await googleDriveService.init();
+  await googleDriveService.restoreSession();
   if (googleDriveService.currentUser != null) {
     ref.read(googleUserProvider.notifier).setUser(googleDriveService.currentUser);
   }
