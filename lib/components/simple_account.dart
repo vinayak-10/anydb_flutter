@@ -29,11 +29,11 @@ class SimpleAccount extends GenInterface {
     this.repoIntf = repoIntf;
     name = jsonObj['name'] ?? '';
     id = jsonObj['id']?.toString() ?? '';
-    
+
     config = {
       "overrideTransaction": {"keys": []},
       "notify": [],
-      "onEdit": {"confirm": false}
+      "onEdit": {"confirm": false},
     };
     if (jsonObj.containsKey('config')) {
       final jc = jsonObj['config'] as Map<String, dynamic>;
@@ -52,7 +52,7 @@ class SimpleAccount extends GenInterface {
     if (jsonObj['schema'] != null && jsonObj['schema']['version'] != null) {
       version = jsonObj['schema']['version'];
     }
-    
+
     idMap = {};
     _prepareIdMap();
   }
@@ -112,7 +112,9 @@ class SimpleAccount extends GenInterface {
       fetchedValues.add(c.fetch().values.first);
     }
     values = fetchedValues;
-    return {name: {version: fetchedValues}};
+    return {
+      name: {version: fetchedValues},
+    };
   }
 
   double calculateDues() {
@@ -125,13 +127,13 @@ class SimpleAccount extends GenInterface {
   double _sumById(String id) {
     final fieldName = id2name(id);
     if (fieldName.isEmpty) return 0;
-    
+
     double s = 0;
     for (var c in componentsArray) {
-       final cData = c.fetch().values.first as Map<String, dynamic>;
-       if (cData.containsKey(fieldName)) {
-         s += _parseDouble(cData[fieldName]);
-       }
+      final cData = c.fetch().values.first as Map<String, dynamic>;
+      if (cData.containsKey(fieldName)) {
+        s += _parseDouble(cData[fieldName]);
+      }
     }
     return s;
   }
@@ -139,7 +141,8 @@ class SimpleAccount extends GenInterface {
   double getLastBalance() {
     final balanceField = id2name("Balance");
     if (componentsArray.isNotEmpty && balanceField.isNotEmpty) {
-      final lastVal = componentsArray[0].fetch().values.first as Map<String, dynamic>;
+      final lastVal =
+          componentsArray[0].fetch().values.first as Map<String, dynamic>;
       if (lastVal.containsKey(balanceField)) {
         return _parseDouble(lastVal[balanceField]);
       }
@@ -150,11 +153,12 @@ class SimpleAccount extends GenInterface {
   int getLastTransactionTime() {
     final dateField = id2name("Transaction-Date");
     if (componentsArray.isNotEmpty && dateField.isNotEmpty) {
-       final lastVal = componentsArray[0].fetch().values.first as Map<String, dynamic>;
-       if (lastVal.containsKey(dateField)) {
-         final d = lastVal[dateField];
-         return d is int ? d : (int.tryParse(d.toString()) ?? 0);
-       }
+      final lastVal =
+          componentsArray[0].fetch().values.first as Map<String, dynamic>;
+      if (lastVal.containsKey(dateField)) {
+        final d = lastVal[dateField];
+        return d is int ? d : (int.tryParse(d.toString()) ?? 0);
+      }
     }
     return 0;
   }
@@ -162,14 +166,17 @@ class SimpleAccount extends GenInterface {
   String getLastTransactionDate() {
     final ts = getLastTransactionTime();
     if (ts == 0) return "";
-    final dateStr = DateFormat('E, MMM d y').format(DateTime.fromMillisecondsSinceEpoch(ts));
-    
+    final dateStr = DateFormat(
+      'E, MMM d y',
+    ).format(DateTime.fromMillisecondsSinceEpoch(ts));
+
     String details = dateStr;
     final creditName = id2name("Credit");
     final modeName = id2name("Payment-Mode");
-    
+
     if (componentsArray.isNotEmpty) {
-      final lastVal = componentsArray[0].fetch().values.first as Map<String, dynamic>;
+      final lastVal =
+          componentsArray[0].fetch().values.first as Map<String, dynamic>;
       if (creditName.isNotEmpty && lastVal.containsKey(creditName)) {
         details += ", $creditName: ${lastVal[creditName]}";
       }
@@ -180,7 +187,12 @@ class SimpleAccount extends GenInterface {
     return details;
   }
 
-  void updateObservers(GenInterface notifier, Map<String, dynamic> data, List<dynamic> observerIndexes, GenInterface cs) {
+  void updateObservers(
+    GenInterface notifier,
+    Map<String, dynamic> data,
+    List<dynamic> observerIndexes,
+    GenInterface cs,
+  ) {
     final String value = data.values.first.toString();
     final String notifierId = notifier.getId();
 
@@ -191,7 +203,7 @@ class SimpleAccount extends GenInterface {
       if (c == null) continue;
 
       final targetId = c.getId();
-      
+
       if (notifierId == "Debit") {
         if (targetId == 'Credit') {
           c.populate({c.getName(): value});
@@ -237,12 +249,15 @@ class SimpleAccount extends GenInterface {
   void _populateBalance(GenInterface cs) {
     final pb = _findIn(cs, 'Balance');
     if (pb == null) return;
-    
+
     double lastBalance = getLastBalance();
-    double debit = double.tryParse(_findIn(cs, 'Debit')?.getValue() ?? "0") ?? 0;
-    double credit = double.tryParse(_findIn(cs, 'Credit')?.getValue() ?? "0") ?? 0;
-    double discount = double.tryParse(_findIn(cs, 'Discount')?.getValue() ?? "0") ?? 0;
-    
+    double debit =
+        double.tryParse(_findIn(cs, 'Debit')?.getValue() ?? "0") ?? 0;
+    double credit =
+        double.tryParse(_findIn(cs, 'Credit')?.getValue() ?? "0") ?? 0;
+    double discount =
+        double.tryParse(_findIn(cs, 'Discount')?.getValue() ?? "0") ?? 0;
+
     double balance = lastBalance + (debit - (credit + discount));
     pb.populate({pb.getName(): balance.toStringAsFixed(0)});
   }
@@ -264,7 +279,7 @@ class SimpleAccount extends GenInterface {
     // 2. Explicitly double-check Payment-Mode by ID for extra safety
     int modeIdx = component.getComponentIdIndex("Payment-Mode");
     GenInterface? modeComp;
-    
+
     if (modeIdx != -1) {
       modeComp = component.getComponentAtIndex(modeIdx);
     } else {
@@ -285,19 +300,23 @@ class SimpleAccount extends GenInterface {
         debugPrint("VALIDATION FAILED (Explicit Mode): ${mRes['constraint']}");
         return mRes;
       }
-      
+
       // Final catch-all for empty lists/strings
       final val = modeComp.fetch().values.first;
       final valStr = val.toString().trim();
-      if (val == null || (val is List && val.isEmpty) || valStr.isEmpty || valStr == "[]" || valStr == "null") {
+      if (val == null ||
+          (val is List && val.isEmpty) ||
+          valStr.isEmpty ||
+          valStr == "[]" ||
+          valStr == "null") {
         return {
           'valid': false,
           'name': 'Required Field',
-          'constraint': 'Please select a Payment Mode.'
+          'constraint': 'Please select a Payment Mode.',
         };
       }
     }
-    
+
     return {'valid': true, 'name': '', 'constraint': ''};
   }
 
@@ -312,13 +331,13 @@ class SimpleAccount extends GenInterface {
 
   @override
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return _SimpleAccountEditor(
       key: key,
@@ -329,97 +348,152 @@ class SimpleAccount extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     if (onlyValue) return _SimpleAccountSummary(account: this);
     return _SimpleAccountDisplay(account: this, onChanged: onChanged);
   }
 
   @override
-  Widget? invoke({required String method, required Map<String, dynamic> parameters, VoidCallback? onChanged}) {
+  Widget? invoke({
+    required String method,
+    required Map<String, dynamic> parameters,
+    VoidCallback? onChanged,
+  }) {
     if (method == 'get-dues') return _SimpleAccountSummary(account: this);
     if (method == 'add-one') {
-      return Builder(builder: (context) {
-        return SizedBox(
-          width: double.maxFinite,
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.add_card, size: 24),
-            label: const Text("ADD NEW TRANSACTION", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            onPressed: () async {
-              final newComp = getOne();
-              if (newComp != null) {
-                String? errorMessage;
-                final result = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => StatefulBuilder(
-                    builder: (context, setModalState) => AlertDialog(
-                      title: const Text("ADD NEW TRANSACTION", style: TextStyle(color: Colors.green)),
-                      content: SingleChildScrollView(
-                        child: SizedBox(
-                          width: double.maxFinite,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (errorMessage != null)
-                                Container(
-                                  padding: const EdgeInsets.all(20),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.red, width: 4),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    errorMessage!,
-                                    style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              newComp.editor(
-                                key: const ValueKey("modal_add_tx"),
-                                onChanged: (val) {},
-                                cbNotifyParent: (notifier, data, observers) {
-                                  setModalState(() {
-                                    updateObservers(notifier, data, observers, newComp);
-                                  });
-                                },
-                              ),
-                            ],
+      return Builder(
+        builder: (context) {
+          return Align(
+            alignment: Alignment.center,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+              label: const Text(
+                "Add New Transaction",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              onPressed: () async {
+                final newComp = getOne();
+                if (newComp != null) {
+                  String? errorMessage;
+                  final result = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => StatefulBuilder(
+                      builder: (context, setModalState) => AlertDialog(
+                        title: const Text(
+                          "Add New Transaction",
+                          style: TextStyle(
+                            color: Color(0xFF2E7D32),
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-                        TextButton(
-                          onPressed: () {
-                            final v = _validateOne(newComp);
-                            if (v['valid'] == true) {
-                              Navigator.pop(context, true);
-                            } else {
-                              setModalState(() {
-                                errorMessage = v['constraint'];
-                              });
-                            }
-                          },
-                          child: const Text("ADD", style: TextStyle(fontWeight: FontWeight.bold)),
+                        content: SingleChildScrollView(
+                          child: SizedBox(
+                            width: double.maxFinite,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (errorMessage != null)
+                                  Container(
+                                    padding: const EdgeInsets.all(20),
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Colors.red,
+                                        width: 4,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      errorMessage!,
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                newComp.editor(
+                                  key: const ValueKey("modal_add_tx"),
+                                  onChanged: (val) {},
+                                  cbNotifyParent: (notifier, data, observers) {
+                                    setModalState(() {
+                                      updateObservers(
+                                        notifier,
+                                        data,
+                                        observers,
+                                        newComp,
+                                      );
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ],
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text(
+                              "CANCEL",
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final v = _validateOne(newComp);
+                              if (v['valid'] == true) {
+                                Navigator.pop(context, true);
+                              } else {
+                                setModalState(() {
+                                  errorMessage = v['constraint'];
+                                });
+                              }
+                            },
+                            child: const Text(
+                              "ADD",
+                              style: TextStyle(
+                                color: Color(0xFF2E7D32),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
+                  );
 
-                if (result == true) {
-                  componentsArray.insert(0, newComp);
-                  if (onChanged != null) onChanged();
+                  if (result == true) {
+                    componentsArray.insert(0, newComp);
+                    if (onChanged != null) onChanged();
+                  }
                 }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade600,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2E7D32),
+                foregroundColor: Colors.white,
+                elevation: 1,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 10,
+                  horizontal: 20,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
             ),
-          ),
-        );
-      });
+          );
+        },
+      );
     }
     return null;
   }
@@ -429,14 +503,17 @@ class SimpleAccount extends GenInterface {
     if (component == null) return null;
     component.init(_schema[0], repoIntf);
 
-    final overrideKeys = config['overrideTransaction']?['keys'] as List<dynamic>?;
+    final overrideKeys =
+        config['overrideTransaction']?['keys'] as List<dynamic>?;
     if (componentsArray.isNotEmpty && overrideKeys != null) {
-       final lastTxValue = componentsArray[0].fetch().values.first as Map<String, dynamic>;
-       final Map<String, dynamic> initialValue = {};
-       for (var k in overrideKeys) {
-         if (lastTxValue.containsKey(k)) initialValue[k.toString()] = lastTxValue[k];
-       }
-       component.populate({component.getName(): initialValue});
+      final lastTxValue =
+          componentsArray[0].fetch().values.first as Map<String, dynamic>;
+      final Map<String, dynamic> initialValue = {};
+      for (var k in overrideKeys) {
+        if (lastTxValue.containsKey(k))
+          initialValue[k.toString()] = lastTxValue[k];
+      }
+      component.populate({component.getName(): initialValue});
     }
     _populateBalance(component);
     return component;
@@ -497,10 +574,21 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                     context: context,
                     builder: (context) => AlertDialog(
                       title: const Text("Delete Transaction"),
-                      content: const Text("Are you sure you want to delete this transaction?"),
+                      content: const Text(
+                        "Are you sure you want to delete this transaction?",
+                      ),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text("CANCEL"),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text(
+                            "DELETE",
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -523,18 +611,31 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                         children: [
                           IconButton(
                             iconSize: 36,
-                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                            ),
                             onPressed: () async {
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (context) => AlertDialog(
                                   title: const Text("Delete Transaction?"),
-                                  content: const Text("Are you sure you want to delete this transaction?"),
+                                  content: const Text(
+                                    "Are you sure you want to delete this transaction?",
+                                  ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
                                     TextButton(
-                                      onPressed: () => Navigator.pop(context, true),
-                                      child: const Text("DELETE", style: TextStyle(color: Colors.red)),
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text("CANCEL"),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text(
+                                        "DELETE",
+                                        style: TextStyle(color: Colors.red),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -544,7 +645,8 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                                   widget.account.componentsArray.remove(c);
                                   widget.account.fetch();
                                 });
-                                if (widget.onChanged != null) widget.onChanged!();
+                                if (widget.onChanged != null)
+                                  widget.onChanged!();
                               }
                             },
                           ),
@@ -570,7 +672,7 @@ class _SimpleAccountSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final dues = account.calculateDues();
     final lastDate = account.getLastTransactionDate();
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -581,7 +683,11 @@ class _SimpleAccountSummary extends StatelessWidget {
             _stat("Charges", account._sumById('Debit'), Colors.green),
             _stat("Paid", account._sumById('Credit'), Colors.green),
             _stat("Disc", account._sumById('Discount'), Colors.orange),
-            _stat("Balance", dues, dues == 0 ? Colors.green : (dues > 0 ? Colors.red : Colors.blue)),
+            _stat(
+              "Balance",
+              dues,
+              dues == 0 ? Colors.green : (dues > 0 ? Colors.red : Colors.blue),
+            ),
           ],
         ),
         if (lastDate.isNotEmpty)
@@ -593,7 +699,12 @@ class _SimpleAccountSummary extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   "Last Transaction: $lastDate",
-                  style: const TextStyle(fontSize: 13, color: Colors.blue, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.blue,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -613,7 +724,11 @@ class _SimpleAccountSummary extends StatelessWidget {
       ),
       child: Text(
         "$label: ₹${val.abs().toStringAsFixed(0)}",
-        style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -622,7 +737,8 @@ class _SimpleAccountSummary extends StatelessWidget {
 class _SimpleAccountEditor extends StatefulWidget {
   final SimpleAccount account;
   final Function(dynamic) onChanged;
-  final Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent;
+  final Function(GenInterface, Map<String, dynamic>, List<dynamic>)?
+  cbNotifyParent;
 
   const _SimpleAccountEditor({
     super.key,
@@ -649,7 +765,14 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
         children: [
           _buildAddButton(context),
           const SizedBox(height: 20),
-          const Text("TRANSACTIONS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey)),
+          const Text(
+            "TRANSACTIONS",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Colors.blueGrey,
+            ),
+          ),
           const Divider(),
           Column(
             children: displayList.asMap().entries.map((entry) {
@@ -671,10 +794,21 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                         context: context,
                         builder: (context) => AlertDialog(
                           title: const Text("Delete Transaction"),
-                          content: const Text("Are you sure you want to delete this transaction?"),
+                          content: const Text(
+                            "Are you sure you want to delete this transaction?",
+                          ),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-                            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text("CANCEL"),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text(
+                                "DELETE",
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
                           ],
                         ),
                       );
@@ -702,7 +836,12 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                               },
                               cbNotifyParent: (notifier, data, observers) {
                                 setState(() {
-                                  widget.account.updateObservers(notifier, data, observers, c);
+                                  widget.account.updateObservers(
+                                    notifier,
+                                    data,
+                                    observers,
+                                    c,
+                                  );
                                 });
                                 widget.onChanged(widget.account.fetch());
                               },
@@ -712,25 +851,44 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                               children: [
                                 IconButton(
                                   iconSize: 36,
-                                  icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                  icon: const Icon(
+                                    Icons.delete_forever,
+                                    color: Colors.red,
+                                  ),
                                   onPressed: () async {
                                     final confirm = await showDialog<bool>(
                                       context: context,
                                       builder: (context) => AlertDialog(
-                                        title: const Text("Delete Transaction?"),
-                                        content: const Text("Are you sure you want to delete this transaction?"),
+                                        title: const Text(
+                                          "Delete Transaction?",
+                                        ),
+                                        content: const Text(
+                                          "Are you sure you want to delete this transaction?",
+                                        ),
                                         actions: [
-                                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
                                           TextButton(
-                                            onPressed: () => Navigator.pop(context, true),
-                                            child: const Text("DELETE", style: TextStyle(color: Colors.red)),
+                                            onPressed: () =>
+                                                Navigator.pop(context, false),
+                                            child: const Text("CANCEL"),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context, true),
+                                            child: const Text(
+                                              "DELETE",
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
                                     );
                                     if (confirm == true) {
                                       setState(() {
-                                        widget.account.componentsArray.remove(c);
+                                        widget.account.componentsArray.remove(
+                                          c,
+                                        );
                                         widget.account.fetch();
                                       });
                                       widget.onChanged(widget.account.fetch());
@@ -753,7 +911,11 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
             Center(
               child: TextButton.icon(
                 icon: Icon(_showAll ? Icons.expand_less : Icons.expand_more),
-                label: Text(_showAll ? "Show Less" : "Show More (${txList.length - 3} more)"),
+                label: Text(
+                  _showAll
+                      ? "Show Less"
+                      : "Show More (${txList.length - 3} more)",
+                ),
                 onPressed: () => setState(() => _showAll = !_showAll),
               ),
             ),
@@ -763,11 +925,18 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
   }
 
   Widget _buildAddButton(BuildContext context) {
-    return SizedBox(
-      width: double.maxFinite,
+    return Align(
+      alignment: Alignment.center,
       child: ElevatedButton.icon(
-        icon: const Icon(Icons.add_card, size: 24),
-        label: const Text("ADD NEW TRANSACTION", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+        label: const Text(
+          "Add New Transaction",
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
+        ),
         onPressed: () async {
           final newComp = widget.account.getOne();
           if (newComp != null) {
@@ -776,7 +945,13 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
               context: context,
               builder: (context) => StatefulBuilder(
                 builder: (context, setModalState) => AlertDialog(
-                  title: const Text("ADD NEW TRANSACTION", style: TextStyle(color: Colors.green)),
+                  title: const Text(
+                    "Add New Transaction",
+                    style: TextStyle(
+                      color: Color(0xFF2E7D32),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   content: SingleChildScrollView(
                     child: SizedBox(
                       width: double.maxFinite,
@@ -793,7 +968,10 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                               ),
                               child: Text(
                                 errorMessage!,
-                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           newComp.editor(
@@ -801,7 +979,12 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                             onChanged: (val) {},
                             cbNotifyParent: (notifier, data, observers) {
                               setModalState(() {
-                                widget.account.updateObservers(notifier, data, observers, newComp);
+                                widget.account.updateObservers(
+                                  notifier,
+                                  data,
+                                  observers,
+                                  newComp,
+                                );
                               });
                             },
                           ),
@@ -810,7 +993,16 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                     ),
                   ),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text(
+                        "CANCEL",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                     TextButton(
                       onPressed: () {
                         final v = widget.account._validateOne(newComp);
@@ -822,7 +1014,13 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                           });
                         }
                       },
-                      child: const Text("ADD", style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        "ADD",
+                        style: TextStyle(
+                          color: Color(0xFF2E7D32),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -839,10 +1037,13 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
           }
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green.shade600,
+          backgroundColor: const Color(0xFF2E7D32),
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 1,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
         ),
       ),
     );
