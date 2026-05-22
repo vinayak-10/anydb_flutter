@@ -11,7 +11,7 @@ class Composite extends GenInterface {
   List<List<GenInterface>> displayGroups = [];
   Map<String, dynamic>? oSchema;
   dynamic repoIntf;
-  
+
   @override
   String getType() => "composite";
 
@@ -160,13 +160,13 @@ class Composite extends GenInterface {
 
   @override
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return _CompositeEditor(
       key: key,
@@ -185,13 +185,19 @@ class Composite extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     if (displayComponent != null && displayComponent.isNotEmpty) {
       final component = _getComponentByName(displayComponent[0].toString());
       if (component != null) {
         return component.display(
           onlyValue: onlyValue,
-          displayComponent: displayComponent.length > 1 ? displayComponent.sublist(1) : null,
+          displayComponent: displayComponent.length > 1
+              ? displayComponent.sublist(1)
+              : null,
           onChanged: onChanged,
         );
       }
@@ -200,11 +206,18 @@ class Composite extends GenInterface {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!onlyValue) Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        ...displayGroups.map((group) => Wrap(
-          spacing: 10,
-          children: group.map((c) => c.display(onlyValue: onlyValue, onChanged: onChanged)).toList(),
-        )),
+        if (!onlyValue)
+          Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ...displayGroups.map(
+          (group) => Wrap(
+            spacing: 10,
+            children: group
+                .map(
+                  (c) => c.display(onlyValue: onlyValue, onChanged: onChanged),
+                )
+                .toList(),
+          ),
+        ),
       ],
     );
   }
@@ -215,7 +228,8 @@ class _CompositeEditor extends StatefulWidget {
   final Composite composite;
   final List<List<GenInterface>> groups;
   final VoidCallback onChanged;
-  final Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent;
+  final Function(GenInterface, Map<String, dynamic>, List<dynamic>)?
+  cbNotifyParent;
   final dynamic frefs;
   final int? index;
   final bool? autoFocus;
@@ -239,6 +253,20 @@ class _CompositeEditor extends StatefulWidget {
 }
 
 class _CompositeEditorState extends State<_CompositeEditor> {
+  bool _isAmountGroup(List<GenInterface> group) {
+    if (group.length != 3) return false;
+    final names = group.map((c) => c.getName()).toList();
+    return names.contains("Charges") &&
+        names.contains("Paid") &&
+        names.contains("Discount");
+  }
+
+  bool _isAgeSexGroup(List<GenInterface> group) {
+    if (group.length != 2) return false;
+    final names = group.map((c) => c.getName()).toList();
+    return names.contains("Age") && names.contains("Sex");
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -248,41 +276,108 @@ class _CompositeEditorState extends State<_CompositeEditor> {
           padding: const EdgeInsets.symmetric(horizontal: 8.0),
           child: Text(widget.label, style: Theme.of(context).textTheme.titleMedium),
         ),
-        ...widget.groups.map((group) => Column(
-          children: [
-            Wrap(
-              spacing: 10,
-              children: group.map((c) => c.editor(
-                key: ValueKey(c.getName()),
-                onChanged: (val) => widget.onChanged(),
-                cbNotifyParent: (notifier, data, observers) {
-                   // Calculate observers from the schema if not already provided
-                   List<int> observerIndexes = widget.composite.getObserverComponentIndexes(notifier);
-                   
-                   if (widget.cbNotifyParent != null) {
-                     // Notify parent (e.g. SimpleAccount) to handle cross-component logic
-                     widget.cbNotifyParent!(notifier, data, observerIndexes);
-                   } else {
-                     // Handle internal composite observers
-                     for (var idx in observerIndexes) {
-                        final obsComp = widget.composite.getComponentAtIndex(idx);
-                        obsComp?.notify({"notifier": data, "loading": false});
-                     }
-                   }
-                   
-                   // Force re-render of this composite to show updated values in editors
-                   setState(() {});
-                   widget.onChanged();
-                },
-                frefs: widget.frefs,
-                index: widget.index,
-                autoFocus: widget.autoFocus,
-                refresh: widget.refresh,
-              )).toList(),
-            ),
-            const Divider(color: Colors.green, thickness: 1),
-          ],
-        )),
+        ...widget.groups.map((group) {
+          final isAmount = _isAmountGroup(group);
+          final isAgeSex = _isAgeSexGroup(group);
+          return Column(
+            children: [
+              if (isAmount || isAgeSex)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: group
+                      .map(
+                        (c) => Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: c.editor(
+                              key: ValueKey(c.getName()),
+                              onChanged: (val) => widget.onChanged(),
+                              cbNotifyParent: (notifier, data, observers) {
+                                // Calculate observers from the schema if not already provided
+                                List<int> observerIndexes = widget.composite
+                                    .getObserverComponentIndexes(notifier);
+
+                                if (widget.cbNotifyParent != null) {
+                                  // Notify parent (e.g. SimpleAccount) to handle cross-component logic
+                                  widget.cbNotifyParent!(
+                                    notifier,
+                                    data,
+                                    observerIndexes,
+                                  );
+                                } else {
+                                  // Handle internal composite observers
+                                  for (var idx in observerIndexes) {
+                                    final obsComp = widget.composite
+                                        .getComponentAtIndex(idx);
+                                    obsComp?.notify({
+                                      "notifier": data,
+                                      "loading": false,
+                                    });
+                                  }
+                                }
+
+                                // Force re-render of this composite to show updated values in editors
+                                setState(() {});
+                                widget.onChanged();
+                              },
+                              frefs: widget.frefs,
+                              index: widget.index,
+                              autoFocus: widget.autoFocus,
+                              refresh: widget.refresh,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                )
+              else
+                Wrap(
+                  spacing: 10,
+                  children: group
+                      .map(
+                        (c) => c.editor(
+                          key: ValueKey(c.getName()),
+                          onChanged: (val) => widget.onChanged(),
+                          cbNotifyParent: (notifier, data, observers) {
+                            // Calculate observers from the schema if not already provided
+                            List<int> observerIndexes = widget.composite
+                                .getObserverComponentIndexes(notifier);
+
+                            if (widget.cbNotifyParent != null) {
+                              // Notify parent (e.g. SimpleAccount) to handle cross-component logic
+                              widget.cbNotifyParent!(
+                                notifier,
+                                data,
+                                observerIndexes,
+                              );
+                            } else {
+                              // Handle internal composite observers
+                              for (var idx in observerIndexes) {
+                                final obsComp = widget.composite
+                                    .getComponentAtIndex(idx);
+                                obsComp?.notify({
+                                  "notifier": data,
+                                  "loading": false,
+                                });
+                              }
+                            }
+
+                            // Force re-render of this composite to show updated values in editors
+                            setState(() {});
+                            widget.onChanged();
+                          },
+                          frefs: widget.frefs,
+                          index: widget.index,
+                          autoFocus: widget.autoFocus,
+                          refresh: widget.refresh,
+                        ),
+                      )
+                      .toList(),
+                ),
+              const Divider(color: Colors.green, thickness: 1),
+            ],
+          );
+        }),
       ],
     );
   }
