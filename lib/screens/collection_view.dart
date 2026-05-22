@@ -434,16 +434,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: const Color(0xFFE9967A),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200, width: 1.0),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
+                          border: Border.all(color: Colors.black12),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -459,16 +452,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: const Color(0xFFFFDAB9),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade200, width: 1.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 6,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
+                        border: Border.all(color: Colors.black12),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1883,16 +1869,9 @@ class _RichHeaderState extends State<_RichHeader> {
                 flex: 2,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: const Color(0xFFFF8A80), // Opaque deepOrangeAccent.shade100
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade200, width: 1.0),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+                    border: Border.all(color: Colors.black12),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -1909,16 +1888,9 @@ class _RichHeaderState extends State<_RichHeader> {
               const SizedBox(width: 4),
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: const Color(0xFFFFF3E0), // Opaque orange.shade50
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade200, width: 1.0),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 6,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
+                  border: Border.all(color: Colors.black12),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4.0),

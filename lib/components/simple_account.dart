@@ -368,7 +368,7 @@ class SimpleAccount extends GenInterface {
       return Builder(
         builder: (context) {
           return Align(
-            alignment: Alignment.center,
+            alignment: Alignment.centerRight,
             child: ElevatedButton.icon(
               icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
               label: const Text(
@@ -945,7 +945,7 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
 
   Widget _buildAddButton(BuildContext context) {
     return Align(
-      alignment: Alignment.center,
+      alignment: Alignment.centerRight,
       child: ElevatedButton.icon(
         icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
         label: const Text(
