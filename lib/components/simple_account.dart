@@ -601,8 +601,20 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                   if (widget.onChanged != null) widget.onChanged!();
                 },
                 child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                   padding: const EdgeInsets.all(12.0),
-                  color: index % 2 == 0 ? Colors.white : Colors.grey.shade200,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200, width: 1.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
                   child: Column(
                     children: [
                       c.display(onlyValue: false),
@@ -718,9 +730,16 @@ class _SimpleAccountSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.grey.shade200,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color, width: 1.5),
+        border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Text(
         "$label: ₹${val.abs().toStringAsFixed(0)}",

@@ -56,6 +56,11 @@ class AnyDbApp extends ConsumerWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
         scaffoldBackgroundColor: Colors.white,
+        cardTheme: const CardThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.white,
+          elevation: 2.0,
+        ),
       ),
       home: const HomePage(),
       builder: (context, child) {

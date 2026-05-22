@@ -174,6 +174,7 @@ class _ReminderEditorState extends State<_ReminderEditor> {
 
     return Card(
       elevation: 5,
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(

@@ -139,7 +139,8 @@ class _MultiValueEditorState extends State<_MultiValueEditor> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.orange.shade50,
+      color: Colors.white,
+      elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 4.0),
       child: ExpansionTile(
         title: Text(widget.multiValue.name),
@@ -187,7 +188,8 @@ class _MultiValueDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.orange.shade50,
+      color: Colors.white,
+      elevation: 2,
       child: ExpansionTile(
         title: Text(multiValue.name),
         subtitle: Text("Total ${multiValue.componentsArray.length} entries"),

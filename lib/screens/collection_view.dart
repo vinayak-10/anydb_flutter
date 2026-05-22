@@ -434,9 +434,16 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE9967A),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black12),
+                          border: Border.all(color: Colors.grey.shade200, width: 1.0),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -452,9 +459,16 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFDAB9),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.black12),
+                        border: Border.all(color: Colors.grey.shade200, width: 1.0),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -743,8 +757,26 @@ class _DatabaseViewState extends State<_DatabaseView> {
                   final isSelected = widget.selectedKeys.contains(element.key);
 
                   return Container(
-                    color: isSelected ? Colors.orange.shade50 : Colors.white,
+                    margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
+                        width: isSelected ? 2.0 : 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isSelected 
+                              ? Colors.orange.withOpacity(0.08)
+                              : Colors.black.withOpacity(0.04),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
                     child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
                       onTap: widget.selectedKeys.isNotEmpty 
                         ? () => widget.onToggleSelection(element.key)
                         : () => _openEditor(element),
@@ -821,8 +853,8 @@ class _DatabaseViewState extends State<_DatabaseView> {
                                   ],
                                 ),
                               ),
-                              color: Colors.orange.shade50.withOpacity(0.5),
-                              headingColor: Colors.deepOrange.shade800
+                              color: Colors.white,
+                              headingColor: Colors.blueGrey.shade900
                             ),
                           ],
                         ),
@@ -832,7 +864,24 @@ class _DatabaseViewState extends State<_DatabaseView> {
                 }
                 final isSelected = widget.selectedKeys.contains(element.key);
                 return Container(
-                  color: isSelected ? Colors.orange.shade50 : Colors.white,
+                  margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
+                      width: isSelected ? 2.0 : 1.0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isSelected 
+                            ? Colors.orange.withOpacity(0.08)
+                            : Colors.black.withOpacity(0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     leading: isSelected ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
@@ -865,9 +914,16 @@ class _DatabaseViewState extends State<_DatabaseView> {
       width: double.maxFinite,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black12, width: 1.5),
+        border: Border.all(color: Colors.grey.shade100, width: 1.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1515,7 +1571,18 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade200, width: 1.0),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1816,9 +1883,16 @@ class _RichHeaderState extends State<_RichHeader> {
                 flex: 2,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF8A80), // Opaque deepOrangeAccent.shade100
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
+                    border: Border.all(color: Colors.grey.shade200, width: 1.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -1835,9 +1909,16 @@ class _RichHeaderState extends State<_RichHeader> {
               const SizedBox(width: 4),
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3E0), // Opaque orange.shade50
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black12),
+                  border: Border.all(color: Colors.grey.shade200, width: 1.0),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4.0),

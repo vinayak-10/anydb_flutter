@@ -55,7 +55,7 @@ class MetaDefault extends GenInterface {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 8),
-      color: Colors.blueGrey.shade50,
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
