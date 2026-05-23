@@ -37,6 +37,15 @@
 - **Responsive Rows:** `Composite` editor uses `Row` + `Expanded` for professional alignment on tablets, with heuristics to force "long" fields (Notes, Address) to take full width.
 - **Progress Feedback:** `ElementDb.initDb` and `AggregatorService` support an `onProgress` callback to update percentage-based bars in the UI.
 
+### 3. Database Overhaul & Dynamic Archiving Specifications (Roadmap)
+- **Bottleneck Diagnosis:** Mobile `SharedPreferences` keys cause severe Platform Channel choking (10+ minute imports for 3,000+ entries) and eager main-thread component instantiations (30,000+ dynamic widgets loaded simultaneously at startup).
+- **SQLite Overhaul:** Port `SqliteHelper` globally to mobile via `sqlite3_flutter_libs` to utilize B-tree key-value JSON string storage with transactional writes, speeding up batch-imports to **under 300ms** and startup loading to **under 50ms**.
+- **Key Separation & Indexing:** 
+  - **SQLite Primary Key:** Unique auto-generated physical identifier (e.g. UUID) allowing active and archived rows to coexist on disk without conflicts.
+  - **Business Unique Key:** User-configured dynamic schema field (e.g., `Card Number`, `Patient ID`, `Phone`) selected from the drawer to act as the business identifier.
+  - **Active Partial Index:** A SQLite index (`WHERE is_active = 1`) that validates incoming duplicates against active records in microseconds, keeping all archived records completely off-memory on disk.
+- **Interactive UI & Prioritization Heuristics:** Dropdown in `drawer_content.dart` allows users to change their active Business Unique Key at any time. The options list dynamically bubbles likely unique identifiers (matching keywords like `id`, `number`, `code`, `key`, `phone`, `card`, `sku`, `serial`, `barcode`) to the top.
+
 ## Current State
 - **Branch:** `dev`
 - **Last Stable Commit:** `c6af06d` (Report Search Bar & Drawer Autoclose: Added full-text report search filtering and automated drawer pop on successful login or backup completion)
