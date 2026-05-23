@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:path/path.dart' as p;
 import 'file_service.dart';
-import 'platform_check.dart';
-
 class SqliteHelper {
   static sql.Database? _db;
   static final FileService _fileService = FileService();
@@ -21,7 +19,7 @@ class SqliteHelper {
   }
 
   static Future<void> initTable(String dbName) async {
-    if (kIsWeb || !isLinux()) return;
+    if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     db.execute('''
@@ -33,7 +31,7 @@ class SqliteHelper {
   }
 
   static Future<List<Map<String, dynamic>>> getAll(String dbName) async {
-    if (kIsWeb || !isLinux()) return [];
+    if (kIsWeb) return [];
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
@@ -47,7 +45,7 @@ class SqliteHelper {
   }
 
   static Future<Map<String, dynamic>?> get(String dbName, String key) async {
-    if (kIsWeb || !isLinux()) return null;
+    if (kIsWeb) return null;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
@@ -61,7 +59,7 @@ class SqliteHelper {
   }
 
   static Future<void> update(String dbName, String key, dynamic val) async {
-    if (kIsWeb || !isLinux()) return;
+    if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
@@ -73,7 +71,7 @@ class SqliteHelper {
   }
 
   static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
-    if (kIsWeb || !isLinux()) return;
+    if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
@@ -94,7 +92,7 @@ class SqliteHelper {
   }
 
   static Future<void> remove(String dbName, String key) async {
-    if (kIsWeb || !isLinux()) return;
+    if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
@@ -103,7 +101,7 @@ class SqliteHelper {
   }
 
   static Future<void> clear(String dbName) async {
-    if (kIsWeb || !isLinux()) return;
+    if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     db.execute('DROP TABLE IF EXISTS "$tableName"');

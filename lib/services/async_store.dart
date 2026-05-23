@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'platform_check.dart';
 import 'sqlite_helper.dart';
 
 class AsyncStore {
@@ -14,7 +13,7 @@ class AsyncStore {
   }
 
   static Future<List<Map<String, dynamic>>> getAll(String dbName) async {
-    if (isLinux()) {
+    if (!kIsWeb) {
       return await SqliteHelper.getAll(dbName);
     }
 
@@ -40,8 +39,8 @@ class AsyncStore {
   }
 
   static Future<Map<String, dynamic>?> get(String key) async {
-    if (isLinux()) {
-      // Key format on Linux is expected to be 'dbName:recordKey' 
+    if (!kIsWeb) {
+      // Key format on Linux/Mobile is expected to be 'dbName:recordKey' 
       // but SqliteHelper expects dbName and recordKey separately.
       final parts = key.split(':');
       if (parts.length >= 2) {
@@ -70,7 +69,7 @@ class AsyncStore {
   }
 
   static Future<void> update(String key, dynamic val) async {
-    if (isLinux()) {
+    if (!kIsWeb) {
       final parts = key.split(':');
       if (parts.length >= 2) {
         await SqliteHelper.update(parts[0], parts.sublist(1).join(':'), val);
@@ -94,7 +93,7 @@ class AsyncStore {
   }
 
   static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
-    if (isLinux()) {
+    if (!kIsWeb) {
       await SqliteHelper.updateAll(dbName, items);
       return;
     }
@@ -121,7 +120,7 @@ class AsyncStore {
   }
 
   static Future<void> remove(String key) async {
-    if (isLinux()) {
+    if (!kIsWeb) {
       final parts = key.split(':');
       if (parts.length >= 2) {
         await SqliteHelper.remove(parts[0], parts.sublist(1).join(':'));
@@ -135,7 +134,7 @@ class AsyncStore {
   }
 
   static Future<void> clear(String dbName) async {
-    if (isLinux()) {
+    if (!kIsWeb) {
       await SqliteHelper.clear(dbName);
       return;
     }
@@ -152,7 +151,7 @@ class AsyncStore {
   }
 
   static Future<void> clearAll() async {
-    if (isLinux()) {
+    if (!kIsWeb) {
       // clearAll for SQLite would mean dropping everything, 
       // but usually we just want to clear per-db.
       // For now, we leave it as per-db clear via clear(dbName).
