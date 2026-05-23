@@ -51,4 +51,4 @@ We have successfully implemented and committed the core engine components of **P
 ## 🎨 Branding & Identity
 To represent the highly secure, dynamic, and schema-free nature of AnyDb, we have created and integrated a premium, state-of-the-art 3D glassmorphic logo:
 
-![AnyDb Premium App Logo](/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo.png)
+![AnyDb Premium App Logo](/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo.jpg)
