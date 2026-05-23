@@ -3,6 +3,7 @@ import '../models/element_model.dart';
 import 'storage_service.dart';
 import 'meta_service.dart';
 import 'event_trigger_service.dart';
+import 'sqlite_helper.dart';
 
 class ElementDb {
   String key = '';
@@ -127,9 +128,7 @@ class ElementDb {
         }
       }
 
-      final element = ElementModel();
-      element.init(dbSchema, intf);
-      element.populate(data);
+      final element = ElementModel.lazy(dbSchema, intf, data);
       elements.add(element);
     }
 
@@ -182,11 +181,81 @@ class ElementDb {
     return metaService.getStats();
   }
 
+  DateTime? _getExpiryDate(Map<String, dynamic> val) {
+    final expiryKeywords = ['renewal', 'expiry', 'expire', 'expiration', 'valid', 'end'];
+    for (var entry in val.entries) {
+      final lowerKey = entry.key.toLowerCase();
+      if (expiryKeywords.any((k) => lowerKey.contains(k))) {
+        final entryVal = entry.value;
+        if (entryVal is int) {
+          return DateTime.fromMillisecondsSinceEpoch(entryVal);
+        } else if (entryVal is String) {
+          final parsed = int.tryParse(entryVal);
+          if (parsed != null) {
+            return DateTime.fromMillisecondsSinceEpoch(parsed);
+          }
+          return DateTime.tryParse(entryVal);
+        }
+      }
+    }
+    return null;
+  }
+
   Future<void> addRecord(ElementModel element) async {
     final data = element.fetch();
     final recordKey = data.keys.first;
     final recordVal = data.values.first;
-    
+    final Map<String, dynamic> recordValData = recordVal is Map ? Map<String, dynamic>.from(recordVal) : {};
+
+    // 1. Retrieve the configured Business Unique Key
+    final businessKeyName = await SqliteHelper.getBusinessUniqueKey(key);
+    if (businessKeyName != null && businessKeyName.isNotEmpty) {
+      // 2. Extract the value of the unique field from this incoming record
+      String? businessKeyValue;
+      for (var entry in recordValData.entries) {
+        if (entry.key.toLowerCase() == businessKeyName.toLowerCase()) {
+          businessKeyValue = entry.value?.toString();
+          break;
+        }
+      }
+
+      if (businessKeyValue != null && businessKeyValue.isNotEmpty) {
+        // 3. Search for any existing ACTIVE duplicate record in SQLite
+        final activeRecord = await SqliteHelper.getActiveByBusinessKey(key, businessKeyValue);
+        if (activeRecord != null) {
+          final activeKey = activeRecord.keys.first;
+          
+          // Only perform validation if it's a completely different record (different physical key)
+          if (activeKey != recordKey) {
+            final activeVal = activeRecord.values.first as Map<String, dynamic>;
+            final expiryDate = _getExpiryDate(activeVal);
+            
+            bool isExpiring = false;
+            if (expiryDate != null) {
+              final daysRemaining = expiryDate.difference(DateTime.now()).inDays;
+              if (daysRemaining <= 30) {
+                isExpiring = true;
+              }
+            }
+
+            if (isExpiring) {
+              // Expiring <= 30 days: Auto-archive the old active duplicate record
+              activeVal['__meta__'] ??= {};
+              activeVal['__meta__']['time'] ??= {};
+              activeVal['__meta__']['time']['a'] = DateTime.now().millisecondsSinceEpoch;
+              
+              // Perform atomic updates: update old to archived
+              await storage.add(activeKey, activeVal);
+            } else {
+              // Not expiring > 30 days (or no expiry date found): Block and notify user
+              throw Exception("Duplicate active record '$businessKeyValue' exists with more than 30 days remaining.");
+            }
+          }
+        }
+      }
+    }
+
+    // Save the new record as active
     await storage.add(recordKey, recordVal);
     
     // Check if record already exists in local list to prevent duplicates
@@ -198,6 +267,9 @@ class ElementDb {
       elements.add(element);
       metaService.add(data);
     }
+
+    // Force-reload the local list to perfectly reflect auto-archiving state
+    await initDb(forced: true);
   }
 
   Future<void> removeRecord(String recordKey) async {

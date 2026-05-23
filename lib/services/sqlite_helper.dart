@@ -24,9 +24,17 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     db.execute('''
       CREATE TABLE IF NOT EXISTS "$tableName" (
-        key TEXT PRIMARY KEY,
+        id TEXT PRIMARY KEY,
+        business_key_value TEXT,
+        is_active INTEGER DEFAULT 1,
         value TEXT
       )
+    ''');
+    
+    db.execute('''
+      CREATE INDEX IF NOT EXISTS "idx_active_business_key_$tableName" 
+      ON "$tableName" (business_key_value) 
+      WHERE is_active = 1
     ''');
   }
 
@@ -36,9 +44,9 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
-    final results = db.select('SELECT key, value FROM "$tableName"');
+    final results = db.select('SELECT id, value FROM "$tableName"');
     return results.map((row) {
-      final key = row['key'] as String;
+      final key = row['id'] as String;
       final value = jsonDecode(row['value'] as String);
       return {key: value is Map ? Map<String, dynamic>.from(value) : value};
     }).toList();
@@ -50,12 +58,24 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
-    final results = db.select('SELECT value FROM "$tableName" WHERE key = ?', [key]);
+    final results = db.select('SELECT value FROM "$tableName" WHERE id = ?', [key]);
     if (results.isNotEmpty) {
       final value = jsonDecode(results.first['value'] as String);
       return {key: value is Map ? Map<String, dynamic>.from(value) : value};
     }
     return null;
+  }
+
+  static Future<String?> _extractBusinessKeyValue(String dbName, Map<String, dynamic> val, String fallbackId) async {
+    final businessKeyName = await getBusinessUniqueKey(dbName);
+    if (businessKeyName != null) {
+      for (var entry in val.entries) {
+        if (entry.key.toLowerCase() == businessKeyName.toLowerCase()) {
+          return entry.value?.toString();
+        }
+      }
+    }
+    return fallbackId;
   }
 
   static Future<void> update(String dbName, String key, dynamic val) async {
@@ -64,9 +84,23 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
+    final Map<String, dynamic> recordVal = val is Map ? Map<String, dynamic>.from(val) : {};
+    final businessKeyVal = await _extractBusinessKeyValue(dbName, recordVal, key);
+    
+    int isActive = 1;
+    final meta = recordVal['__meta__'];
+    if (meta is Map) {
+      final time = meta['time'];
+      if (time is Map) {
+        if (time.containsKey('a') || time.containsKey('d')) {
+          isActive = 0;
+        }
+      }
+    }
+
     db.execute(
-      'INSERT OR REPLACE INTO "$tableName" (key, value) VALUES (?, ?)',
-      [key, jsonEncode(val)],
+      'INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)',
+      [key, businessKeyVal, isActive, jsonEncode(val)],
     );
   }
 
@@ -76,12 +110,26 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
-    // Use a transaction for high-performance batch updates
     db.execute('BEGIN TRANSACTION');
     try {
-      final stmt = db.prepare('INSERT OR REPLACE INTO "$tableName" (key, value) VALUES (?, ?)');
+      final stmt = db.prepare('INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)');
       for (var entry in items.entries) {
-        stmt.execute([entry.key.replaceFirst('$dbName:', ''), jsonEncode(entry.value)]);
+        final id = entry.key.replaceFirst('$dbName:', '');
+        final Map<String, dynamic> recordVal = entry.value is Map ? Map<String, dynamic>.from(entry.value as Map) : {};
+        final businessKeyVal = await _extractBusinessKeyValue(dbName, recordVal, id);
+        
+        int isActive = 1;
+        final meta = recordVal['__meta__'];
+        if (meta is Map) {
+          final time = meta['time'];
+          if (time is Map) {
+            if (time.containsKey('a') || time.containsKey('d')) {
+              isActive = 0;
+            }
+          }
+        }
+
+        stmt.execute([id, businessKeyVal, isActive, jsonEncode(entry.value)]);
       }
       stmt.dispose();
       db.execute('COMMIT');
@@ -97,7 +145,7 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
-    db.execute('DELETE FROM "$tableName" WHERE key = ?', [key]);
+    db.execute('DELETE FROM "$tableName" WHERE id = ?', [key]);
   }
 
   static Future<void> clear(String dbName) async {
@@ -106,6 +154,25 @@ class SqliteHelper {
     final tableName = _fileService.sanitizeName(dbName);
     db.execute('DROP TABLE IF EXISTS "$tableName"');
     await initTable(dbName);
+  }
+
+  static Future<Map<String, dynamic>?> getActiveByBusinessKey(String dbName, String businessKeyValue) async {
+    if (kIsWeb) return null;
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+
+    final results = db.select(
+      'SELECT id, value FROM "$tableName" WHERE business_key_value = ? AND is_active = 1 LIMIT 1',
+      [businessKeyValue]
+    );
+
+    if (results.isNotEmpty) {
+      final id = results.first['id'] as String;
+      final value = jsonDecode(results.first['value'] as String);
+      return {id: value is Map ? Map<String, dynamic>.from(value) : value};
+    }
+    return null;
   }
 
   static Future<void> initConfigurationsTable() async {
