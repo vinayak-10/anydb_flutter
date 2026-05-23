@@ -553,16 +553,20 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
       ),
       bottomNavigationBar: Container(
         color: Colors.white,
-        child: TabBar(
-          controller: _tabController,
-          isScrollable: widget.contents.length > 3,
-          labelColor: Colors.deepPurple,
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: Colors.deepPurple,
-          tabs: widget.contents.map<Widget>((c) => Tab(
-            text: c.name,
-            icon: Icon(c.type == ContentType.database ? Icons.storage : Icons.assessment),
-          )).toList(),
+        child: SafeArea(
+          bottom: true,
+          child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.center,
+            labelColor: Colors.deepPurple,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.deepPurple,
+            tabs: widget.contents.map<Widget>((c) => Tab(
+              text: c.name,
+              icon: Icon(c.type == ContentType.database ? Icons.storage : Icons.assessment),
+            )).toList(),
+          ),
         ),
       ),
     );
@@ -1350,38 +1354,41 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           top: BorderSide(color: Colors.indigo.shade200, width: 1),
         ),
       ),
-      child: Wrap(
-        alignment: WrapAlignment.spaceEvenly,
-        spacing: 20,
-        runSpacing: 16,
-        children: summarySchema.entries.map((e) {
-          final result = FormulaEngine.evaluate(e.value.toString(), dataRows, headers);
-          debugPrint("UI: Summary Evaluation for '${e.key}': formula='${e.value}', result='$result'");
-          
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SelectableText(
-                e.key.toUpperCase(), 
-                style: TextStyle(
-                  color: Colors.indigo.shade900, 
-                  fontSize: 11, 
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1
-                )
-              ),
-              const SizedBox(height: 4),
-              SelectableText(
-                _formatValue(result), 
-                style: TextStyle(
-                  color: Colors.indigo.shade700, 
-                  fontSize: 18, 
-                  fontWeight: FontWeight.w900,
-                )
-              ),
-            ],
-          );
-        }).toList(),
+      child: SafeArea(
+        bottom: true,
+        child: Wrap(
+          alignment: WrapAlignment.spaceEvenly,
+          spacing: 20,
+          runSpacing: 16,
+          children: summarySchema.entries.map((e) {
+            final result = FormulaEngine.evaluate(e.value.toString(), dataRows, headers);
+            debugPrint("UI: Summary Evaluation for '${e.key}': formula='${e.value}', result='$result'");
+            
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SelectableText(
+                  e.key.toUpperCase(), 
+                  style: TextStyle(
+                    color: Colors.indigo.shade900, 
+                    fontSize: 11, 
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.1
+                  )
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  _formatValue(result), 
+                  style: TextStyle(
+                    color: Colors.indigo.shade700, 
+                    fontSize: 18, 
+                    fontWeight: FontWeight.w900,
+                  )
+                ),
+              ],
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -1784,49 +1791,51 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("Export Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.share, color: Colors.indigo),
-              title: const Text("Share File"),
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  // Standard share dialog for all platforms
-                  // ignore: deprecated_member_use
-                  await Share.shareXFiles([XFile(filePath)], text: 'Monthly Report');
-                } catch (e) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.cloud_upload, color: Colors.blue),
-              title: const Text("Upload to Google Drive"),
-              onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.pop(context);
-                final googleDriveService = ref.read(googleDriveServiceProvider);
-                try {
-                  await googleDriveService.uploadFile(
-                    filePath,
-                    p.basename(filePath),
-                    path: ['xyz.maya', 'anydb', widget.schemaTitle, 'Aggregators']
-                  );
-                  messenger.showSnackBar(const SnackBar(content: Text("Uploaded to Google Drive successfully")));
-                } catch (e) {
-                  messenger.showSnackBar(SnackBar(content: Text("Upload failed: $e"), backgroundColor: Colors.red));
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Export Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.share, color: Colors.indigo),
+                title: const Text("Share File"),
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    // Standard share dialog for all platforms
+                    // ignore: deprecated_member_use
+                    await Share.shareXFiles([XFile(filePath)], text: 'Monthly Report');
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_upload, color: Colors.blue),
+                title: const Text("Upload to Google Drive"),
+                onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  Navigator.pop(context);
+                  final googleDriveService = ref.read(googleDriveServiceProvider);
+                  try {
+                    await googleDriveService.uploadFile(
+                      filePath,
+                      p.basename(filePath),
+                      path: ['xyz.maya', 'anydb', widget.schemaTitle, 'Aggregators']
+                    );
+                    messenger.showSnackBar(const SnackBar(content: Text("Uploaded to Google Drive successfully")));
+                  } catch (e) {
+                    messenger.showSnackBar(SnackBar(content: Text("Upload failed: $e"), backgroundColor: Colors.red));
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
