@@ -1,0 +1,18 @@
+- [x] **Phase 1: Storage Overhaul & Cross-Platform SQLite**
+  - [x] Add `sqlite3_flutter_libs` to `pubspec.yaml` dependencies
+  - [x] Remove `!isLinux()` restrictions inside `sqlite_helper.dart`
+  - [x] Unify all mobile platform CRUD operations inside `async_store.dart` to route through `SqliteHelper`
+- [x] **Phase 2: Configuration & Dropdown Selector UI**
+  - [x] Create `schema_configurations` table in SQLite to store unique key choices
+  - [x] Integrate dropdown key selector inside navigation drawer (`drawer_content.dart`)
+  - [x] Implement smart prioritization heuristic sorting for dropdown options candidate list
+- [x] **Phase 3: Active Indexing & Auto-Archiving**
+  - [x] Overhaul `SqliteHelper.initTable` record table schema to include `business_key_value` and `is_active`
+  - [x] Add active partial B-tree index in SQLite
+  - [x] Implement active duplicate validation and atomic transactional auto-archiving inside `ElementDb.addRecord`
+- [x] **Phase 4: Lazy Model Instantiation**
+  - [x] Overhaul `initDb` in `ElementDb` to load raw JSON record maps into an in-memory cache
+  - [x] Update `collection_view.dart` and `element_editor.dart` to populate `ElementModel` dynamically on-demand
+- [x] **Verification**
+  - [x] Run `flutter analyze` to verify zero static warnings or compilation errors
+  - [x] Verify sub-300ms batch imports of 3,000+ entries and smooth lag-free UI scrolling
