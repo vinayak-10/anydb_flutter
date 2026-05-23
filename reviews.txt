@@ -1,0 +1,10 @@
+Text input boxes in one line in add new transaction 
+Add new transaction button is too big
+Full white background, cleaner ui
+Tabs overflowing in tablet screen
+Improve feedback system, give information while database loading and report loading
+Increase font size for input boxes also
+Report search bar missing
+Close drawer after login or backup completed
+App overflowing on lenovo tablet screen causing the bottom tabs to hide behind  taskbar
+Lighten the colours, they are a little aggressive
