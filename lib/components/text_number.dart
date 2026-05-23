@@ -253,6 +253,7 @@ class _TextNumberEditorState extends State<_TextNumberEditor> {
         controller: _controller,
         focusNode: _focusNode,
         keyboardType: TextInputType.number,
+        style: const TextStyle(fontSize: 16),
         decoration: InputDecoration(
           labelText: widget.label,
           prefixText: widget.prefix,

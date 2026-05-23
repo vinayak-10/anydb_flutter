@@ -195,6 +195,7 @@ class _TextAsciiEditorState extends State<_TextAsciiEditor> {
         focusNode: _focusNode,
         maxLines: widget.multiline ? null : widget.lines,
         maxLength: widget.maxsize,
+        style: const TextStyle(fontSize: 16),
         decoration: InputDecoration(
           labelText: widget.label,
           filled: true,

@@ -142,6 +142,7 @@ class _DropDownEditorState extends State<_DropDownEditor> {
       padding: const EdgeInsets.all(8.0),
       child: DropdownButtonFormField<String>(
         initialValue: widget.items.contains(_currentValue) ? _currentValue : null,
+        style: const TextStyle(fontSize: 16, color: Colors.black87),
         decoration: InputDecoration(
           labelText: widget.label,
           border: const OutlineInputBorder(),

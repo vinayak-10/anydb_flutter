@@ -192,6 +192,7 @@ class _PhoneNumberEditorState extends State<_PhoneNumberEditor> {
       child: TextField(
         controller: _controller,
         keyboardType: TextInputType.phone,
+        style: const TextStyle(fontSize: 16),
         decoration: InputDecoration(
           labelText: widget.label,
           filled: true,

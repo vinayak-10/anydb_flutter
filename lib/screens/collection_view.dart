@@ -113,17 +113,49 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
     );
 
     if (confirmed == true) {
+      final statusNotifier = ValueNotifier<String>("Finalizing database records...");
+
       // Show loading indicator
       if (mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(child: CircularProgressIndicator()),
+          builder: (context) => ValueListenableBuilder<String>(
+            valueListenable: statusNotifier,
+            builder: (context, status, child) {
+              return Center(
+                child: Card(
+                  margin: const EdgeInsets.all(24),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 20),
+                        Text(
+                          status,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Please wait, this may take a few moments",
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         );
       }
 
       try {
         // 1. Export database locally
+        statusNotifier.value = "Saving database records locally...";
         await _exportDb(db);
 
         // 2. Cloud Backup to Google Drive
@@ -133,6 +165,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           final googleDriveService = ref.read(googleDriveServiceProvider);
           
           if (googleDriveService.isLoggedIn) {
+            statusNotifier.value = "Uploading backup to Google Drive...";
             await googleDriveService.uploadJson(
               jsonStr, 
               "${db.key}_backup_${DateTime.now().millisecondsSinceEpoch}.json",
@@ -150,6 +183,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
         }
 
         // 3. Generate Reports
+        statusNotifier.value = "Generating Daily and Monthly reports...";
         final aggregatorContent = widget.contents.firstWhere((c) => c.type == ContentType.aggregator);
         final agg = aggregatorContent.service as AggregatorService;
         
@@ -206,6 +240,8 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
             SnackBar(content: Text("Action Failed: $e"), backgroundColor: Colors.red)
           );
         }
+      } finally {
+        statusNotifier.dispose();
       }
     }
   }
@@ -279,7 +315,33 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
             showDialog(
               context: context,
               barrierDismissible: false,
-              builder: (context) => const Center(child: CircularProgressIndicator()),
+              builder: (context) => Center(
+                child: Card(
+                  margin: const EdgeInsets.all(24),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 20),
+                        Text(
+                          importMode == 'wipe' 
+                              ? "Wiping and importing database..." 
+                              : "Merging and importing database...",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Rebuilding local indexes and schema alignment",
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             );
           }
 
@@ -676,7 +738,33 @@ class _DatabaseViewState extends State<_DatabaseView> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) return const Center(child: CircularProgressIndicator());
+    if (!_initialized) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              "Loading Element Database...",
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.blueGrey.shade700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Reading records for $_currentFilter view",
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.blueGrey.shade400,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     final filteredElements = widget.db.applyFilter(_currentFilter)
         .where((e) => widget.searchQuery.isEmpty || e.match(widget.searchQuery, exact: widget.isExactMatch)[0])
@@ -1454,7 +1542,31 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           const Divider(height: 1, color: Colors.black12),
           Expanded(
             child: _isGenerating 
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Generating Excel Report...",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.blueGrey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Applying formula engine and templates",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blueGrey.shade400,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : _buildTable(),
           ),
         ],
