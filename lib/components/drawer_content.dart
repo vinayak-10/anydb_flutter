@@ -4,8 +4,8 @@ import '../core/settings_provider.dart';
 import '../services/google_drive_service.dart';
 import '../services/collection_service.dart';
 import '../services/element_db.dart';
+import '../services/sqlite_helper.dart';
 import '../screens/logs_page.dart';
-
 class DrawerContent extends ConsumerWidget {
   final String? currentSchemaName;
   const DrawerContent({super.key, this.currentSchemaName});
@@ -117,6 +117,131 @@ class DrawerContent extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (currentSchemaName != null) ...[
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Text('Business Unique Key', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  Builder(
+                    builder: (context) {
+                      final collectionService = ref.read(collectionServiceProvider);
+                      final contents = collectionService.contents;
+                      
+                      ElementDb? activeDb;
+                      for (var content in contents) {
+                        if (content.type == ContentType.database && content.name == currentSchemaName) {
+                          activeDb = content.service as ElementDb;
+                          break;
+                        }
+                      }
+
+                      if (activeDb == null) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final schemaFields = activeDb.dbSchema
+                          .map((s) => s['name']?.toString() ?? '')
+                          .where((name) => name.isNotEmpty)
+                          .toList();
+
+                      if (schemaFields.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return FutureBuilder<String?>(
+                        future: SqliteHelper.getBusinessUniqueKey(currentSchemaName!),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16.0),
+                              child: SizedBox(
+                                height: 48,
+                                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                              ),
+                            );
+                          }
+
+                          final currentKey = snapshot.data;
+                          
+                          // Prioritize the fields using our smart sorting heuristic!
+                          final prioritizedFields = getPrioritizedFields(schemaFields);
+                          
+                          // Ensure currentKey is in the dropdown items (or set to default if not set yet)
+                          final activeKey = (currentKey != null && prioritizedFields.contains(currentKey))
+                              ? currentKey
+                              : (prioritizedFields.isNotEmpty ? prioritizedFields.first : null);
+
+                          return StatefulBuilder(
+                            builder: (context, setStateDropdown) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                                child: DropdownButtonFormField<String>(
+                                  value: activeKey,
+                                  isExpanded: true,
+                                  style: const TextStyle(fontSize: 16, color: Colors.black87),
+                                  decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: Colors.grey.shade50,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                  ),
+                                  items: prioritizedFields.map((field) {
+                                    final isLikely = ['id', 'number', 'code', 'key', 'phone', 'card', 'sku', 'serial', 'barcode']
+                                        .any((k) => field.toLowerCase().contains(k));
+                                    return DropdownMenuItem<String>(
+                                      value: field,
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isLikely ? Icons.key : Icons.label_outline,
+                                            size: 16,
+                                            color: isLikely ? Colors.indigo : Colors.grey,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            field,
+                                            style: TextStyle(
+                                              fontWeight: isLikely ? FontWeight.w600 : FontWeight.normal,
+                                              color: isLikely ? Colors.indigo.shade900 : Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (newVal) async {
+                                    if (newVal != null) {
+                                      await SqliteHelper.setBusinessUniqueKey(currentSchemaName!, newVal);
+                                      setStateDropdown(() {
+                                        // Update local dropdown state
+                                      });
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text("Unique key updated to '$newVal'"),
+                                            backgroundColor: Colors.indigo,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    }
+                  ),
+                ],
                 const Divider(),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -236,4 +361,19 @@ class DrawerContent extends ConsumerWidget {
       ),
     );
   }
+}
+
+List<String> getPrioritizedFields(List<String> allSchemaFields) {
+  final likelyKeywords = ['id', 'number', 'code', 'key', 'phone', 'card', 'sku', 'serial', 'barcode'];
+  
+  // Split into priority items and secondary items
+  final priorityList = allSchemaFields.where((field) {
+    final lowerField = field.toLowerCase();
+    return likelyKeywords.any((keyword) => lowerField.contains(keyword));
+  }).toList();
+  
+  final secondaryList = allSchemaFields.where((field) => !priorityList.contains(field)).toList();
+  
+  // Return prioritized list with likely candidates at the top
+  return [...priorityList, ...secondaryList];
 }

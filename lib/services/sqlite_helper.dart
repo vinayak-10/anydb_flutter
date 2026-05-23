@@ -107,4 +107,36 @@ class SqliteHelper {
     db.execute('DROP TABLE IF EXISTS "$tableName"');
     await initTable(dbName);
   }
+
+  static Future<void> initConfigurationsTable() async {
+    if (kIsWeb) return;
+    final db = await _database;
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS "schema_configurations" (
+        schema_name TEXT PRIMARY KEY,
+        business_unique_key TEXT
+      )
+    ''');
+  }
+
+  static Future<String?> getBusinessUniqueKey(String schemaName) async {
+    if (kIsWeb) return null;
+    final db = await _database;
+    await initConfigurationsTable();
+    final results = db.select('SELECT business_unique_key FROM "schema_configurations" WHERE schema_name = ?', [schemaName]);
+    if (results.isNotEmpty) {
+      return results.first['business_unique_key'] as String?;
+    }
+    return null;
+  }
+
+  static Future<void> setBusinessUniqueKey(String schemaName, String keyName) async {
+    if (kIsWeb) return;
+    final db = await _database;
+    await initConfigurationsTable();
+    db.execute(
+      'INSERT OR REPLACE INTO "schema_configurations" (schema_name, business_unique_key) VALUES (?, ?)',
+      [schemaName, keyName],
+    );
+  }
 }
