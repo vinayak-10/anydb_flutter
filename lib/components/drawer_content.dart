@@ -131,6 +131,7 @@ class DrawerContent extends ConsumerWidget {
                       if (account != null) {
                         ref.read(googleUserProvider.notifier).setUser(account);
                         if (context.mounted) {
+                          Navigator.pop(context); // Close the drawer
                           ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text("Google Drive Authorized")));
                         }
@@ -178,6 +179,9 @@ class DrawerContent extends ConsumerWidget {
 
                         if (!context.mounted) return;
                         Navigator.pop(context); // Close loading dialog
+                        if (context.mounted) {
+                          Navigator.pop(context); // Close the drawer
+                        }
 
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(

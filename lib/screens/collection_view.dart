@@ -1185,6 +1185,8 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   List<dynamic> _aoa = [];
   String? _lastGeneratedPath;
   final ScrollController _verticalScrollController = ScrollController();
+  String _reportSearchQuery = '';
+  final TextEditingController _reportSearchController = TextEditingController();
 
   @override
   void initState() {
@@ -1199,6 +1201,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   @override
   void dispose() {
     _verticalScrollController.dispose();
+    _reportSearchController.dispose();
     super.dispose();
   }
 
@@ -1370,6 +1373,15 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   Widget _buildTable() {
     if (_aoa.isEmpty) return const SizedBox.shrink();
     
+    final headers = _aoa[0] as List<dynamic>;
+    final dataRows = _aoa.skip(1).toList();
+
+    final filteredDataRows = dataRows.where((row) {
+      if (_reportSearchQuery.isEmpty) return true;
+      final query = _reportSearchQuery.toLowerCase();
+      return row.any((cell) => _formatValue(cell).toLowerCase().contains(query));
+    }).toList();
+
     return Scrollbar(
       controller: _verticalScrollController,
       thumbVisibility: true,
@@ -1381,11 +1393,11 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           child: DataTable(
             headingRowColor: WidgetStateProperty.all(Colors.blueGrey.shade100),
             dataRowMinHeight: 48,
-            columns: _aoa[0].map<DataColumn>((c) => DataColumn(
+            columns: headers.map<DataColumn>((c) => DataColumn(
               label: Text(c.toString(), style: const TextStyle(fontWeight: FontWeight.bold))
             )).toList(),
-            rows: _aoa.skip(1).map<DataRow>((r) => DataRow(
-              cells: r.map<DataCell>((c) {
+            rows: filteredDataRows.map<DataRow>((r) => DataRow(
+              cells: (r as List).map<DataCell>((c) {
                 String displayVal = _formatValue(c);
                 return DataCell(Text(displayVal, style: const TextStyle(fontSize: 14)));
               }).toList(),
@@ -1539,6 +1551,80 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               ],
             ),
           ),
+          if (_aoa.isNotEmpty && !_isGenerating)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10.0),
+                      border: Border.all(color: Colors.grey.shade300),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.03),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.search, color: Colors.blue.shade600, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _reportSearchController,
+                            style: const TextStyle(fontSize: 16),
+                            decoration: const InputDecoration(
+                              hintText: "Search in report...",
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 12.0),
+                            ),
+                            onChanged: (val) {
+                              setState(() {
+                                _reportSearchQuery = val;
+                              });
+                            },
+                          ),
+                        ),
+                        if (_reportSearchQuery.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _reportSearchQuery = '';
+                                _reportSearchController.clear();
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (_reportSearchQuery.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0, left: 4.0),
+                      child: Builder(
+                        builder: (context) {
+                          final dataRows = _aoa.skip(1).toList();
+                          final filteredCount = dataRows.where((row) {
+                            final query = _reportSearchQuery.toLowerCase();
+                            return row.any((cell) => _formatValue(cell).toLowerCase().contains(query));
+                          }).length;
+                          return Text(
+                            "Filtered: $filteredCount of ${dataRows.length} entries",
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                          );
+                        }
+                      ),
+                    ),
+                ],
+              ),
+            ),
           const Divider(height: 1, color: Colors.black12),
           Expanded(
             child: _isGenerating 
@@ -1589,6 +1675,8 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   DateTime _selectedDate = DateTime.now();
   DateTimeRange? _selectedRange;
   Map<String, dynamic>? _reportData;
+  String _reportSearchQuery = '';
+  final TextEditingController _reportSearchController = TextEditingController();
 
   @override
   void initState() {
@@ -1604,8 +1692,16 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
     if (widget.initialReportData != oldWidget.initialReportData && widget.initialReportData != null) {
       setState(() {
         _reportData = widget.initialReportData;
+        _reportSearchQuery = '';
+        _reportSearchController.clear();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _reportSearchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -1641,36 +1737,120 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                                 onPressed: () => widget.agg.openReport(_reportData!['path']),
                                 tooltip: "Open",
                               ),
-                            IconButton(onPressed: () => setState(() => _reportData = null), icon: const Icon(Icons.close)),
+                            IconButton(
+                              onPressed: () => setState(() {
+                                _reportData = null;
+                                _reportSearchQuery = '';
+                                _reportSearchController.clear();
+                              }),
+                              icon: const Icon(Icons.close),
+                            ),
                           ],
                         ),
                       ],
                     ),
                     const Divider(),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                            columns: [
-                              const DataColumn(label: Text("S.no.", style: TextStyle(fontWeight: FontWeight.bold))),
-                              ...(((_reportData!['data'] ?? []) as List).isNotEmpty 
-                                  ? ((_reportData!['data'] as List)[0] as Map).keys.toList() 
-                                  : ["No Data"]).map((k) => DataColumn(label: Text(k.toString(), style: const TextStyle(fontWeight: FontWeight.bold)))),
-                            ],
-                            rows: ((_reportData!['data'] ?? []) as List).asMap().entries.map((entry) {
-                              final idx = entry.key;
-                              final map = entry.value as Map;
-                              return DataRow(cells: [
-                                DataCell(Text((idx + 1).toString())),
-                                ...map.values.map((v) => DataCell(Text(_formatValue(v)))),
-                              ]);
-                            }).toList(),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10.0),
+                        border: Border.all(color: Colors.grey.shade300),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
+                        ],
                       ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search, color: Colors.indigo.shade400, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _reportSearchController,
+                              style: const TextStyle(fontSize: 16),
+                              decoration: const InputDecoration(
+                                hintText: "Search in report...",
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(vertical: 12.0),
+                              ),
+                              onChanged: (val) {
+                                setState(() {
+                                  _reportSearchQuery = val;
+                                });
+                              },
+                            ),
+                          ),
+                          if (_reportSearchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _reportSearchQuery = '';
+                                  _reportSearchController.clear();
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    Builder(
+                      builder: (context) {
+                        final dataList = (_reportData!['data'] ?? []) as List;
+                        final filteredEntries = dataList.asMap().entries.where((entry) {
+                          if (_reportSearchQuery.isEmpty) return true;
+                          final map = entry.value as Map;
+                          final query = _reportSearchQuery.toLowerCase();
+                          return map.values.any((val) => _formatValue(val).toLowerCase().contains(query));
+                        }).toList();
+
+                        return Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_reportSearchQuery.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
+                                  child: Text(
+                                    "Filtered: ${filteredEntries.length} of ${dataList.length} entries",
+                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                                  ),
+                                ),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: DataTable(
+                                      headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                                      columns: [
+                                        const DataColumn(label: Text("S.no.", style: TextStyle(fontWeight: FontWeight.bold))),
+                                        ...(((_reportData!['data'] ?? []) as List).isNotEmpty 
+                                            ? ((_reportData!['data'] as List)[0] as Map).keys.toList() 
+                                            : ["No Data"]).map((k) => DataColumn(label: Text(k.toString(), style: const TextStyle(fontWeight: FontWeight.bold)))),
+                                      ],
+                                      rows: filteredEntries.asMap().entries.map((filteredEntry) {
+                                        final displayedIdx = filteredEntry.key;
+                                        final originalEntry = filteredEntry.value;
+                                        final map = originalEntry.value as Map;
+                                        return DataRow(cells: [
+                                          DataCell(Text((displayedIdx + 1).toString())),
+                                          ...map.values.map((v) => DataCell(Text(_formatValue(v)))),
+                                        ]);
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                     ),
                     const SizedBox(height: 16),
                     Container(
@@ -1814,6 +1994,8 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                           setState(() {
                             _reportData = result;
                             _reportData!['path'] = path; // Save the path for sharing
+                            _reportSearchQuery = '';
+                            _reportSearchController.clear();
                           });
 
                           // Ensure table is rendered before closing progress indicator
