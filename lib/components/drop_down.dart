@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/gen_interface.dart';
+import '../core/settings_provider.dart';
 
 class DropDown extends GenInterface {
   String name = "";
@@ -138,28 +140,33 @@ class _DropDownEditorState extends State<_DropDownEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: DropdownButtonFormField<String>(
-        initialValue: widget.items.contains(_currentValue) ? _currentValue : null,
-        style: const TextStyle(fontSize: 16, color: Colors.black87),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          border: const OutlineInputBorder(),
-          filled: true,
-          fillColor: Colors.grey[100],
-        ),
-        items: widget.items.map((String value) {
-          return DropdownMenuItem<String>(
-            value: value,
-            child: Text(value),
-          );
-        }).toList(),
-        onChanged: (val) {
-          setState(() => _currentValue = val);
-          widget.onChanged(val);
-        },
-      ),
+    return Consumer(
+      builder: (context, ref, child) {
+        final settings = ref.watch(settingsProvider);
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: DropdownButtonFormField<String>(
+            initialValue: widget.items.contains(_currentValue) ? _currentValue : null,
+            style: TextStyle(fontSize: settings.inputFontSize, color: Colors.black87),
+            decoration: InputDecoration(
+              labelText: widget.label,
+              border: const OutlineInputBorder(),
+              filled: true,
+              fillColor: Colors.grey[100],
+            ),
+            items: widget.items.map((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(value),
+              );
+            }).toList(),
+            onChanged: (val) {
+              setState(() => _currentValue = val);
+              widget.onChanged(val);
+            },
+          ),
+        );
+      },
     );
   }
 }

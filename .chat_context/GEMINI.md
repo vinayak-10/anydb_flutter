@@ -46,5 +46,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `5da6aa3` (docs: save database overhaul artifacts and research logs into project chat context)
+- **Last Stable Commit:** `b617124` (docs: save simple account ledger decoupling artifacts and chat logs into project context)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.

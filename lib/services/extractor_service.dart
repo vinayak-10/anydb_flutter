@@ -187,7 +187,7 @@ class ExtractorDatabase extends Extractor {
           _flatten(value, index, keyValues);
           break;
         case "array":
-          if (key.contains(':')) {
+          if (key.contains(':') || (value is List && value.isNotEmpty && value.first is Map)) {
             for (int vi = 0; vi < value.length; vi++) {
               _flatten(value[vi], index + vi, keyValues);
             }

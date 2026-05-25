@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background: Premium Velvet Crimson/Terracotta -->
+  <rect width="512" height="512" rx="64" fill="#6B1524"/>
+  
+  <!-- Outer Sacred Yantra Gate (Bhupura) in Polished Gold -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Double-bordered outer gate -->
+    <rect x="80" y="70" width="352" height="352" rx="24" stroke="#E5C158" stroke-width="4" opacity="0.95"/>
+    <rect x="96" y="86" width="320" height="320" rx="16" stroke="#E5C158" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/>
+    
+    <!-- Concentric Circles representing Database relation tracks -->
+    <circle cx="256" cy="236" r="120" stroke="#E5C158" stroke-width="3" opacity="0.8"/>
+    <circle cx="256" cy="236" r="100" stroke="#E5C158" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.5"/>
+    
+    <!-- Outer Yantra Petals (Symmetric Lotus accents around the circle) -->
+    <!-- Top Petal -->
+    <path d="M256,116 C266,126 270,136 256,146 C242,136 246,126 256,116 Z" fill="#E5C158" opacity="0.8"/>
+    <!-- Bottom Petal -->
+    <path d="M256,356 C266,346 270,336 256,326 C242,336 246,346 256,356 Z" fill="#E5C158" opacity="0.8"/>
+    <!-- Left Petal -->
+    <path d="M136,236 C146,226 156,222 166,236 C156,250 146,246 136,236 Z" fill="#E5C158" opacity="0.8"/>
+    <!-- Right Petal -->
+    <path d="M376,236 C366,226 356,222 346,236 C356,250 366,246 376,236 Z" fill="#E5C158" opacity="0.8"/>
+  </g>
+  
+  <!-- Centerpiece: Superposition of the Dynamic Aggregator Prism and the Yantra Matrix -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 3D Isometric Prism / Data Cube Faces (Translucent Gilded Saffron/Red) -->
+    <!-- Top Facet (Spreadsheet Grid Prism) -->
+    <polygon points="256,156 326,196 256,236 186,196" fill="#E5C158" fill-opacity="0.25" stroke="#E5C158" stroke-width="3"/>
+    
+    <!-- Left Facet (SQLite Database Rack Columns) -->
+    <polygon points="186,196 256,236 256,316 186,276" fill="#B83A4B" fill-opacity="0.4" stroke="#E5C158" stroke-width="3"/>
+    
+    <!-- Right Facet (Dynamic Report Aggregations) -->
+    <polygon points="256,236 326,196 326,276 256,316" fill="#F4A261" fill-opacity="0.3" stroke="#E5C158" stroke-width="3"/>
+    
+    <!-- Inner Yantra Triangles intersecting the Isometric Cube -->
+    <!-- Ascending Triangle -->
+    <polygon points="256,156 326,276 186,276" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="3 3" opacity="0.7"/>
+    <!-- Descending Triangle -->
+    <polygon points="256,316 326,196 186,196" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="3 3" opacity="0.7"/>
+    
+    <!-- Intersecting Data Nodes (Luminous Mint Green - Glowing active keys) -->
+    <!-- Top Peak Node -->
+    <circle cx="256" cy="156" r="8" fill="#48CFCB" stroke="#FFFFFF" stroke-width="2"/>
+    <!-- Bottom Base Node -->
+    <circle cx="256" cy="316" r="8" fill="#48CFCB" stroke="#FFFFFF" stroke-width="2"/>
+    <!-- Left Node -->
+    <circle cx="186" cy="196" r="8" fill="#48CFCB" stroke="#FFFFFF" stroke-width="2"/>
+    <!-- Right Node -->
+    <circle cx="326" cy="196" r="8" fill="#48CFCB" stroke="#FFFFFF" stroke-width="2"/>
+    <!-- Bottom Left Node -->
+    <circle cx="186" cy="276" r="8" fill="#48CFCB" stroke="#FFFFFF" stroke-width="2"/>
+    <!-- Bottom Right Node -->
+    <circle cx="326" cy="276" r="8" fill="#48CFCB" stroke="#FFFFFF" stroke-width="2"/>
+    
+    <!-- Central Bindu (Infinite Hub / Core DB Node) -->
+    <circle cx="256" cy="236" r="10" fill="#FFFFFF" stroke="#E5C158" stroke-width="3"/>
+  </g>
+  
+  <!-- Elegant Typography: Serif text "anydb" -->
+  <text x="256" y="460" text-anchor="middle" font-family="'Lora', 'Playfair Display', 'Georgia', serif" font-size="36" font-weight="bold" fill="#E5C158" letter-spacing="6">anydb</text>
+</svg>

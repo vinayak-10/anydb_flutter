@@ -38,7 +38,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
   late TabController _tabController;
   int _currentTabIndex = 0;
   bool _isSearching = false;
-  bool _isExactMatch = false;
+  bool _isExactMatch = true;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   final List<GlobalKey<_DatabaseViewState>> _dbKeys = [];
@@ -619,11 +619,12 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           bottom: true,
           child: TabBar(
             controller: _tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.center,
-            labelColor: Colors.deepPurple,
+            isScrollable: widget.contents.length > 3,
+            tabAlignment: widget.contents.length > 3 ? TabAlignment.center : TabAlignment.fill,
+            labelColor: Theme.of(context).colorScheme.primary,
             unselectedLabelColor: Colors.grey,
-            indicatorColor: Colors.deepPurple,
+            indicatorColor: Theme.of(context).colorScheme.primary,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
             tabs: widget.contents.map<Widget>((c) => Tab(
               text: c.name,
               icon: Icon(c.type == ContentType.database ? Icons.storage : Icons.assessment),
@@ -1182,6 +1183,7 @@ class AggregatorReportView extends ConsumerStatefulWidget {
 
 class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   bool _isGenerating = false;
+  bool _isSearching = false;
   List<dynamic> _aoa = [];
   String? _lastGeneratedPath;
   final ScrollController _verticalScrollController = ScrollController();
@@ -1500,36 +1502,85 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text("Report: ${widget.report.key}"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.blue),
-            onPressed: _isGenerating ? null : () => _generate(force: true),
-            tooltip: "Recalculate from Database",
-          ),
-          if (_aoa.isNotEmpty)
-            TextButton.icon(
-              icon: const Icon(Icons.open_in_new, color: Colors.blue),
-              label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-              onPressed: () async {
-                if (_lastGeneratedPath == null) {
-                  // Explicitly generate for web/mobile if not yet done
-                  final path = await widget.agg.generateWorkbook(
-                    widget.report,
-                    date: widget.selectedRange ?? widget.selectedDate,
-                  );
-                  setState(() => _lastGeneratedPath = path);
-                  await widget.agg.openReport(path);
-                } else {
-                  await widget.agg.openReport(_lastGeneratedPath);
-                }
-              },
-            ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: _aoa.isEmpty ? null : _share,
-          ),
-        ],
+        leading: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.keyboard_backspace, color: Colors.blue),
+                onPressed: () {
+                  setState(() {
+                    _isSearching = false;
+                    _reportSearchQuery = '';
+                    _reportSearchController.clear();
+                  });
+                },
+              )
+            : null,
+        title: _isSearching
+            ? TextField(
+                controller: _reportSearchController,
+                autofocus: true,
+                style: const TextStyle(fontSize: 18),
+                decoration: const InputDecoration(
+                  hintText: "Search in report...",
+                  border: InputBorder.none,
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    _reportSearchQuery = val;
+                  });
+                },
+              )
+            : Text("Report: ${widget.report.key}"),
+        actions: _isSearching
+            ? [
+                if (_reportSearchQuery.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      setState(() {
+                        _reportSearchQuery = '';
+                        _reportSearchController.clear();
+                      });
+                    },
+                  ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.search, color: Colors.blue),
+                  onPressed: () {
+                    setState(() {
+                      _isSearching = true;
+                    });
+                  },
+                  tooltip: "Search in report",
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.blue),
+                  onPressed: _isGenerating ? null : () => _generate(force: true),
+                  tooltip: "Recalculate from Database",
+                ),
+                if (_aoa.isNotEmpty)
+                  TextButton.icon(
+                    icon: const Icon(Icons.open_in_new, color: Colors.blue),
+                    label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      if (_lastGeneratedPath == null) {
+                        // Explicitly generate for web/mobile if not yet done
+                        final path = await widget.agg.generateWorkbook(
+                          widget.report,
+                          date: widget.selectedRange ?? widget.selectedDate,
+                        );
+                        setState(() => _lastGeneratedPath = path);
+                        await widget.agg.openReport(path);
+                      } else {
+                        await widget.agg.openReport(_lastGeneratedPath);
+                      }
+                    },
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.share),
+                  onPressed: _aoa.isEmpty ? null : _share,
+                ),
+              ],
       ),
       bottomNavigationBar: _buildSummaryFooter(),
       body: Column(
@@ -1557,54 +1608,6 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10.0),
-                      border: Border.all(color: Colors.grey.shade300),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, color: Colors.blue.shade600, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _reportSearchController,
-                            style: const TextStyle(fontSize: 16),
-                            decoration: const InputDecoration(
-                              hintText: "Search in report...",
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 12.0),
-                            ),
-                            onChanged: (val) {
-                              setState(() {
-                                _reportSearchQuery = val;
-                              });
-                            },
-                          ),
-                        ),
-                        if (_reportSearchQuery.isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              setState(() {
-                                _reportSearchQuery = '';
-                                _reportSearchController.clear();
-                              });
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
                   if (_reportSearchQuery.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4.0, left: 4.0),
@@ -1675,6 +1678,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   DateTime _selectedDate = DateTime.now();
   DateTimeRange? _selectedRange;
   Map<String, dynamic>? _reportData;
+  bool _isSearching = false;
   String _reportSearchQuery = '';
   final TextEditingController _reportSearchController = TextEditingController();
 
@@ -1716,89 +1720,95 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                padding: const EdgeInsets.all(16.0),
                child: Column(
                  crossAxisAlignment: CrossAxisAlignment.start,
-                 children: [
+                  children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(_reportData!['name'] ?? "Report", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.indigo)),
-                        Row(
-                          children: [
-                            if (_reportData!['path'] != null)
-                              IconButton(
-                                icon: const Icon(Icons.share, color: Colors.indigo),
+                        _isSearching
+                            ? IconButton(
+                                icon: const Icon(Icons.arrow_back, color: Colors.indigo),
                                 onPressed: () {
-                                   _showShareDialog(context, _reportData!['path']);
+                                  setState(() {
+                                    _isSearching = false;
+                                    _reportSearchQuery = '';
+                                    _reportSearchController.clear();
+                                  });
                                 },
-                                tooltip: "Share",
-                              ),
-                            if (_reportData!['path'] != null)
-                              IconButton(
-                                icon: const Icon(Icons.open_in_new, color: Colors.indigo),
-                                onPressed: () => widget.agg.openReport(_reportData!['path']),
-                                tooltip: "Open",
-                              ),
-                            IconButton(
-                              onPressed: () => setState(() {
-                                _reportData = null;
-                                _reportSearchQuery = '';
-                                _reportSearchController.clear();
-                              }),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
+                              )
+                            : Text(_reportData!['name'] ?? "Report", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.indigo)),
+                        Expanded(
+                          child: _isSearching
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: TextField(
+                                    controller: _reportSearchController,
+                                    autofocus: true,
+                                    style: const TextStyle(fontSize: 16),
+                                    decoration: const InputDecoration(
+                                      hintText: "Search in report...",
+                                      border: InputBorder.none,
+                                    ),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _reportSearchQuery = val;
+                                      });
+                                    },
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        Row(
+                          children: _isSearching
+                              ? [
+                                  if (_reportSearchQuery.isNotEmpty)
+                                    IconButton(
+                                      icon: const Icon(Icons.clear, size: 18),
+                                      onPressed: () {
+                                        setState(() {
+                                          _reportSearchQuery = '';
+                                          _reportSearchController.clear();
+                                        });
+                                      },
+                                    ),
+                                ]
+                              : [
+                                  IconButton(
+                                    icon: const Icon(Icons.search, color: Colors.indigo),
+                                    onPressed: () {
+                                      setState(() {
+                                        _isSearching = true;
+                                      });
+                                    },
+                                    tooltip: "Search",
+                                  ),
+                                  if (_reportData!['path'] != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.share, color: Colors.indigo),
+                                      onPressed: () {
+                                         _showShareDialog(context, _reportData!['path']);
+                                      },
+                                      tooltip: "Share",
+                                    ),
+                                  if (_reportData!['path'] != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.open_in_new, color: Colors.indigo),
+                                      onPressed: () => widget.agg.openReport(_reportData!['path']),
+                                      tooltip: "Open",
+                                    ),
+                                  IconButton(
+                                    onPressed: () => setState(() {
+                                      _reportData = null;
+                                      _reportSearchQuery = '';
+                                      _reportSearchController.clear();
+                                      _isSearching = false;
+                                    }),
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                ],
                         ),
                       ],
                     ),
                     const Divider(),
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12.0),
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10.0),
-                        border: Border.all(color: Colors.grey.shade300),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.03),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.search, color: Colors.indigo.shade400, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _reportSearchController,
-                              style: const TextStyle(fontSize: 16),
-                              decoration: const InputDecoration(
-                                hintText: "Search in report...",
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 12.0),
-                              ),
-                              onChanged: (val) {
-                                setState(() {
-                                  _reportSearchQuery = val;
-                                });
-                              },
-                            ),
-                          ),
-                          if (_reportSearchQuery.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () {
-                                setState(() {
-                                  _reportSearchQuery = '';
-                                  _reportSearchController.clear();
-                                });
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
                     Builder(
                       builder: (context) {
                         final dataList = (_reportData!['data'] ?? []) as List;

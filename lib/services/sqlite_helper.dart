@@ -22,15 +22,42 @@ class SqliteHelper {
     if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
-    db.execute('''
-      CREATE TABLE IF NOT EXISTS "$tableName" (
-        id TEXT PRIMARY KEY,
-        business_key_value TEXT,
-        is_active INTEGER DEFAULT 1,
-        value TEXT
-      )
-    ''');
-    
+
+    // Check if the table already exists
+    final tableCheck = db.select(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      [tableName],
+    );
+
+    if (tableCheck.isEmpty) {
+      // Fresh table — create with the new schema directly
+      db.execute('''
+        CREATE TABLE "$tableName" (
+          id TEXT PRIMARY KEY,
+          business_key_value TEXT,
+          is_active INTEGER DEFAULT 1,
+          value TEXT
+        )
+      ''');
+    } else {
+      // Table exists — check columns and migrate if needed
+      final columns = db.select('PRAGMA table_info("$tableName")');
+      final columnNames = columns.map((c) => c['name'] as String).toSet();
+
+      // Migrate old `key` column to `id`
+      if (columnNames.contains('key') && !columnNames.contains('id')) {
+        db.execute('ALTER TABLE "$tableName" RENAME COLUMN "key" TO "id"');
+      }
+
+      // Add missing columns from the new schema
+      if (!columnNames.contains('business_key_value')) {
+        db.execute('ALTER TABLE "$tableName" ADD COLUMN business_key_value TEXT');
+      }
+      if (!columnNames.contains('is_active')) {
+        db.execute('ALTER TABLE "$tableName" ADD COLUMN is_active INTEGER DEFAULT 1');
+      }
+    }
+
     db.execute('''
       CREATE INDEX IF NOT EXISTS "idx_active_business_key_$tableName" 
       ON "$tableName" (business_key_value) 

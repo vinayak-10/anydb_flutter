@@ -1,10 +1,5 @@
-Text input boxes in one line in add new transaction 
-Add new transaction button is too big
-Full white background, cleaner ui
-Tabs overflowing in tablet screen
-Improve feedback system, give information while database loading and report loading
-Increase font size for input boxes also
-Report search bar missing
-Close drawer after login or backup completed
-App overflowing on lenovo tablet screen causing the bottom tabs to hide behind  taskbar
-Lighten the colours, they are a little aggressive
+Tab buttons are congested close to each other.
+Background white, even in menu. Whole app should have simple white background.
+If discount is loaded, and paid becomes greater than charges, it makes discount as negative, it should make discount zero and update balance. Basically, accounting needs to be more robust and needs a proper review.
+The latest updated record is going to last upon new transaction entry. Record is disappearing, and not showing in report also.
+The reporting engine also needs a review as latest updated records are not showing in report and no such records exist error is being hit, esp for present day registered records.

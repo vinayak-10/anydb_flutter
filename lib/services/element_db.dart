@@ -97,6 +97,54 @@ class ElementDb {
     }).toList();
   }
 
+  int _getSortTime(ElementModel e) {
+    final data = e.fetch();
+    if (data.isEmpty) return 0;
+    final val = data.values.first;
+    if (val is! Map) return 0;
+
+    // 1. Try __meta__.time.u
+    final meta = val['__meta__'];
+    if (meta != null && meta['time'] != null) {
+      final time = meta['time'];
+      if (time['u'] != null) return time['u'] as int;
+      if (time['c'] != null) return time['c'] as int;
+    }
+
+    // 2. Try simple-account transaction dates
+    int maxTxTime = 0;
+    for (var comp in e.components) {
+      if (comp.runtimeType.toString().contains('SimpleAccount') || comp.getType() == 'simple-account') {
+        try {
+          final dynamic sa = comp;
+          final txTime = sa.getLastTransactionTime() as int;
+          if (txTime > maxTxTime) {
+            maxTxTime = txTime;
+          }
+        } catch (_) {}
+      }
+    }
+    if (maxTxTime > 0) return maxTxTime;
+
+    // 3. Try Registered On/created/date fields
+    for (var entry in val.entries) {
+      final lowerKey = entry.key.toLowerCase();
+      if (lowerKey.contains('register') || lowerKey.contains('created') || lowerKey.contains('date')) {
+        final entryVal = entry.value;
+        if (entryVal is int) {
+          return entryVal;
+        } else if (entryVal is String) {
+          final parsed = int.tryParse(entryVal);
+          if (parsed != null) return parsed;
+          final parsedDate = DateTime.tryParse(entryVal);
+          if (parsedDate != null) return parsedDate.millisecondsSinceEpoch;
+        }
+      }
+    }
+
+    return 0;
+  }
+
   Future<int> initDb({bool forced = false, List<String> filter = const ["Active"]}) async {
     if (initialized && !forced && elements.isNotEmpty) {
       return elements.length;
@@ -131,6 +179,9 @@ class ElementDb {
       final element = ElementModel.lazy(dbSchema, intf, data);
       elements.add(element);
     }
+
+    // Stable Sorting descending (newest first)
+    elements.sort((a, b) => _getSortTime(b).compareTo(_getSortTime(a)));
 
     initialized = true;
     return elements.length;

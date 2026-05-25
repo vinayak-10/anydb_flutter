@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/gen_interface.dart';
+import '../core/settings_provider.dart';
 
 class TextNumber extends GenInterface {
   String name = "";
@@ -247,21 +249,26 @@ class _TextNumberEditorState extends State<_TextNumberEditor> {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        keyboardType: TextInputType.number,
-        style: const TextStyle(fontSize: 16),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          prefixText: widget.prefix,
-          suffixText: widget.suffix,
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: widget.onChanged,
-      ),
+    return Consumer(
+      builder: (context, ref, child) {
+        final settings = ref.watch(settingsProvider);
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            keyboardType: TextInputType.number,
+            style: TextStyle(fontSize: settings.inputFontSize),
+            decoration: InputDecoration(
+              labelText: widget.label,
+              prefixText: widget.prefix,
+              suffixText: widget.suffix,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: widget.onChanged,
+          ),
+        );
+      },
     );
   }
 }

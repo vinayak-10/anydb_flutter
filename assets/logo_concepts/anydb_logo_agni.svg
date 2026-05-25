@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background: Deep Charcoal Dark -->
+  <rect width="512" height="512" rx="64" fill="#1B1C1D"/>
+  
+  <!-- Sacred Agni / Resilient Flame Stack -->
+  <g transform="translate(136, 86)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    
+    <!-- Outer Flame Layer (Saffron Red) -->
+    <path d="M 120,20 C 180,90 220,160 210,240 C 200,280 150,300 120,300 C 90,300 40,280 30,240 C 20,160 60,90 120,20 Z" stroke="#FF4757" stroke-width="5" fill="#FF4757" fill-opacity="0.05"/>
+    
+    <!-- Middle Flame Layer styled as Database Cylinder outline (Luminous Gold) -->
+    <path d="M 120,70 C 160,120 190,170 180,240 C 170,270 140,280 120,280 C 100,280 70,270 60,240 C 50,170 80,120 120,70 Z" stroke="#FFA502" stroke-width="4" fill="#FFA502" fill-opacity="0.1"/>
+    
+    <!-- Inner Flame / 3-Tier Database Cylinder stack outlines (Crimson & White) -->
+    <!-- Cylinder 1 (Top) -->
+    <path d="M 75,150 C 90,140 150,140 165,150 C 165,155 165,160 165,165 C 150,175 90,175 75,165 Z" stroke="#FFFFFF" stroke-width="3"/>
+    <path d="M 75,165 C 75,175 90,180 120,180 C 150,180 165,175 165,165" stroke="#FFFFFF" stroke-width="3"/>
+    
+    <!-- Cylinder 2 (Middle) -->
+    <path d="M 60,195 C 75,185 165,185 180,195 C 180,200 180,205 180,210 C 165,220 75,220 60,210 Z" stroke="#FFA502" stroke-width="3"/>
+    <path d="M 60,210 C 60,220 75,225 120,225 C 165,225 180,220 180,210" stroke="#FFA502" stroke-width="3"/>
+    
+    <!-- Cylinder 3 (Bottom) -->
+    <path d="M 45,240 C 60,230 180,230 195,240 C 195,245 195,250 195,255 C 180,265 60,265 45,255 Z" stroke="#FF4757" stroke-width="3"/>
+    <path d="M 45,255 C 45,265 60,270 120,270 C 180,270 195,265 195,255" stroke="#FF4757" stroke-width="3"/>
+    
+    <!-- Sacred Spark (Core Bindu) -->
+    <circle cx="120" cy="110" r="6" fill="#FFFFFF" stroke="none"/>
+  </g>
+  
+  <!-- Typography: Saffron Red text "anydb" -->
+  <text x="256" y="445" text-anchor="middle" font-family="'Inter', sans-serif" font-size="34" font-weight="bold" fill="#FF4757" letter-spacing="8">anydb</text>
+</svg>

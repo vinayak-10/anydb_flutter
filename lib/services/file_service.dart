@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
@@ -76,6 +77,8 @@ class FileService {
     }
   }
 
+  static final Map<String, Future<void>> _locks = {};
+
   Future<void> writeJson(String path, String fileName, dynamic content) async {
     final fullPath = p.join(path, fileName);
     final jsonStr = jsonEncode(content);
@@ -102,8 +105,26 @@ class FileService {
       }
       return;
     }
+    
     await ensureDir(path);
-    await io.writeString(fullPath, jsonStr);
+
+    // Asynchronous lock queue for this specific file path to prevent race conditions
+    final previousLock = _locks[fullPath] ?? Future.value();
+    final completer = Completer<void>();
+    _locks[fullPath] = completer.future;
+
+    try {
+      await previousLock;
+      // Atomic write: write to a temporary file first, then perform an atomic rename/move
+      final tmpPath = '$fullPath.tmp';
+      await io.writeString(tmpPath, jsonStr);
+      await io.renameFile(tmpPath, fullPath);
+    } finally {
+      completer.complete();
+      if (_locks[fullPath] == completer.future) {
+        _locks.remove(fullPath);
+      }
+    }
   }
 
   Future<dynamic> readJson(String filePath) async {
@@ -123,8 +144,21 @@ class FileService {
     }
     if (await io.fileExists(filePath)) {
       final content = await io.readString(filePath);
-      final decoded = jsonDecode(content);
-      return decoded is Map ? decoded.cast<String, dynamic>() : decoded;
+      try {
+        final decoded = jsonDecode(content);
+        return decoded is Map ? decoded.cast<String, dynamic>() : decoded;
+      } catch (e) {
+        debugPrint("FileService.readJson: Corruption detected in $filePath. Error: $e");
+        // Proactive Self-Healing: Back up corrupted file for debugging and return null to prevent crashes
+        try {
+          final backupPath = '$filePath.corrupted_${DateTime.now().millisecondsSinceEpoch}';
+          await io.copyFile(filePath, backupPath);
+          debugPrint("FileService: Backed up corrupted file to $backupPath");
+        } catch (err) {
+          debugPrint("FileService: Failed to back up corrupted file: $err");
+        }
+        return null;
+      }
     }
     return null;
   }

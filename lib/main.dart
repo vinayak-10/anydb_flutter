@@ -53,9 +53,19 @@ class AnyDbApp extends ConsumerWidget {
     return MaterialApp(
       title: 'anydb',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFE9967A),
+          primary: const Color(0xFFE9967A),
+        ),
         useMaterial3: true,
         scaffoldBackgroundColor: Colors.white,
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+        ),
+        drawerTheme: const DrawerThemeData(
+          backgroundColor: Colors.white,
+        ),
         cardTheme: const CardThemeData(
           color: Colors.white,
           surfaceTintColor: Colors.white,

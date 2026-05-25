@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background: Deep Velvet Maroon/Burgundy -->
+  <rect width="512" height="512" rx="64" fill="#3E0C12"/>
+  
+  <!-- Royal Lotus Crest -->
+  <g transform="translate(136, 96)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    
+    <!-- Symmetric Outer Petals (Polished Bronze) -->
+    <path d="M120,90 C170,120 200,160 190,210 C150,210 130,150 120,130" stroke="#A9844B" stroke-width="4"/>
+    <path d="M120,90 C70,120 40,160 50,210 C90,210 110,150 120,130" stroke="#A9844B" stroke-width="4"/>
+    
+    <!-- Secondary Outer Petals -->
+    <path d="M120,130 C200,150 230,180 220,210 C170,210 140,180 120,170" stroke="#A9844B" stroke-width="3" opacity="0.7"/>
+    <path d="M120,130 C40,150 10,180 20,210 C70,210 100,180 120,170" stroke="#A9844B" stroke-width="3" opacity="0.7"/>
+    
+    <!-- Center Premium Petal (Liquid Gold) -->
+    <path d="M120,30 C155,90 155,150 120,210 C85,150 85,90 120,30 Z" fill="#E5C158" fill-opacity="0.1" stroke="#E5C158" stroke-width="6"/>
+    
+    <!-- Keyhole Vault (Branding Element inside center petal) -->
+    <!-- Circular Head -->
+    <circle cx="120" cy="100" r="14" fill="#FFFFFF" stroke="#E5C158" stroke-width="3"/>
+    <!-- Triangular body -->
+    <polygon points="108,125 132,125 126,108 114,108" fill="#FFFFFF" stroke="#E5C158" stroke-width="3"/>
+    
+    <!-- Base Database Shelf Racks with Circular Data Ports (White / Gold) -->
+    <!-- Rack 1 -->
+    <path d="M 30,210 Q 120,230 210,210" stroke="#FFFFFF" stroke-width="8"/>
+    <!-- Rack 2 -->
+    <path d="M 40,226 Q 120,246 200,226" stroke="#E5C158" stroke-width="4"/>
+    
+    <!-- Circular Data Ports -->
+    <circle cx="80" cy="221" r="5" fill="#3E0C12" stroke="none"/>
+    <circle cx="120" cy="223" r="5" fill="#3E0C12" stroke="none"/>
+    <circle cx="160" cy="221" r="5" fill="#3E0C12" stroke="none"/>
+  </g>
+  
+  <!-- Typography: Classical serif text "anydb" -->
+  <text x="256" y="445" text-anchor="middle" font-family="'Lora', 'Playfair Display', serif" font-size="38" font-weight="bold" fill="#E5C158" letter-spacing="4">anydb</text>
+</svg>

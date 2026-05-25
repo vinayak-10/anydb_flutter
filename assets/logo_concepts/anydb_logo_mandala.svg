@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background: Deep Charcoal Black -->
+  <rect width="512" height="512" rx="64" fill="#1C1D1E"/>
+  
+  <!-- Mandala Database Grid -->
+  <g transform="translate(0, 10)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    
+    <!-- Outer Circular Mandala Ring (Platinum) -->
+    <circle cx="256" cy="246" r="140" stroke="#DFE6E9" stroke-width="4"/>
+    <circle cx="256" cy="246" r="125" stroke="#00B894" stroke-width="2" stroke-dasharray="8 6"/>
+    
+    <!-- Concentric B-Tree Circular Index Tracks -->
+    <circle cx="256" cy="246" r="95" stroke="#DFE6E9" stroke-width="3"/>
+    <circle cx="256" cy="246" r="65" stroke="#00B894" stroke-width="3"/>
+    <circle cx="256" cy="246" r="35" stroke="#DFE6E9" stroke-width="2"/>
+    
+    <!-- Radiating Database Relations (Symmetric Spokes) -->
+    <!-- 8 Axises -->
+    <line x1="256" y1="106" x2="256" y2="386" stroke="#DFE6E9" stroke-width="2" opacity="0.6"/>
+    <line x1="116" y1="246" x2="396" y2="246" stroke="#DFE6E9" stroke-width="2" opacity="0.6"/>
+    <line x1="157" y1="147" x2="355" y2="345" stroke="#00B894" stroke-width="1.5" opacity="0.5"/>
+    <line x1="157" y1="345" x2="355" y2="147" stroke="#00B894" stroke-width="1.5" opacity="0.5"/>
+    
+    <!-- Orbiting SQLite Data Packets (Emerald Green & Platinum) -->
+    <!-- Inner Nodes -->
+    <circle cx="256" cy="151" r="7" fill="#00B894" stroke="#1C1D1E" stroke-width="1.5"/>
+    <circle cx="256" cy="341" r="7" fill="#00B894" stroke="#1C1D1E" stroke-width="1.5"/>
+    <circle cx="161" cy="246" r="7" fill="#00B894" stroke="#1C1D1E" stroke-width="1.5"/>
+    <circle cx="351" cy="246" r="7" fill="#00B894" stroke="#1C1D1E" stroke-width="1.5"/>
+    
+    <!-- Outer Nodes -->
+    <circle cx="206" cy="196" r="8" fill="#DFE6E9" stroke="#1C1D1E" stroke-width="2"/>
+    <circle cx="306" cy="296" r="8" fill="#DFE6E9" stroke="#1C1D1E" stroke-width="2"/>
+    <circle cx="206" cy="296" r="8" fill="#DFE6E9" stroke="#1C1D1E" stroke-width="2"/>
+    <circle cx="306" cy="196" r="8" fill="#DFE6E9" stroke="#1C1D1E" stroke-width="2"/>
+    
+    <!-- Central Core Node -->
+    <circle cx="256" cy="246" r="10" fill="#FFFFFF" stroke="#00B894" stroke-width="2"/>
+  </g>
+  
+  <!-- Typography: Modern Minimalist text "anydb" -->
+  <text x="256" y="450" text-anchor="middle" font-family="'Outfit', 'Inter', sans-serif" font-size="34" font-weight="bold" fill="#DFE6E9" letter-spacing="8">anydb</text>
+</svg>

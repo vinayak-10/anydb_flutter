@@ -196,52 +196,104 @@ class SimpleAccount extends GenInterface {
     final String value = data.values.first.toString();
     final String notifierId = notifier.getId();
 
-    for (var idx in observerIndexes) {
-      final parsedIdx = idx is int ? idx : int.tryParse(idx.toString());
-      if (parsedIdx == null) continue;
-      final c = cs.getComponentAtIndex(parsedIdx);
-      if (c == null) continue;
+    if (notifierId == "Debit") {
+      double charges = double.tryParse(value) ?? 0;
+      if (charges < 0) charges = 0;
+      
+      // Auto-update Paid to equal Charges (Credit = Debit) for seamless full payment interactive behavior
+      final pc = _findIn(cs, 'Credit');
+      if (pc != null) {
+        pc.populate({pc.getName(): charges.toStringAsFixed(0)});
+      }
+      
+      // Auto-update Discount to 0
+      final pd = _findIn(cs, 'Discount');
+      if (pd != null) {
+        pd.populate({pd.getName(): "0"});
+      }
 
-      final targetId = c.getId();
+      final pb = _findIn(cs, 'Balance');
+      if (pb != null) {
+        double balance = getLastBalance(); // Charges and Paid are equal, so (charges - paid) is 0
+        pb.populate({pb.getName(): balance.toStringAsFixed(0)});
+      }
+    } else if (notifierId == "Credit") {
+      double paid = double.tryParse(value) ?? 0;
+      if (paid < 0) paid = 0;
+      final cc = _findIn(cs, 'Debit');
+      double charges = double.tryParse(cc?.getValue() ?? "0") ?? 0;
+      
+      double discount = 0;
+      if (paid >= charges) {
+        discount = 0;
+      } else {
+        // Auto-calculate discount as the difference (Charges - Paid) clamped to >= 0
+        discount = charges - paid;
+      }
+      
+      final pd = _findIn(cs, 'Discount');
+      if (pd != null) {
+        pd.populate({pd.getName(): discount.toStringAsFixed(0)});
+      }
 
-      if (notifierId == "Debit") {
-        if (targetId == 'Credit') {
-          c.populate({c.getName(): value});
-        } else if (targetId == 'Discount') {
-          double charges = double.tryParse(value) ?? 0;
-          final pc = _findIn(cs, 'Credit');
-          double paid = double.tryParse(pc?.getValue() ?? "0") ?? 0;
-          c.populate({c.getName(): (charges - paid).toStringAsFixed(0)});
-        } else if (targetId == 'Balance') {
-          _populateBalance(cs);
+      final pb = _findIn(cs, 'Balance');
+      if (pb != null) {
+        double balance = getLastBalance() + (charges - (paid + discount));
+        pb.populate({pb.getName(): balance.toStringAsFixed(0)});
+      }
+    } else if (notifierId == "Discount") {
+      double discount = double.tryParse(value) ?? 0;
+      if (discount < 0) discount = 0;
+      final cc = _findIn(cs, 'Debit');
+      double charges = double.tryParse(cc?.getValue() ?? "0") ?? 0;
+      final pc = _findIn(cs, 'Credit');
+      double paid = double.tryParse(pc?.getValue() ?? "0") ?? 0;
+
+      if (paid >= charges) {
+        discount = 0;
+        final pd = _findIn(cs, 'Discount');
+        if (pd != null) {
+          pd.populate({pd.getName(): "0"});
         }
-      } else if (notifierId == "Credit") {
-        if (targetId == 'Discount') {
-          final cc = _findIn(cs, 'Debit');
-          double charges = double.tryParse(cc?.getValue() ?? "0") ?? 0;
-          double paid = double.tryParse(value) ?? 0;
-          c.populate({c.getName(): (charges - paid).toStringAsFixed(0)});
-        } else if (targetId == 'Balance') {
-          _populateBalance(cs);
+      } else if (discount > charges) {
+        discount = charges;
+        paid = 0;
+        final pd = _findIn(cs, 'Discount');
+        if (pd != null) {
+          pd.populate({pd.getName(): charges.toStringAsFixed(0)});
         }
-      } else if (notifierId == "Discount") {
-        if (targetId == 'Credit') {
-          final cc = _findIn(cs, 'Debit');
-          double charges = double.tryParse(cc?.getValue() ?? "0") ?? 0;
-          double discount = double.tryParse(value) ?? 0;
-          c.populate({c.getName(): (charges - discount).toStringAsFixed(0)});
-        } else if (targetId == 'Balance') {
-          _populateBalance(cs);
+        if (pc != null) {
+          pc.populate({pc.getName(): "0"});
         }
-      } else if (notifierId == "Balance") {
-        if (targetId == 'Credit') {
-          final cd = _findIn(cs, 'Debit');
-          double debit = double.tryParse(cd?.getValue() ?? "0") ?? 0;
-          double lastBalance = getLastBalance();
-          double currentBalance = double.tryParse(value) ?? 0;
-          double newCredit = currentBalance - lastBalance + debit;
-          c.populate({c.getName(): newCredit.toStringAsFixed(0)});
+      } else if (paid + discount > charges) {
+        // If the sum exceeds charges, we auto-reduce paid so they sum to charges (no overpayment/excess discount)
+        paid = charges - discount;
+        if (paid < 0) paid = 0;
+        if (pc != null) {
+          pc.populate({pc.getName(): paid.toStringAsFixed(0)});
         }
+      } else {
+        // If paid + discount <= charges, we do NOT change paid!
+        // This decouples the inputs and allows outstanding dues to be recorded properly!
+      }
+
+      final pb = _findIn(cs, 'Balance');
+      if (pb != null) {
+        double balance = getLastBalance() + (charges - (paid + discount));
+        pb.populate({pb.getName(): balance.toStringAsFixed(0)});
+      }
+    } else if (notifierId == "Balance") {
+      double currentBalance = double.tryParse(value) ?? 0;
+      final cd = _findIn(cs, 'Debit');
+      double debit = double.tryParse(cd?.getValue() ?? "0") ?? 0;
+      double lastBalance = getLastBalance();
+      double newCredit = currentBalance - lastBalance + debit;
+      if (newCredit < 0) newCredit = 0;
+
+      // Populate Credit directly in cs
+      final pc = _findIn(cs, 'Credit');
+      if (pc != null) {
+        pc.populate({pc.getName(): newCredit.toStringAsFixed(0)});
       }
     }
   }
@@ -706,16 +758,22 @@ class _SimpleAccountSummary extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 12.0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.history, size: 15, color: Colors.blue),
+                const Padding(
+                  padding: EdgeInsets.only(top: 2.0),
+                  child: Icon(Icons.history, size: 15, color: Colors.blue),
+                ),
                 const SizedBox(width: 6),
-                Text(
-                  "Last Transaction: $lastDate",
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.blue,
-                    fontStyle: FontStyle.italic,
-                    fontWeight: FontWeight.w500,
+                Expanded(
+                  child: Text(
+                    "Last Transaction: $lastDate",
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.blue,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],

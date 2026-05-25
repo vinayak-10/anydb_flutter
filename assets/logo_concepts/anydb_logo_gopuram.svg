@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background: Deep Velvet Maroon -->
+  <rect width="512" height="512" rx="64" fill="#3D0B11"/>
+  
+  <!-- Gopuram Temple Arch / Database Permanence -->
+  <g transform="translate(0, 10)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    
+    <!-- Outer Gopuram Tiered Arch (Temple Bronze & Gold) -->
+    <!-- Tier 1 (Base) -->
+    <path d="M 126,346 L 386,346" stroke="#B5893D" stroke-width="8"/>
+    <path d="M 136,326 L 376,326" stroke="#FFD700" stroke-width="4"/>
+    
+    <!-- Tier 2 (Middle) -->
+    <path d="M 156,266 Q 256,236 356,266" stroke="#B5893D" stroke-width="6"/>
+    <path d="M 166,246 Q 256,216 346,246" stroke="#FFD700" stroke-width="3"/>
+    
+    <!-- Tier 3 (Upper Arch) -->
+    <path d="M 186,186 Q 256,156 326,186" stroke="#B5893D" stroke-width="6"/>
+    <path d="M 196,166 Q 256,136 316,166" stroke="#FFD700" stroke-width="3"/>
+    
+    <!-- Gopuram Shikhara (Top Kalasha pins) -->
+    <line x1="226" y1="126" x2="226" y2="106" stroke="#FFD700" stroke-width="4"/>
+    <line x1="256" y1="120" x2="256" y2="96" stroke="#FFD700" stroke-width="5"/>
+    <line x1="286" y1="126" x2="286" y2="106" stroke="#FFD700" stroke-width="4"/>
+    
+    <!-- Side Pillar struts (Traditional Gopuram frame) -->
+    <line x1="146" y1="346" x2="186" y2="186" stroke="#B5893D" stroke-width="6"/>
+    <line x1="366" y1="346" x2="326" y2="186" stroke="#B5893D" stroke-width="6"/>
+    
+    <!-- Central Database Cylinders Stack (Symmetric Trust & Cloud Sync) -->
+    <!-- Cylinder 1 (Top) -->
+    <path d="M 226,196 C 236,196 276,200 276,205 C 276,210 236,214 226,214 C 216,214 206,210 206,205 C 206,200 216,196 226,196 Z" fill="#FFFFFF" fill-opacity="0.1" stroke="#FFFFFF" stroke-width="3"/>
+    <path d="M 206,205 L 206,220 C 206,225 216,229 226,229 C 236,229 276,225 276,220 L 276,205" stroke="#FFFFFF" stroke-width="3"/>
+    
+    <!-- Cylinder 2 (Middle) -->
+    <path d="M 206,236 L 206,251 C 206,256 216,260 226,260 C 236,260 276,256 276,251 L 276,236" stroke="#FFFFFF" stroke-width="3"/>
+    
+    <!-- Cylinder 3 (Bottom) -->
+    <path d="M 206,267 L 206,282 C 206,287 216,291 226,291 C 236,291 276,287 276,282 L 276,267" stroke="#FFFFFF" stroke-width="3"/>
+    
+  </g>
+  
+  <!-- Typography: Pure Gold text "anydb" -->
+  <text x="256" y="450" text-anchor="middle" font-family="'Lora', 'Playfair Display', serif" font-size="38" font-weight="bold" fill="#FFD700" letter-spacing="4">anydb</text>
+</svg>

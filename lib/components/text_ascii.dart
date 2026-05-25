@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/gen_interface.dart';
+import '../core/settings_provider.dart';
 
 class TextAscii extends GenInterface {
   String name = "";
@@ -188,22 +190,27 @@ class _TextAsciiEditorState extends State<_TextAsciiEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        maxLines: widget.multiline ? null : widget.lines,
-        maxLength: widget.maxsize,
-        style: const TextStyle(fontSize: 16),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          filled: true,
-          fillColor: Colors.grey[100],
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: widget.onChanged,
-      ),
+    return Consumer(
+      builder: (context, ref, child) {
+        final settings = ref.watch(settingsProvider);
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            maxLines: widget.multiline ? null : widget.lines,
+            maxLength: widget.maxsize,
+            style: TextStyle(fontSize: settings.inputFontSize),
+            decoration: InputDecoration(
+              labelText: widget.label,
+              filled: true,
+              fillColor: Colors.grey[100],
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: widget.onChanged,
+          ),
+        );
+      },
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../core/settings_provider.dart';
 import '../services/google_drive_service.dart';
 import '../services/collection_service.dart';
@@ -18,6 +19,7 @@ class DrawerContent extends ConsumerWidget {
     final isLoggedIn = user != null;
 
     return Drawer(
+      backgroundColor: Colors.white,
       child: Column(
         children: [
           if (isLoggedIn)
@@ -33,6 +35,15 @@ class DrawerContent extends ConsumerWidget {
                         style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                     ),
+              otherAccountsPictures: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SvgPicture.asset(
+                    'assets/anydb_logo_yantra_prism.svg',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ],
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primary,
               ),
@@ -42,11 +53,19 @@ class DrawerContent extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primary,
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.account_circle, size: 60, color: Colors.white70),
-                  SizedBox(width: 16),
-                  Text(
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SvgPicture.asset(
+                      'assets/anydb_logo_yantra_prism.svg',
+                      width: 60,
+                      height: 60,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Text(
                     'AnyDb Menu',
                     style: TextStyle(
                       color: Colors.white,
@@ -117,6 +136,24 @@ class DrawerContent extends ConsumerWidget {
                     ],
                   ),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.text_fields),
+                  title: const Text('Input Font Size'),
+                  subtitle: Text('Current: ${settings.inputFontSize.toStringAsFixed(0)}pt (${settings.inputFontScale.toStringAsFixed(1)}x)'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove),
+                        onPressed: () => ref.read(settingsProvider.notifier).decreaseInputFont(),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: () => ref.read(settingsProvider.notifier).increaseInputFont(),
+                      ),
+                    ],
+                  ),
+                ),
                 if (currentSchemaName != null) ...[
                   const Divider(),
                   const Padding(
@@ -130,7 +167,7 @@ class DrawerContent extends ConsumerWidget {
                       
                       ElementDb? activeDb;
                       for (var content in contents) {
-                        if (content.type == ContentType.database && content.name == currentSchemaName) {
+                        if (content.type == ContentType.database) {
                           activeDb = content.service as ElementDb;
                           break;
                         }
@@ -140,10 +177,7 @@ class DrawerContent extends ConsumerWidget {
                         return const SizedBox.shrink();
                       }
 
-                      final schemaFields = activeDb.dbSchema
-                          .map((s) => s['name']?.toString() ?? '')
-                          .where((name) => name.isNotEmpty)
-                          .toList();
+                      final schemaFields = _extractLeafFieldNames(activeDb.dbSchema);
 
                       if (schemaFields.isEmpty) {
                         return const SizedBox.shrink();
@@ -361,6 +395,43 @@ class DrawerContent extends ConsumerWidget {
       ),
     );
   }
+}
+
+List<String> _extractLeafFieldNames(List<dynamic> schema) {
+  final List<String> fields = [];
+  // Types that are containers with nested `elements`
+  const containerTypes = {'composite', 'list-header'};
+
+  void extract(List<dynamic> items) {
+    for (var item in items) {
+      if (item is! Map) continue;
+      final type = item['type']?.toString() ?? '';
+      final name = item['name']?.toString() ?? '';
+
+      if (containerTypes.contains(type)) {
+        // Recurse into nested elements
+        final elements = item['elements'];
+        if (elements is List) {
+          extract(elements);
+        }
+      } else if (type == 'simple-account') {
+        // simple-account has schema.elements
+        final innerSchema = item['schema'];
+        if (innerSchema is Map) {
+          final elements = innerSchema['elements'];
+          if (elements is List) {
+            extract(elements);
+          }
+        }
+      } else if (type != 'meta' && name.isNotEmpty) {
+        // Leaf field — skip meta fields as they are auto-generated
+        fields.add(name);
+      }
+    }
+  }
+
+  extract(schema);
+  return fields;
 }
 
 List<String> getPrioritizedFields(List<String> allSchemaFields) {

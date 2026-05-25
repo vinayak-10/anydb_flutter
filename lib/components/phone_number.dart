@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/gen_interface.dart';
 import '../services/invoker_service.dart';
+import '../core/settings_provider.dart';
 
 class PhoneNumber extends GenInterface {
   String name = "";
@@ -187,20 +189,25 @@ class _PhoneNumberEditorState extends State<_PhoneNumberEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: TextField(
-        controller: _controller,
-        keyboardType: TextInputType.phone,
-        style: const TextStyle(fontSize: 16),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          filled: true,
-          fillColor: Colors.grey[100],
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: widget.onChanged,
-      ),
+    return Consumer(
+      builder: (context, ref, child) {
+        final settings = ref.watch(settingsProvider);
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+            controller: _controller,
+            keyboardType: TextInputType.phone,
+            style: TextStyle(fontSize: settings.inputFontSize),
+            decoration: InputDecoration(
+              labelText: widget.label,
+              filled: true,
+              fillColor: Colors.grey[100],
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: widget.onChanged,
+          ),
+        );
+      },
     );
   }
 }
