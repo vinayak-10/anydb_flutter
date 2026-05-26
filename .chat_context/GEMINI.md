@@ -46,5 +46,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `b617124` (docs: save simple account ledger decoupling artifacts and chat logs into project context)
+- **Last Stable Commit:** `84d6265` (docs: save simple account ledger decoupling artifacts, customized verification roadmaps, privacy templates, and Windows cross-compilation guides)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
