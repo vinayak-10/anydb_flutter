@@ -54,7 +54,9 @@
 - **In-Place Reactive Editing:** Wrapped `ElementView` details with an `onChanged` callback to immediately sync edits in-place with the master list cards. Clamped the master list column width adaptively between `320px` and `480px` (`35%` width) and ensured card layouts are visually identical in both flows.
 
 ### 10. Google-Search Landing Page
-- **Minimalistic Landing Experience:** Designed and built a beautiful, spacious Google Search-like landing layout featuring a custom glowing emerald-teal gradient logo, an elegant pill-shaped search input bar, and capsule action buttons.
+- **Minimalistic Landing Experience:** Designed and built a beautiful, spacious Google Search-like landing layout featuring a plain white theme background, the official vector app logo (`assets/anydb_logo_yantra_prism.svg`), and a rich crimson-saffron-gold linear text gradient matching the prism.
+- **Dynamic Show/Hide Logo Heuristics:** Designed a dynamic show/hide layout. When the search bar is empty, the logo and custom text are fully rendered. Once the user types any character, the branding dynamically collapses to yield maximum vertical space.
+- **Real-Time Vertical Results:** Integrated real-time query matching directly on the landing page, displaying matching database records as vertical card widgets below the search bar with tap-to-edit interactions (bypassing full database browser switching).
 - **Drawer & Bottom Tab Preservation:** Fully preserved structural layout layers so that the outer Scaffold's drawer, swipe-gestures, and bottom navigation tabs remain completely active and operational.
 - **Universal Speed Dial FAB Overlay:** Retained the overlay of the newly added Speed Dial FAB on the landing page, offering quick-launch options for new records and instant resume/discard actions for active drafts.
 - **Landing Access ActionChip:** Integrated a beautiful Home "Landing" ActionChip inside both the mobile and tablet Choice Chip rows to allow users to toggle back to the landing search experience at any time.
@@ -72,5 +74,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `d59ab5e` (docs: update GEMINI.md to record Search Landing Page accomplishment)
+- **Last Stable Commit:** `7dece4f` (feat: integrate official Yantra prism vector logo and crimson-saffron-gold gradient in search landing page)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
