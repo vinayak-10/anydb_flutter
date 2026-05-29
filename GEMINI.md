@@ -33,6 +33,24 @@
 - **Self-Healing:** Added automatic corruption detection that backs up damaged files (`*.json.corrupted_[ts]`) instead of crashing the app.
 - **Performance:** Implemented in-memory caching and parallelized disk reads in the storage layer to handle 20k+ records smoothly.
 
+### 6. Robust Web Storage & Quota Management
+- **Quota Tolerance:** Wrapped standard localStorage registry and record setString writes in try-catch boundaries to intercept DOM QuotaExceededError exceptions.
+- **In-Memory Fallback:** Programmed fallback support using an in-memory cached map (`_webCache`) when browser local storage is fully saturated, keeping database imports and session mergers functional.
+
+### 7. Persistent Isolate Worker Pool & Yielding spinner
+- **Worker Threading:** Established a long-lived, multi-platform duplex Port background worker Isolate (`IsolateWorker`) on startup to optimize CPU-heavy calculations.
+- **Thread Offloading:** Delegated Excel encoder/decoder operations, workbook parsing, schema parsing, and B-tree import cache merging to the Isolate, preventing main-thread UI lockups.
+- **Web Fallback & Spinner Yielding:** Supported synchronous execution on Web targets while adding post-frame micro-delays (`Future.delayed(150ms)`) to guarantee visual paint cycles for loaders and progress bars.
+
+### 8. Minimizable Record Drafts & Teal banner
+- **In-Memory Draft Store:** Supported minimizable draft structures for new record additions. Programmed a warning dialog if the user attempts to add a new record while a draft exists.
+- **Emerald Teal Banner:** Rendered a beautiful Emerald Teal (`#00796B`) banner above list views to Resume/Discard the active draft with confirmation dialogs.
+
+### 9. Tablet Split View Responsive Layout
+- **Responsive Dual-Pane Splits:** Configured a side-by-side list-detail split view for viewport dimensions >= 800px.
+- **Preference Controls:** Added a switch tile in the navigation drawer under the Coral `#E9967A` brand accents to toggle split-screen mode.
+- **In-Place Reactive Editing:** Wrapped `ElementView` details with an `onChanged` callback to immediately sync edits in-place with the master list cards. Clamped the master list column width adaptively between `320px` and `480px` (`35%` width) and ensured card layouts are visually identical in both flows.
+
 ## Development Standards & Walkthroughs
 
 ### 1. App Rename Policy
@@ -46,5 +64,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `5da6aa3` (docs: save database overhaul artifacts and research logs into project chat context)
+- **Last Stable Commit:** `7e410c6` (style: align split view cards visually with original cards and update .gitignore)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
