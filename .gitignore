@@ -63,3 +63,23 @@ build_win/
 # Maya local dependencies and MSVC SDK (excluding forced-preinclude header)
 xyz.maya/*
 !xyz.maya/preinclude.h
+
+# Firebase CLI Local operational state
+.firebase/
+
+# Local database imports and exports (keeping schema/configs safe)
+Patients_*.json
+*Physio*.json
+
+# Storage self-healing corruption backups
+*.corrupted_*
+*.json.corrupted_*
+
+# Excel workbook reports
+*.xlsx
+
+# Scratch/temp test files
+test_sign_in.dart
+
+# Generated visual previews (Primary vector SVGs remain tracked)
+assets/*.jpg
