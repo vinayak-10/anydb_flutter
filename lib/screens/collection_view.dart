@@ -2484,6 +2484,8 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
           widget.report,
           date: widget.selectedRange ?? widget.selectedDate,
         );
+      } else {
+        await widget.agg.generateReport(result);
       }
 
       setState(() {

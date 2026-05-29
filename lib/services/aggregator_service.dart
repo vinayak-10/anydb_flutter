@@ -315,6 +315,9 @@ class AggregatorService {
       await workbook.write(placeholderMeta, initialSummaryData, timestamp: batchTimestamp);
 
       for (int d = 1; d <= daysInMonth; d++) {
+        if (kIsWeb) {
+          await Future.delayed(const Duration(milliseconds: 50));
+        }
         final date = DateTime(year, month, d);
         try {
           logger.log("AggregatorService: Processing day $d of $daysInMonth...");
@@ -343,11 +346,15 @@ class AggregatorService {
         final result = await generateReport(monthlyDataFull, timestamp: batchTimestamp);
         lastPath = result['path'];
         logger.log("AggregatorService: Monthly batch complete. Path: $lastPath");
-        workbook.clearCache();
+        if (!kIsWeb) {
+          workbook.clearCache();
+        }
         return lastPath;
       }
 
-      workbook.clearCache();
+      if (!kIsWeb) {
+        workbook.clearCache();
+      }
       return "No data found for the selected month.";
     } catch (e, stack) {
       debugPrint("AggregatorService: FATAL BATCH ERROR: $e");

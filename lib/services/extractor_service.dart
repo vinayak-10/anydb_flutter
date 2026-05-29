@@ -84,7 +84,12 @@ class ExtractorDatabase extends Extractor {
     final allElements = _segregate(elements, types: ["Active", "Archived", "Deleted"]);
     logger.log("ExtractorDatabase: Segregated ${allElements.length} Total elements (Active/Archived/Deleted).");
 
+    int index = 0;
     for (var element in allElements) {
+      if (kIsWeb && index % 100 == 0) {
+        await Future.delayed(Duration.zero);
+      }
+      index++;
       if (element.isEmpty) continue;
       final recordValue = element.values.first;
       if (recordValue is! Map) continue;

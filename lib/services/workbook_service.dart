@@ -350,10 +350,10 @@ class WorkbookService {
       }
 
       // Check Cache first
+      final String sanitizedCol = _fileService.sanitizeName(collection);
       final bool isCacheMatch = kIsWeb
           ? (_lastReportPath != null &&
-              (_lastReportPath!.split('|').last == p.basename(targetPath) ||
-               _lastReportPath!.split('|').last == p.basename(fileName) ||
+              ((sanitizedCol.isNotEmpty && p.basename(_lastReportPath!.split('|').last).startsWith(sanitizedCol)) ||
                _lastReportPath == targetPath))
           : (_lastReportPath == targetPath);
 
@@ -449,10 +449,10 @@ class WorkbookService {
       }
 
       // Check Cache first
+      final String sanitizedCol = _fileService.sanitizeName(collection);
       final bool isCacheMatch = kIsWeb
           ? (_lastReportPath != null &&
-              (_lastReportPath!.split('|').last == p.basename(targetPath) ||
-               _lastReportPath!.split('|').last == p.basename(fileName) ||
+              ((sanitizedCol.isNotEmpty && p.basename(_lastReportPath!.split('|').last).startsWith(sanitizedCol)) ||
                _lastReportPath == targetPath))
           : (_lastReportPath == targetPath);
 
