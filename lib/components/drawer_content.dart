@@ -9,7 +9,8 @@ import '../services/sqlite_helper.dart';
 import '../screens/logs_page.dart';
 class DrawerContent extends ConsumerWidget {
   final String? currentSchemaName;
-  const DrawerContent({super.key, this.currentSchemaName});
+  final VoidCallback? onBackToHome;
+  const DrawerContent({super.key, this.currentSchemaName, this.onBackToHome});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -91,7 +92,10 @@ class DrawerContent extends ConsumerWidget {
                   leading: const Icon(Icons.home),
                   title: const Text('Back to Home'),
                   onTap: () {
-                    Navigator.of(context).popUntil((route) => route.isFirst);
+                    Navigator.of(context).pop(); // Close the drawer first
+                    if (onBackToHome != null) {
+                      onBackToHome!();
+                    }
                   },
                 ),
                 ListTile(

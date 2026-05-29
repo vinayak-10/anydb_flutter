@@ -75,7 +75,7 @@ class WorkbookService {
           excel.delete(sn);
         }
       }
-      fileBytes = excel.save();
+      fileBytes = excel.encode();
     } else {
       List<int>? existingBytes;
       if (_cachedExcel != null) {
@@ -350,7 +350,14 @@ class WorkbookService {
       }
 
       // Check Cache first
-      if (_cachedExcel != null && _lastReportPath == targetPath) {
+      final bool isCacheMatch = kIsWeb
+          ? (_lastReportPath != null &&
+              (_lastReportPath!.split('|').last == p.basename(targetPath) ||
+               _lastReportPath!.split('|').last == p.basename(fileName) ||
+               _lastReportPath == targetPath))
+          : (_lastReportPath == targetPath);
+
+      if (_cachedExcel != null && isCacheMatch) {
         debugPrint("WorkbookService: Using cached excel for getSheetNames: $targetPath");
         return _getMatchedSheets(_cachedExcel!, type);
       }
@@ -377,7 +384,7 @@ class WorkbookService {
       }
 
       // Check Cache again after potential discovery
-      if (_cachedExcel != null && _lastReportPath == targetPath) {
+      if (_cachedExcel != null && isCacheMatch) {
         return _getMatchedSheets(_cachedExcel!, type);
       }
 
@@ -442,7 +449,14 @@ class WorkbookService {
       }
 
       // Check Cache first
-      if (_cachedExcel != null && _lastReportPath == targetPath) {
+      final bool isCacheMatch = kIsWeb
+          ? (_lastReportPath != null &&
+              (_lastReportPath!.split('|').last == p.basename(targetPath) ||
+               _lastReportPath!.split('|').last == p.basename(fileName) ||
+               _lastReportPath == targetPath))
+          : (_lastReportPath == targetPath);
+
+      if (_cachedExcel != null && isCacheMatch) {
         debugPrint("WorkbookService: Using cached excel for read: $targetPath");
         final sheet = _cachedExcel!.tables[sheetName];
         if (sheet != null) {
@@ -472,7 +486,7 @@ class WorkbookService {
       }
 
       // Check Cache again after potential discovery
-      if (_cachedExcel != null && _lastReportPath == targetPath) {
+      if (_cachedExcel != null && isCacheMatch) {
         final sheet = _cachedExcel!.tables[sheetName];
         if (sheet != null) {
           return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();

@@ -410,6 +410,8 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
     }
 
     final currentContent = widget.contents[_currentTabIndex];
+    final bool isDatabaseLanding = currentContent.type == ContentType.database &&
+        (_dbKeys.length > _currentTabIndex && _dbKeys[_currentTabIndex].currentState?.showLandingPage == true);
     String title = currentContent.name;
     String subtitle = "";
 
@@ -540,12 +542,13 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.search, size: 26, color: Colors.brown),
-                            onPressed: () => setState(() => _isSearching = true),
-                            constraints: const BoxConstraints(),
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                          ),
+                          if (!isDatabaseLanding)
+                            IconButton(
+                              icon: const Icon(Icons.search, size: 26, color: Colors.brown),
+                              onPressed: () => setState(() => _isSearching = true),
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
                           if (currentContent.type == ContentType.database)
                             IconButton(
                               icon: const Icon(Icons.add_circle_outline, size: 26, color: Colors.brown), 
@@ -599,7 +602,27 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           ),
         ] : null,
       ),
-      drawer: DrawerContent(currentSchemaName: widget.title),
+      drawer: DrawerContent(
+        currentSchemaName: widget.title,
+        onBackToHome: () {
+          setState(() {
+            _searchQuery = '';
+            _searchController.clear();
+            _isSearching = false;
+          });
+          int dbIdx = -1;
+          for (int i = 0; i < widget.contents.length; i++) {
+            if (widget.contents[i].type == ContentType.database) {
+              dbIdx = i;
+              break;
+            }
+          }
+          if (dbIdx != -1) {
+            _tabController.animateTo(dbIdx);
+            _dbKeys[dbIdx].currentState?.resetToLanding();
+          }
+        },
+      ),
       body: TabBarView(
         controller: _tabController,
         children: widget.contents.asMap().entries.map<Widget>((entry) {
@@ -696,6 +719,8 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   bool _showLandingPage = true;
   late TextEditingController _landingSearchController;
 
+  bool get showLandingPage => _showLandingPage;
+
   @override
   void initState() {
     super.initState();
@@ -744,12 +769,31 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     _init(forced: true);
   }
 
-  void _executeSearch(String query) {
+  void resetToLanding() {
     setState(() {
-      _showLandingPage = false;
+      _showLandingPage = true;
+      _landingSearchController.clear();
+      _currentFilter = 'Active';
+      _initialized = false;
     });
-    if (widget.onSearchSubmitted != null) {
-      widget.onSearchSubmitted!(query);
+    _init(forced: true);
+  }
+
+  void _executeSearch(String query, {bool transitionToList = false}) {
+    if (transitionToList) {
+      setState(() {
+        _showLandingPage = false;
+        _currentFilter = 'Active'; // Defaults list view to 'Active' records
+        _initialized = false;
+      });
+      _init(forced: true);
+      if (widget.onSearchSubmitted != null) {
+        widget.onSearchSubmitted!(query);
+      }
+    } else {
+      setState(() {
+        _landingSearchController.text = query;
+      });
     }
   }
 
@@ -765,276 +809,322 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
             .take(8)
             .toList();
 
-    return Stack(
+    // 1. Center brand logo/text when empty, or collapsed at top/sticky when typing
+    Widget logoAndText = Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Center(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // 1. Dynamic Yantra Vector Logo & Gradient Text (only shown when not searching)
-                  if (!showResults) ...[
-                    SvgPicture.asset(
-                      'assets/anydb_logo_yantra_prism.svg',
-                      width: 64.0,
-                      height: 64.0,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 16.0),
-                    ShaderMask(
-                      shaderCallback: (bounds) => const LinearGradient(
-                        colors: [
-                          Color(0xFF6B1524), // Velvet Crimson
-                          Color(0xFFF4A261), // Gilded Saffron
-                          Color(0xFFE5C158), // Polished Gold
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ).createShader(bounds),
-                      child: const Text(
-                        "anydb",
-                        style: TextStyle(
-                          fontSize: 72.0,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          letterSpacing: -2.0,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32.0),
-                  ] else ...[
-                    const SizedBox(height: 48.0),
-                  ],
-
-                  // 2. Large Pill Search Input Bar
-                  Container(
-                    constraints: const BoxConstraints(maxWidth: 580.0),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.06),
-                          blurRadius: 16.0,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: TextField(
-                      controller: _landingSearchController,
-                      style: const TextStyle(fontSize: 16.0),
-                      decoration: InputDecoration(
-                        hintText: "Search patients, unique keys, or diagnoses...",
-                        hintStyle: const TextStyle(color: Colors.grey, fontSize: 16.0),
-                        prefixIcon: const Icon(Icons.search, color: Color(0xFF6B1524)),
-                        suffixIcon: showResults
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  _landingSearchController.clear();
-                                  setState(() {});
-                                },
-                              )
-                            : null,
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-                      ),
-                      onChanged: (val) {
-                        setState(() {});
-                      },
-                      onSubmitted: (val) => _executeSearch(val),
-                    ),
-                  ),
-                  const SizedBox(height: 24.0),
-
-                  // 3. Dynamic Section: Buttons vs. Search Results
-                  if (!showResults) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () => _executeSearch(_landingSearchController.text),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF6B1524),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 14.0),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20.0),
-                              side: const BorderSide(color: Color(0xFFE5C158), width: 1.0),
-                            ),
-                            elevation: 2.0,
-                          ),
-                          child: const Text("Search", style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        const SizedBox(width: 16.0),
-                        OutlinedButton(
-                          onPressed: () => _executeSearch(""),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF6B1524),
-                            side: const BorderSide(color: Color(0xFF6B1524), width: 1.5),
-                            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
-                          ),
-                          child: const Text("Show All Records", style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                  ] else ...[
-                    // Dynamic Search Results Cards (Matching Default Cards styling exactly)
-                    Container(
-                      constraints: const BoxConstraints(maxWidth: 580.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          ...matchingRecords.map((element) {
-                            if (element.components.isEmpty || element.components.first is! ListHeader) {
-                              return const SizedBox.shrink();
-                            }
-                            final header = element.components.first as ListHeader;
-                            header.setDbSchema(widget.db.dbSchema);
-
-                            final Map<String, dynamic> recordData = element.fetch();
-                            final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
-                            final isArchived = metaData.containsKey('a');
-                            final isDeleted = metaData.containsKey('d');
-                            
-                            Color statusColor = Colors.black87;
-                            if (isDeleted) {
-                              statusColor = Colors.red;
-                            } else if (isArchived) {
-                              statusColor = Colors.blue;
-                            }
-
-                            final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
-                            final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
-                              await widget.db.addRecord(element);
-                              setState(() {});
-                            });
-
-                            return Container(
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.grey.shade200,
-                                  width: 1.0,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.04),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => _openEditor(element),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: DefaultTextStyle(
-                                              style: TextStyle(
-                                                fontSize: 22, 
-                                                fontWeight: FontWeight.w900, 
-                                                color: statusColor,
-                                                letterSpacing: -0.2
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
-                                              ),
-                                            ),
-                                          ),
-                                          PopupMenuButton<String>(
-                                            icon: const Icon(Icons.more_horiz, size: 32),
-                                            onSelected: (val) => _handleCardAction(val, element),
-                                            itemBuilder: (context) => [
-                                              if (isArchived || isDeleted)
-                                                const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
-                                              if (!isArchived)
-                                                const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
-                                              if (!isDeleted)
-                                                const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
-                                              const PopupMenuDivider(),
-                                              const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 16),
-                                      
-                                      if (elementWidgets.isNotEmpty)
-                                        DefaultTextStyle(
-                                          style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                          child: _buildGroupedSection(context, "PATIENT DETAILS", 
-                                            Wrap(spacing: 20, children: elementWidgets[0]),
-                                            color: Colors.white,
-                                            isOutlined: true,
-                                            headingColor: Colors.blueGrey.shade900
-                                          ),
-                                        ),
-                                      
-                                      const SizedBox(height: 16),
-                                      
-                                      _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
-                                        DefaultTextStyle(
-                                          style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
-                                              if (elementWidgets.length > 2) ...[
-                                                const Divider(height: 24, color: Colors.black12),
-                                                Wrap(spacing: 20, children: elementWidgets[2]),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                        color: Colors.white,
-                                        headingColor: Colors.blueGrey.shade900
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                          if (matchingRecords.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 32.0),
-                              child: Center(
-                                child: Text(
-                                  "No matching records found.",
-                                  style: TextStyle(color: Colors.grey, fontSize: 16.0),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 80.0),
-                ],
-              ),
+        SvgPicture.asset(
+          'assets/anydb_logo_yantra_prism.svg',
+          width: 64.0,
+          height: 64.0,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 16.0),
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [
+              Color(0xFF6B1524), // Velvet Crimson
+              Color(0xFFF4A261), // Gilded Saffron
+              Color(0xFFE5C158), // Polished Gold
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ).createShader(bounds),
+          child: const Text(
+            "anydb",
+            style: TextStyle(
+              fontSize: 72.0,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: -2.0,
             ),
           ),
         ),
-        // 4. Quick Toggle Icon in Top Right
+      ],
+    );
+
+    // 2. Search Input pill row (Common)
+    Widget searchBar = Container(
+      constraints: BoxConstraints(maxWidth: showResults ? double.infinity : 580.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16.0,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: Row(
+        children: [
+          const SizedBox(width: 8.0),
+          const Icon(Icons.search, color: Color(0xFF6B1524)),
+          const SizedBox(width: 8.0),
+          Expanded(
+            child: TextField(
+              key: const ValueKey('landing_search_field'),
+              controller: _landingSearchController,
+              autofocus: true,
+              style: const TextStyle(fontSize: 16.0),
+              decoration: InputDecoration(
+                hintText: "Search patients, unique keys, or diagnoses...",
+                hintStyle: const TextStyle(color: Colors.grey, fontSize: 16.0),
+                suffixIcon: showResults
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        onPressed: () {
+                          _landingSearchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16.0),
+              ),
+              onChanged: (val) {
+                setState(() {});
+              },
+              onSubmitted: (val) {
+                FocusScope.of(context).unfocus();
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
+            child: ElevatedButton(
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6B1524),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20.0),
+                  side: const BorderSide(color: Color(0xFFE5C158), width: 1.0),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+              ),
+              child: const Text("Search", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.0)),
+            ),
+          ),
+          const SizedBox(width: 4.0),
+        ],
+      ),
+    );
+
+    // 3. Show All Records / List button (only when empty)
+    Widget showAllButton = OutlinedButton(
+      onPressed: () => _executeSearch("", transitionToList: true),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF6B1524),
+        side: const BorderSide(color: Color(0xFF6B1524), width: 1.5),
+        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 14.0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+      ),
+      child: const Text("Show All Records", style: TextStyle(fontWeight: FontWeight.bold)),
+    );
+
+    // 4. Results List widget
+    Widget resultsList = Container(
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...matchingRecords.map((element) {
+            if (element.components.isEmpty || element.components.first is! ListHeader) {
+              return const SizedBox.shrink();
+            }
+            final header = element.components.first as ListHeader;
+            header.setDbSchema(widget.db.dbSchema);
+
+            final Map<String, dynamic> recordData = element.fetch();
+            final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
+            final isArchived = metaData.containsKey('a');
+            final isDeleted = metaData.containsKey('d');
+            
+            Color statusColor = Colors.black87;
+            if (isDeleted) {
+              statusColor = Colors.red;
+            } else if (isArchived) {
+              statusColor = Colors.blue;
+            }
+
+            final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
+            final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
+              await widget.db.addRecord(element);
+              setState(() {});
+            });
+
+            return Container(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey.shade200,
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _openEditor(element),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: DefaultTextStyle(
+                              style: TextStyle(
+                                fontSize: 22, 
+                                fontWeight: FontWeight.w900, 
+                                color: statusColor,
+                                letterSpacing: -0.2
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
+                              ),
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_horiz, size: 32),
+                            onSelected: (val) => _handleCardAction(val, element),
+                            itemBuilder: (context) => [
+                              if (isArchived || isDeleted)
+                                const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
+                              if (!isArchived)
+                                const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
+                              if (!isDeleted)
+                                const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      if (elementWidgets.isNotEmpty)
+                        DefaultTextStyle(
+                          style: const TextStyle(fontSize: 18, color: Colors.black87),
+                          child: _buildGroupedSection(context, "PATIENT DETAILS", 
+                            Wrap(spacing: 20, children: elementWidgets[0]),
+                            color: Colors.white,
+                            isOutlined: true,
+                            headingColor: Colors.blueGrey.shade900
+                          ),
+                        ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
+                        DefaultTextStyle(
+                          style: const TextStyle(fontSize: 18, color: Colors.black87),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
+                              if (elementWidgets.length > 2) ...[
+                                const Divider(height: 24, color: Colors.black12),
+                                Wrap(spacing: 20, children: elementWidgets[2]),
+                              ],
+                            ],
+                          ),
+                        ),
+                        color: Colors.white,
+                        headingColor: Colors.blueGrey.shade900
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          if (matchingRecords.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32.0),
+              child: Center(
+                child: Text(
+                  "No matching records found.",
+                  style: TextStyle(color: Colors.grey, fontSize: 16.0),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    Widget pageBody;
+
+    if (showResults) {
+      pageBody = SafeArea(
+        child: Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            children: [
+              const SizedBox(height: 24.0),
+              searchBar,
+              const SizedBox(height: 16.0),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      resultsList,
+                      const SizedBox(height: 80.0),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      pageBody = Container(
+        color: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                logoAndText,
+                const SizedBox(height: 32.0),
+                searchBar,
+                const SizedBox(height: 24.0),
+                showAllButton,
+                const SizedBox(height: 80.0),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        pageBody,
+        // 5. Switch to List View Floating Action Button
         Positioned(
-          top: 16,
+          top: 6,
           right: 16,
           child: SafeArea(
             child: FloatingActionButton(
@@ -1044,11 +1134,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
               foregroundColor: const Color(0xFF6B1524),
               elevation: 2,
               onPressed: () {
-                setState(() {
-                  _showLandingPage = false;
-                });
+                _executeSearch("", transitionToList: true);
               },
-              child: const Icon(Icons.list_alt),
+              tooltip: "Switch to List View",
+              child: const Icon(Icons.list),
             ),
           ),
         ),
@@ -1272,7 +1361,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     final filteredElements = widget.db.applyFilter(_currentFilter)
         .where((e) => widget.searchQuery.isEmpty || e.match(widget.searchQuery, exact: widget.isExactMatch)[0])
         .toList();
-
     final settings = ref.watch(settingsProvider);
     final mediaWidth = MediaQuery.of(context).size.width;
     final useSplitView = settings.enableTabletSplitView && mediaWidth >= 800;
@@ -1280,276 +1368,289 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     if (useSplitView) {
       return Scaffold(
         backgroundColor: Colors.white,
-        body: Row(
+        body: Stack(
           children: [
-            // Left master pane (adaptive width: 35% clamped between 320px and 480px)
-            SizedBox(
-              width: (MediaQuery.of(context).size.width * 0.35).clamp(320.0, 480.0),
-              child: Column(
-                children: [
-                  Container(
-                    color: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                          child: ActionChip(
-                            avatar: const Icon(Icons.home, size: 14, color: Color(0xFF00796B)),
-                            label: const Text("Landing", style: TextStyle(fontSize: 10, color: Color(0xFF00796B), fontWeight: FontWeight.bold)),
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.grey.shade200)),
-                            onPressed: () {
-                              setState(() {
-                                _showLandingPage = true;
-                              });
-                            },
-                          ),
-                        ),
-                        ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                            child: ChoiceChip(
-                              label: Text(f, style: const TextStyle(fontSize: 10)),
-                              selected: _currentFilter == f,
-                              backgroundColor: Colors.white,
-                              selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
-                              padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
-                              onSelected: (selected) {
-                                if (selected && _currentFilter != f) {
-                                  setState(() {
-                                    _currentFilter = f;
-                                    _initialized = false;
-                                    _selectedElementForDetail = null;
-                                  });
-                                  _init(forced: true);
-                                }
-                              },
-                            ),
-                          )
-                        ).toList(),
-                      ],
-                    ),
-                  ),
-
-                  Expanded(
-                    child: ListView.separated(
-                      controller: _listScrollController,
-                      itemCount: filteredElements.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
-                      itemBuilder: (context, index) {
-                        final element = filteredElements[index];
-                        final isSelectedInSplit = _selectedElementForDetail?.key == element.key;
-                        final isSelectedForBatch = widget.selectedKeys.contains(element.key);
-
-                        final borderHighlightColor = isSelectedForBatch 
-                            ? Colors.orange.shade300 
-                            : (isSelectedInSplit ? const Color(0xFFE9967A) : Colors.grey.shade200);
-                        final borderHighlightWidth = (isSelectedForBatch || isSelectedInSplit) ? 2.0 : 1.0;
-                        final cardBgColor = isSelectedInSplit ? const Color(0xFFE9967A).withOpacity(0.05) : Colors.white;
-
-                        if (element.components.isNotEmpty && element.components.first is ListHeader) {
-                          final header = element.components.first as ListHeader;
-                          header.setDbSchema(widget.db.dbSchema);
-
-                          final Map<String, dynamic> recordData = element.fetch();
-                          final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
-                          final isArchived = metaData.containsKey('a');
-                          final isDeleted = metaData.containsKey('d');
-                          
-                          Color statusColor = Colors.black87;
-                          if (isDeleted) {
-                            statusColor = Colors.red;
-                          } else if (isArchived) {
-                            statusColor = Colors.blue;
-                          }
-
-                          final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
-                          final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
-                            await widget.db.addRecord(element);
-                            setState(() {});
-                          });
-
-                          return Container(
-                            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: cardBgColor,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: borderHighlightColor,
-                                width: borderHighlightWidth,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (isSelectedForBatch || isSelectedInSplit)
-                                      ? const Color(0xFFE9967A).withOpacity(0.08)
-                                      : Colors.black.withOpacity(0.04),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
+            Row(
+              children: [
+                // Left master pane (adaptive width: 35% clamped between 320px and 480px)
+                SizedBox(
+                  width: (MediaQuery.of(context).size.width * 0.35).clamp(320.0, 480.0),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Column(
+                        children: [
+                          Container(
+                            color: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                                child: ChoiceChip(
+                                  label: Text(f, style: const TextStyle(fontSize: 10)),
+                                  selected: _currentFilter == f,
+                                  backgroundColor: Colors.white,
+                                  selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                                  onSelected: (selected) {
+                                    if (selected && _currentFilter != f) {
+                                      setState(() {
+                                        _currentFilter = f;
+                                        _initialized = false;
+                                        _selectedElementForDetail = null;
+                                      });
+                                      _init(forced: true);
+                                    }
+                                  },
                                 ),
-                              ],
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: widget.selectedKeys.isNotEmpty 
-                                ? () => widget.onToggleSelection(element.key)
-                                : () => setState(() => _selectedElementForDetail = element),
-                              onLongPress: () => widget.onToggleSelection(element.key),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (isSelectedForBatch)
-                                          Padding(
-                                            padding: const EdgeInsets.only(right: 12.0, top: 4.0),
-                                            child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 28),
-                                          ),
-                                        Expanded(
-                                          child: DefaultTextStyle(
-                                            style: TextStyle(
-                                              fontSize: 22, 
-                                              fontWeight: FontWeight.w900, 
-                                              color: statusColor,
-                                              letterSpacing: -0.2
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
-                                            ),
-                                          ),
-                                        ),
-                                        PopupMenuButton<String>(
-                                          icon: const Icon(Icons.more_horiz, size: 32),
-                                          onSelected: (val) => _handleCardAction(val, element),
-                                          itemBuilder: (context) => [
-                                            if (isArchived || isDeleted)
-                                              const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
-                                            if (!isArchived)
-                                              const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
-                                            if (!isDeleted)
-                                              const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
-                                            const PopupMenuDivider(),
-                                            const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                    
-                                    if (elementWidgets.isNotEmpty)
-                                      DefaultTextStyle(
-                                        style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                        child: _buildGroupedSection(context, "PATIENT DETAILS", 
-                                          Wrap(spacing: 20, children: elementWidgets[0]),
-                                          color: Colors.white,
-                                          isOutlined: true,
-                                          headingColor: Colors.blueGrey.shade900
-                                        ),
-                                      ),
-                                    
-                                    const SizedBox(height: 16),
-                                    
-                                    _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
-                                      DefaultTextStyle(
-                                        style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
-                                            if (elementWidgets.length > 2) ...[
-                                              const Divider(height: 24, color: Colors.black12),
-                                              Wrap(spacing: 20, children: elementWidgets[2]),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                      color: Colors.white,
-                                      headingColor: Colors.blueGrey.shade900
+                              )
+                            ).toList(),
+                          ],
+                        ),
+                      ),
+
+                      Expanded(
+                        child: ListView.separated(
+                          controller: _listScrollController,
+                          itemCount: filteredElements.length,
+                          separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
+                          itemBuilder: (context, index) {
+                            final element = filteredElements[index];
+                            final isSelectedInSplit = _selectedElementForDetail?.key == element.key;
+                            final isSelectedForBatch = widget.selectedKeys.contains(element.key);
+
+                            final borderHighlightColor = isSelectedForBatch 
+                                ? Colors.orange.shade300 
+                                : (isSelectedInSplit ? const Color(0xFFE9967A) : Colors.grey.shade200);
+                            final borderHighlightWidth = (isSelectedForBatch || isSelectedInSplit) ? 2.0 : 1.0;
+                            final cardBgColor = isSelectedInSplit ? const Color(0xFFE9967A).withOpacity(0.05) : Colors.white;
+
+                            if (element.components.isNotEmpty && element.components.first is ListHeader) {
+                              final header = element.components.first as ListHeader;
+                              header.setDbSchema(widget.db.dbSchema);
+
+                              final Map<String, dynamic> recordData = element.fetch();
+                              final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
+                              final isArchived = metaData.containsKey('a');
+                              final isDeleted = metaData.containsKey('d');
+                              
+                              Color statusColor = Colors.black87;
+                              if (isDeleted) {
+                                statusColor = Colors.red;
+                              } else if (isArchived) {
+                                statusColor = Colors.blue;
+                              }
+
+                              final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
+                              final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
+                                await widget.db.addRecord(element);
+                                setState(() {});
+                              });
+
+                              return Container(
+                                margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: cardBgColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: borderHighlightColor,
+                                    width: borderHighlightWidth,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: (isSelectedForBatch || isSelectedInSplit)
+                                          ? const Color(0xFFE9967A).withOpacity(0.08)
+                                          : Colors.black.withOpacity(0.04),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 3),
                                     ),
                                   ],
                                 ),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: widget.selectedKeys.isNotEmpty 
+                                    ? () => widget.onToggleSelection(element.key)
+                                    : () => setState(() {
+                                        _selectedElementForDetail = element;
+                                      }),
+                                  onLongPress: () => widget.onToggleSelection(element.key),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: DefaultTextStyle(
+                                                style: TextStyle(
+                                                  fontSize: 22, 
+                                                  fontWeight: FontWeight.w900, 
+                                                  color: statusColor,
+                                                  letterSpacing: -0.2
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
+                                                ),
+                                              ),
+                                            ),
+                                            PopupMenuButton<String>(
+                                              icon: const Icon(Icons.more_horiz, size: 32),
+                                              onSelected: (val) => _handleCardAction(val, element),
+                                              itemBuilder: (context) => [
+                                                if (isArchived || isDeleted)
+                                                  const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
+                                                if (!isArchived)
+                                                  const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
+                                                if (!isDeleted)
+                                                  const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
+                                                const PopupMenuDivider(),
+                                                const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        
+                                        if (elementWidgets.isNotEmpty)
+                                          DefaultTextStyle(
+                                            style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                            child: _buildGroupedSection(context, "PATIENT DETAILS", 
+                                              Wrap(spacing: 20, children: elementWidgets[0]),
+                                              color: Colors.white,
+                                              isOutlined: true,
+                                              headingColor: Colors.blueGrey.shade900
+                                            ),
+                                          ),
+                                        
+                                        const SizedBox(height: 16),
+                                        
+                                        _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
+                                          DefaultTextStyle(
+                                            style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
+                                                if (elementWidgets.length > 2) ...[
+                                                  const Divider(height: 24, color: Colors.black12),
+                                                  Wrap(spacing: 20, children: elementWidgets[2]),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                          color: Colors.white,
+                                          headingColor: Colors.blueGrey.shade900
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            
+                            return Container(
+                              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: cardBgColor,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: borderHighlightColor,
+                                  width: borderHighlightWidth,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (isSelectedForBatch || isSelectedInSplit)
+                                        ? const Color(0xFFE9967A).withOpacity(0.08)
+                                        : Colors.black.withOpacity(0.04),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
                               ),
-                            ),
-                          );
-                        }
-                        
-                        return Container(
-                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: cardBgColor,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: borderHighlightColor,
-                              width: borderHighlightWidth,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: (isSelectedForBatch || isSelectedInSplit)
-                                    ? const Color(0xFFE9967A).withOpacity(0.08)
-                                    : Colors.black.withOpacity(0.04),
-                                blurRadius: 6,
-                                offset: const Offset(0, 3),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                leading: isSelectedForBatch ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
+                                title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: element.getDisplays(onlyValue: true),
+                                ),
+                                onTap: widget.selectedKeys.isNotEmpty 
+                                  ? () => widget.onToggleSelection(element.key)
+                                  : () => setState(() => _selectedElementForDetail = element),
+                                onLongPress: () => widget.onToggleSelection(element.key),
                               ),
-                            ],
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            leading: isSelectedForBatch ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
-                            title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: element.getDisplays(onlyValue: true),
-                            ),
-                            onTap: widget.selectedKeys.isNotEmpty 
-                              ? () => widget.onToggleSelection(element.key)
-                              : () => setState(() => _selectedElementForDetail = element),
-                            onLongPress: () => widget.onToggleSelection(element.key),
-                          ),
-                        );
-                      },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Home toggle FAB in row of Active, Archived selection buttons on the master pane
+                  Positioned(
+                    top: 6,
+                    right: 8,
+                    child: SafeArea(
+                      child: FloatingActionButton(
+                        mini: true,
+                        heroTag: "fab_list_home_toggle_split",
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF6B1524),
+                        elevation: 2,
+                        onPressed: () {
+                          setState(() {
+                            _showLandingPage = true;
+                          });
+                        },
+                        tooltip: "Back to Home Landing",
+                        child: const Icon(Icons.home),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
             const VerticalDivider(width: 1, color: Colors.black12),
-            // Right detail pane
-            Expanded(
-              child: _selectedElementForDetail == null
-                  ? Container(
-                      color: Colors.grey.shade50,
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.layers, size: 80, color: const Color(0xFFE9967A).withOpacity(0.3)),
-                            const SizedBox(height: 16),
-                            const Text(
-                              "No Record Selected",
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black54),
+                // Right detail pane
+                Expanded(
+                  child: _selectedElementForDetail == null
+                      ? Container(
+                          color: Colors.grey.shade50,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.layers, size: 80, color: const Color(0xFFE9967A).withOpacity(0.3)),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  "No Record Selected",
+                                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black54),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  "Select a record from the list to view or edit details.",
+                                  style: TextStyle(fontSize: 14, color: Colors.black38),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              "Select a record from the list to view or edit details.",
-                              style: TextStyle(fontSize: 14, color: Colors.black38),
-                            ),
-                          ],
+                          ),
+                        )
+                      : ElementView(
+                          db: widget.db,
+                          element: _selectedElementForDetail!,
+                          key: ValueKey("split_detail_${_selectedElementForDetail!.key}"),
+                          onChanged: () => setState(() {}),
                         ),
-                      ),
-                    )
-                  : ElementView(
-                      db: widget.db,
-                      element: _selectedElementForDetail!,
-                      key: ValueKey("split_detail_${_selectedElementForDetail!.key}"),
-                      onChanged: () => setState(() {}),
-                    ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1559,226 +1660,236 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
 
     // Default layout for viewports < 800px or when enableTabletSplitView setting is disabled
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
+      body: Stack(
         children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                  child: ActionChip(
-                    avatar: const Icon(Icons.home, size: 14, color: Color(0xFF00796B)),
-                    label: const Text("Landing", style: TextStyle(fontSize: 12, color: Color(0xFF00796B), fontWeight: FontWeight.bold)),
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.grey.shade200)),
-                    onPressed: () {
-                      setState(() {
-                        _showLandingPage = true;
-                      });
-                    },
-                  ),
-                ),
-                ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: ChoiceChip(
-                      label: Text(f, style: const TextStyle(fontSize: 12)),
-                      selected: _currentFilter == f,
-                      backgroundColor: Colors.white,
-                      selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
-                      onSelected: (selected) {
-                        if (selected && _currentFilter != f) {
-                          setState(() {
-                            _currentFilter = f;
-                            _initialized = false;
-                          });
-                          _init(forced: true);
-                        }
-                      },
-                    ),
-                  )
-                ).toList(),
-              ],
-            ),
-          ),
-
-          Expanded(
-            child: ListView.separated(
-              controller: _listScrollController,
-              itemCount: filteredElements.length,
-              separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
-              itemBuilder: (context, index) {
-                final element = filteredElements[index];
-                if (element.components.isNotEmpty && element.components.first is ListHeader) {
-                  final header = element.components.first as ListHeader;
-                  header.setDbSchema(widget.db.dbSchema);
-
-                  final Map<String, dynamic> recordData = element.fetch();
-                  final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
-                  final isArchived = metaData.containsKey('a');
-                  final isDeleted = metaData.containsKey('d');
-                  
-                  Color statusColor = Colors.black87;
-                  if (isDeleted) {
-                    statusColor = Colors.red;
-                  } else if (isArchived) {
-                    statusColor = Colors.blue;
-                  }
-
-                  final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
-                  final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
-                    await widget.db.addRecord(element);
-                    setState(() {});
-                  });
-
-                  final isSelected = widget.selectedKeys.contains(element.key);
-
-                  return Container(
-                    margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
-                        width: isSelected ? 2.0 : 1.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: isSelected 
-                              ? Colors.orange.withOpacity(0.08)
-                              : Colors.black.withOpacity(0.04),
-                          blurRadius: 6,
-                          offset: const Offset(0, 3),
+          Column(
+            children: [
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        child: ChoiceChip(
+                          label: Text(f, style: const TextStyle(fontSize: 12)),
+                          selected: _currentFilter == f,
+                          backgroundColor: Colors.white,
+                          selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                          onSelected: (selected) {
+                            if (selected && _currentFilter != f) {
+                              setState(() {
+                                _currentFilter = f;
+                                _initialized = false;
+                              });
+                              _init(forced: true);
+                            }
+                          },
                         ),
-                      ],
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: widget.selectedKeys.isNotEmpty 
-                        ? () => widget.onToggleSelection(element.key)
-                        : () => _openEditor(element),
-                      onLongPress: () => widget.onToggleSelection(element.key),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (isSelected)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 12.0, top: 4.0),
-                                    child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 28),
-                                  ),
-                                Expanded(
-                                  child: DefaultTextStyle(
-                                    style: TextStyle(
-                                      fontSize: 22, 
-                                      fontWeight: FontWeight.w900, 
-                                      color: statusColor,
-                                      letterSpacing: -0.2
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
-                                    ),
-                                  ),
-                                ),
-                                PopupMenuButton<String>(
-                                  icon: const Icon(Icons.more_horiz, size: 32),
-                                  onSelected: (val) => _handleCardAction(val, element),
-                                  itemBuilder: (context) => [
-                                    if (isArchived || isDeleted)
-                                      const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
-                                    if (!isArchived)
-                                      const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
-                                    if (!isDeleted)
-                                      const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
-                                    const PopupMenuDivider(),
-                                    const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            
-                            if (elementWidgets.isNotEmpty)
-                              DefaultTextStyle(
-                                style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                child: _buildGroupedSection(context, "PATIENT DETAILS", 
-                                  Wrap(spacing: 20, children: elementWidgets[0]),
-                                  color: Colors.white,
-                                  isOutlined: true,
-                                  headingColor: Colors.blueGrey.shade900
-                                ),
-                              ),
-                            
-                            const SizedBox(height: 16),
-                            
-                            _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
-                              DefaultTextStyle(
-                                style: const TextStyle(fontSize: 18, color: Colors.black87),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
-                                    if (elementWidgets.length > 2) ...[
-                                      const Divider(height: 24, color: Colors.black12),
-                                      Wrap(spacing: 20, children: elementWidgets[2]),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              color: Colors.white,
-                              headingColor: Colors.blueGrey.shade900
+                      )
+                    ).toList(),
+                  ],
+                ),
+              ),
+
+              Expanded(
+                child: ListView.separated(
+                  controller: _listScrollController,
+                  itemCount: filteredElements.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
+                  itemBuilder: (context, index) {
+                    final element = filteredElements[index];
+                    if (element.components.isNotEmpty && element.components.first is ListHeader) {
+                      final header = element.components.first as ListHeader;
+                      header.setDbSchema(widget.db.dbSchema);
+
+                      final Map<String, dynamic> recordData = element.fetch();
+                      final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
+                      final isArchived = metaData.containsKey('a');
+                      final isDeleted = metaData.containsKey('d');
+                      
+                      Color statusColor = Colors.black87;
+                      if (isDeleted) {
+                        statusColor = Colors.red;
+                      } else if (isArchived) {
+                        statusColor = Colors.blue;
+                      }
+
+                      final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
+                      final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
+                        await widget.db.addRecord(element);
+                        setState(() {});
+                      });
+
+                      final isSelected = widget.selectedKeys.contains(element.key);
+
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
+                            width: isSelected ? 2.0 : 1.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: isSelected 
+                                  ? Colors.orange.withOpacity(0.08)
+                                  : Colors.black.withOpacity(0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: widget.selectedKeys.isNotEmpty 
+                            ? () => widget.onToggleSelection(element.key)
+                            : () => _openEditor(element),
+                          onLongPress: () => widget.onToggleSelection(element.key),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (isSelected)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 12.0, top: 4.0),
+                                        child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 28),
+                                      ),
+                                    Expanded(
+                                      child: DefaultTextStyle(
+                                        style: TextStyle(
+                                          fontSize: 22, 
+                                          fontWeight: FontWeight.w900, 
+                                          color: statusColor,
+                                          letterSpacing: -0.2
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
+                                        ),
+                                      ),
+                                    ),
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_horiz, size: 32),
+                                      onSelected: (val) => _handleCardAction(val, element),
+                                      itemBuilder: (context) => [
+                                        if (isArchived || isDeleted)
+                                          const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
+                                        if (!isArchived)
+                                          const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
+                                        if (!isDeleted)
+                                          const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
+                                        const PopupMenuDivider(),
+                                        const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                
+                                if (elementWidgets.isNotEmpty)
+                                  DefaultTextStyle(
+                                    style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                    child: _buildGroupedSection(context, "PATIENT DETAILS", 
+                                      Wrap(spacing: 20, children: elementWidgets[0]),
+                                      color: Colors.white,
+                                      isOutlined: true,
+                                      headingColor: Colors.blueGrey.shade900
+                                    ),
+                                  ),
+                                
+                                const SizedBox(height: 16),
+                                
+                                _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
+                                  DefaultTextStyle(
+                                    style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
+                                        if (elementWidgets.length > 2) ...[
+                                          const Divider(height: 24, color: Colors.black12),
+                                          Wrap(spacing: 20, children: elementWidgets[2]),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  color: Colors.white,
+                                  headingColor: Colors.blueGrey.shade900
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    final isSelected = widget.selectedKeys.contains(element.key);
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
+                          width: isSelected ? 2.0 : 1.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isSelected 
+                                ? Colors.orange.withOpacity(0.08)
+                                : Colors.black.withOpacity(0.04),
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
-                    ),
-                  );
-                }
-                final isSelected = widget.selectedKeys.contains(element.key);
-                return Container(
-                  margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
-                      width: isSelected ? 2.0 : 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isSelected 
-                            ? Colors.orange.withOpacity(0.08)
-                            : Colors.black.withOpacity(0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 3),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: isSelected ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
+                        title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: element.getDisplays(onlyValue: true),
+                        ),
+                        onTap: widget.selectedKeys.isNotEmpty 
+                          ? () => widget.onToggleSelection(element.key)
+                          : () => _openEditor(element),
+                        onLongPress: () => widget.onToggleSelection(element.key),
                       ),
-                    ],
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    leading: isSelected ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
-                    title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: element.getDisplays(onlyValue: true),
-                    ),
-                    onTap: widget.selectedKeys.isNotEmpty 
-                      ? () => widget.onToggleSelection(element.key)
-                      : () => _openEditor(element),
-                    onLongPress: () => widget.onToggleSelection(element.key),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          // Home toggle FAB in Top Right (aligned with Active, Archive selection buttons row)
+          Positioned(
+            top: 6,
+            right: 16,
+            child: SafeArea(
+              child: FloatingActionButton(
+                mini: true,
+                heroTag: "fab_list_home_toggle_default",
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF6B1524),
+                elevation: 2,
+                onPressed: () {
+                  setState(() {
+                    _showLandingPage = true;
+                  });
+                },
+                tooltip: "Back to Home Landing",
+                child: const Icon(Icons.home),
+              ),
             ),
           ),
         ],
