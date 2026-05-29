@@ -45,7 +45,7 @@ class _ElementEditorState extends State<ElementEditor> {
         await widget.db.addRecord(_editingElement);
       }
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

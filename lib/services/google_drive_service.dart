@@ -1,17 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
-import 'package:googleapis_auth/auth_io.dart';
+import 'package:googleapis_auth/googleapis_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'platform_check.dart';
 import '../core/logger.dart';
+import 'web_history_helper.dart' as web_helper;
+import 'desktop_auth_helper.dart' as desktop_auth;
+import 'io_helper.dart' as io;
 
 /// A unified user model to bridge official GoogleSignInAccount and manual OAuth flows
 class GoogleUser {
@@ -38,7 +39,6 @@ class GoogleUser {
 }
 
 class GoogleDriveService {
-  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   GoogleUser? _currentUser;
   http.Client? _httpClient;
   
@@ -58,18 +58,17 @@ class GoogleDriveService {
     
     _initCompleter = Completer<void>();
     try {
+      await GoogleSignIn.instance.initialize(
+        clientId: _clientId,
+      );
       logger.log("GoogleDriveService: Initializing with clientId: ${isAndroid() ? 'FROM_SERVICES_JSON' : _clientId}");
       
-      // In 7.x, we must call initialize before other methods
-      await _googleSignIn.initialize(
-        clientId: isIOS() || isMacOS() || kIsWeb ? _clientId : null,
-        serverClientId: _clientId, // Passing serverClientId (Web Client ID) is often required for modern Android auth
-      );
       
+
       if (isLinux()) {
         await _restoreLinuxSession();
       }
-      
+
       _initCompleter!.complete();
     } catch (e) {
       logger.log("GoogleDriveService: Init error: $e");
@@ -82,6 +81,19 @@ class GoogleDriveService {
   Future<GoogleUser?> restoreSession() async {
     try {
       await init();
+
+      if (kIsWeb) {
+        // If we have an access token in the URL hash, handle it immediately!
+        final fragment = Uri.base.fragment;
+        if (fragment.contains('access_token=')) {
+          logger.log("GoogleDriveService: Found access_token in URL fragment on startup.");
+          final user = await _handleWebCallbackFragment(fragment);
+          web_helper.clearUrlFragment();
+          if (user != null) {
+            return user;
+          }
+        }
+      }
       
       final prefs = await SharedPreferences.getInstance();
       final wasLoggedIn = prefs.getBool('was_logged_in') ?? false;
@@ -92,13 +104,22 @@ class GoogleDriveService {
       }
 
       if (isLinux()) return _currentUser;
+      
+      if (kIsWeb) {
+        return await _restoreWebSession();
+      }
 
       logger.log("GoogleDriveService: Attempting silent session restoration...");
-      // In 7.x, attemptLightweightAuthentication is the replacement for signInSilently
-      final official = await _googleSignIn.attemptLightweightAuthentication();
+      final official = await GoogleSignIn.instance.attemptLightweightAuthentication();
       if (official != null) {
         logger.log("GoogleDriveService: Session restored for ${official.email}");
         _currentUser = GoogleUser.fromOfficial(official);
+
+        final List<String> scopes = [drive.DriveApi.driveFileScope, 'email', 'profile'];
+        final authz = await official.authorizationClient.authorizationForScopes(scopes);
+        if (authz != null) {
+          _httpClient = authz.authClient(scopes: scopes);
+        }
       }
       return _currentUser;
     } catch (e) {
@@ -138,10 +159,51 @@ class GoogleDriveService {
     }
   }
 
+  Completer<GoogleUser?>? _webLoginCompleter;
+
+  Future<GoogleUser?> _loginWebImplicit() async {
+    logger.log("GoogleDriveService: Starting Web Implicit OAuth Flow...");
+    _webLoginCompleter = Completer<GoogleUser?>();
+
+    // Register listener for the redirect popup callback
+    web_helper.registerWebMessageListener((fragment) async {
+      try {
+        final user = await _handleWebCallbackFragment(fragment);
+        if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+          _webLoginCompleter!.complete(user);
+        }
+      } catch (e) {
+        logger.log("GoogleDriveService: Web OAuth callback error: $e");
+        if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+          _webLoginCompleter!.complete(null);
+        }
+      }
+    });
+
+    final scopes = [drive.DriveApi.driveFileScope, 'email', 'profile'];
+    final redirectUri = "${Uri.base.origin}/";
+    final authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
+        "?client_id=$_clientId"
+        "&redirect_uri=${Uri.encodeComponent(redirectUri)}"
+        "&response_type=token"
+        "&scope=${Uri.encodeComponent(scopes.join(' '))}";
+
+    logger.log("GoogleDriveService: Launching OAuth popup centered: $authUrl");
+    
+    // Centered popup to avoid popup blockers and keep users in app
+    web_helper.openPopup(authUrl, "Google Login", 500, 650);
+
+    return _webLoginCompleter!.future;
+  }
+
   Future<GoogleUser?> login() async {
     try {
       await init();
       final List<String> scopes = [drive.DriveApi.driveFileScope, 'email', 'profile'];
+
+      if (kIsWeb) {
+        return await _loginWebImplicit();
+      }
 
       if (isLinux()) {
         final user = await _loginLinux(scopes);
@@ -151,26 +213,19 @@ class GoogleDriveService {
         }
         return user;
       }
-
       logger.log("GoogleDriveService: Starting official sign-in flow...");
-      final official = await _googleSignIn.authenticate();
-      _currentUser = GoogleUser.fromOfficial(official);
-      
-      logger.log("GoogleDriveService: Authenticated as ${official.email}. Checking Drive permissions...");
-      
-      // In 7.x, check if we already have the scopes using authorizationForScopes.
-      GoogleSignInClientAuthorization? authz = await official.authorizationClient.authorizationForScopes(scopes);
-      
-      if (authz == null) {
-        logger.log("GoogleDriveService: Requesting explicit permission for Drive scopes...");
-        // This will trigger the modal asking for permission (authorization)
-        authz = await official.authorizationClient.authorizeScopes(scopes);
-      } else {
-        logger.log("GoogleDriveService: Drive permissions already granted.");
+      if (!GoogleSignIn.instance.supportsAuthenticate()) {
+        logger.log("GoogleDriveService: authenticate() not supported on this platform. Use renderButton in UI.");
+        return null;
       }
-      
-      // authClient is an extension method on GoogleSignInClientAuthorization
-      _httpClient = authz.authClient(scopes: scopes);
+      final official = await GoogleSignIn.instance.authenticate();
+      _currentUser = GoogleUser.fromOfficial(official);
+
+      logger.log("GoogleDriveService: Authenticated as ${official.email}. Obtaining Auth Client...");
+      final authClientManager = official.authorizationClient;
+      final authz = await authClientManager.authorizationForScopes(scopes);
+      final finalAuthz = authz ?? await authClientManager.authorizeScopes(scopes);
+      _httpClient = finalAuthz.authClient(scopes: scopes);
       
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('was_logged_in', true);
@@ -187,23 +242,9 @@ class GoogleDriveService {
   }
 
   Future<GoogleUser?> _loginLinux(List<String> scopes) async {
-    final id = ClientId(_clientId, _clientSecret);
-    
     try {
-      final client = await clientViaUserConsent(id, scopes, (url) async {
-        final uri = Uri.parse(url);
-        final modifiedUrl = uri.replace(queryParameters: {
-          ...uri.queryParameters,
-          'access_type': 'offline',
-          'prompt': 'consent',
-        }).toString();
-
-        if (await canLaunchUrl(Uri.parse(modifiedUrl))) {
-          await launchUrl(Uri.parse(modifiedUrl), mode: LaunchMode.externalApplication);
-        } else {
-          throw "Could not launch $modifiedUrl";
-        }
-      }, listenPort: 8080); // <--- Fixed port for predictable redirect URI
+      final client = await desktop_auth.getLinuxClient(_clientId, _clientSecret, scopes);
+      if (client == null) return null;
 
       _httpClient = client;
       final creds = (client as AuthClient).credentials;
@@ -228,18 +269,132 @@ class GoogleDriveService {
     }
   }
 
+  Future<GoogleUser?> _restoreWebSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('google_drive_web_token');
+      final expiryStr = prefs.getString('google_drive_web_token_expiry');
+
+      if (token != null && expiryStr != null) {
+        final expiryTime = DateTime.parse(expiryStr).toUtc();
+        if (expiryTime.isAfter(DateTime.now().toUtc())) {
+          logger.log("GoogleDriveService: Restoring web session from SharedPreferences.");
+          final accessToken = AccessToken('Bearer', token, expiryTime);
+          final creds = AccessCredentials(accessToken, null, [drive.DriveApi.driveFileScope, 'email', 'profile']);
+          _httpClient = authenticatedClient(http.Client(), creds);
+
+          // Fetch user info
+          final response = await _httpClient!.get(Uri.parse('https://www.googleapis.com/oauth2/v2/userinfo'));
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            _currentUser = GoogleUser(
+              id: data['id'],
+              email: data['email'],
+              displayName: data['name'],
+              photoUrl: data['picture'],
+            );
+            logger.log("GoogleDriveService: Session successfully restored for ${_currentUser?.email}");
+            return _currentUser;
+          }
+        }
+      }
+
+      logger.log("GoogleDriveService: Attempting silent session restoration via SDK...");
+      final official = await GoogleSignIn.instance.attemptLightweightAuthentication();
+      if (official != null) {
+        _currentUser = GoogleUser.fromOfficial(official);
+
+        final List<String> scopes = [drive.DriveApi.driveFileScope, 'email', 'profile'];
+        final authz = await official.authorizationClient.authorizationForScopes(scopes);
+        if (authz != null) {
+          _httpClient = authz.authClient(scopes: scopes);
+        }
+        logger.log("GoogleDriveService: Session restored for ${_currentUser?.email}");
+      }
+      return _currentUser;
+    } catch (e) {
+      logger.log("GoogleDriveService: Silent restoration error: $e");
+      return null;
+    }
+  }
+
+  Future<GoogleUser?> _handleWebCallbackFragment(String fragment) async {
+    try {
+      final params = _parseFragment(fragment);
+      final token = params['access_token'];
+      final expiresInStr = params['expires_in'];
+
+      if (token == null) {
+        logger.log("GoogleDriveService: No access_token in fragment.");
+        return null;
+      }
+
+      final expiresIn = int.tryParse(expiresInStr ?? '3600') ?? 3600;
+      final expiryTime = DateTime.now().toUtc().add(Duration(seconds: expiresIn));
+
+      // Save token & expiry
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('google_drive_web_token', token);
+      await prefs.setString('google_drive_web_token_expiry', expiryTime.toIso8601String());
+      await prefs.setBool('was_logged_in', true);
+
+      // Construct auth client
+      final accessToken = AccessToken('Bearer', token, expiryTime);
+      final creds = AccessCredentials(accessToken, null, [drive.DriveApi.driveFileScope, 'email', 'profile']);
+      _httpClient = authenticatedClient(http.Client(), creds);
+
+      // Fetch user profile
+      final response = await _httpClient!.get(Uri.parse('https://www.googleapis.com/oauth2/v2/userinfo'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _currentUser = GoogleUser(
+          id: data['id'],
+          email: data['email'],
+          displayName: data['name'],
+          photoUrl: data['picture'],
+        );
+        logger.log("GoogleDriveService: Web user info fetched: ${_currentUser?.email}");
+      } else {
+        logger.log("GoogleDriveService: Failed to fetch user info: ${response.statusCode} - ${response.body}");
+      }
+      return _currentUser;
+    } catch (e) {
+      logger.log("GoogleDriveService: Error handling web OAuth fragment: $e");
+      return null;
+    }
+  }
+
+  Map<String, String> _parseFragment(String fragment) {
+    String clean = fragment;
+    if (clean.startsWith('#')) clean = clean.substring(1);
+    if (clean.startsWith('?')) clean = clean.substring(1);
+    
+    final Map<String, String> result = {};
+    final pairs = clean.split('&');
+    for (var pair in pairs) {
+      final parts = pair.split('=');
+      if (parts.length >= 2) {
+        final key = Uri.decodeComponent(parts[0]);
+        final value = Uri.decodeComponent(parts.sublist(1).join('='));
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
   Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('was_logged_in');
 
-      if (!isLinux()) {
-        await _googleSignIn.signOut();
-        if (!kIsWeb) {
-          try {
-            await _googleSignIn.disconnect();
-          } catch (_) {}
-        }
+      if (kIsWeb) {
+        await prefs.remove('google_drive_web_token');
+        await prefs.remove('google_drive_web_token_expiry');
+      } else if (!isLinux()) {
+        await GoogleSignIn.instance.signOut();
+        try {
+          await GoogleSignIn.instance.disconnect();
+        } catch (_) {}
       } else {
         await prefs.remove('google_drive_creds');
       }
@@ -354,9 +509,10 @@ class GoogleDriveService {
     
     if (folderId != null) file.parents = [folderId];
 
-    final ioFile = File(filePath);
-    final fileStream = ioFile.openRead();
-    final length = await ioFile.length();
+    final bytes = await io.readBytes(filePath);
+    if (bytes == null) throw "File not found: $filePath";
+    final fileStream = Stream<List<int>>.value(bytes);
+    final length = bytes.length;
 
     try {
       await api.files.create(file, uploadMedia: drive.Media(fileStream, length));

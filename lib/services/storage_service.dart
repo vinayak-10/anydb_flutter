@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'async_store.dart';
 import 'file_service.dart';
+import 'isolate_worker.dart';
 import 'package:path/path.dart' as p;
 
 abstract class StorageInterface {
@@ -65,13 +66,11 @@ class LocalStore extends StorageInterface {
   Future<void> importData(List<dynamic> data) async {
     final currentEntries = await fetch();
     
-    // Offload the heavy merging logic to an isolate on non-web platforms
-    Map<String, dynamic> result;
-    if (kIsWeb) {
-      result = _processImportLogic({'dbName': _dbName, 'data': data, 'currentEntries': currentEntries});
-    } else {
-      result = await compute(_processImportLogic, {'dbName': _dbName, 'data': data, 'currentEntries': currentEntries});
-    }
+    // Offload the heavy merging logic to the persistent background IsolateWorker pool
+    final result = await IsolateWorker.instance.execute<Map<String, dynamic>>(
+      'importMerge',
+      {'dbName': _dbName, 'data': data, 'currentEntries': currentEntries},
+    );
 
     final Map<String, dynamic> itemsToUpdate = result['itemsToUpdate'];
     final int importedCount = result['importedCount'];
@@ -88,8 +87,8 @@ class LocalStore extends StorageInterface {
   }
 }
 
-// Top-level function for compute
-Map<String, dynamic> _processImportLogic(Map<String, dynamic> params) {
+// Top-level function for compute/IsolateWorker
+Map<String, dynamic> processImportLogic(Map<String, dynamic> params) {
   final String dbName = params['dbName'];
   final List<dynamic> data = params['data'];
   final List<Map<String, dynamic>> currentEntries = params['currentEntries'];

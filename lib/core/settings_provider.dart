@@ -4,13 +4,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SettingsState {
   final double fontScale;
   final double inputFontScale;
+  final bool enableTabletSplitView;
 
-  SettingsState({this.fontScale = 1.0, this.inputFontScale = 1.0});
+  SettingsState({
+    this.fontScale = 1.0, 
+    this.inputFontScale = 1.0,
+    this.enableTabletSplitView = true,
+  });
 
-  SettingsState copyWith({double? fontScale, double? inputFontScale}) {
+  SettingsState copyWith({
+    double? fontScale, 
+    double? inputFontScale,
+    bool? enableTabletSplitView,
+  }) {
     return SettingsState(
       fontScale: fontScale ?? this.fontScale,
       inputFontScale: inputFontScale ?? this.inputFontScale,
+      enableTabletSplitView: enableTabletSplitView ?? this.enableTabletSplitView,
     );
   }
 
@@ -22,14 +32,19 @@ class SettingsNotifier extends Notifier<SettingsState> {
   @override
   SettingsState build() {
     _load();
-    return SettingsState(fontScale: 1.0, inputFontScale: 1.0);
+    return SettingsState(fontScale: 1.0, inputFontScale: 1.0, enableTabletSplitView: true);
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final scale = prefs.getDouble('fontScale') ?? 1.0;
     final inputScale = prefs.getDouble('inputFontScale') ?? 1.0;
-    state = state.copyWith(fontScale: scale, inputFontScale: inputScale);
+    final tabletSplit = prefs.getBool('enableTabletSplitView') ?? true;
+    state = state.copyWith(
+      fontScale: scale, 
+      inputFontScale: inputScale,
+      enableTabletSplitView: tabletSplit,
+    );
   }
 
   Future<void> setFontScale(double scale) async {
@@ -62,6 +77,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     if (state.inputFontScale > 0.5) {
       setInputFontScale(state.inputFontScale - 0.1);
     }
+  }
+
+  Future<void> setTabletSplitView(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableTabletSplitView', enabled);
+    state = state.copyWith(enableTabletSplitView: enabled);
   }
 }
 

@@ -4,6 +4,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'file_service.dart';
 import 'io_helper.dart' as io;
+import 'isolate_worker.dart';
+import 'web_downloader.dart';
 
 class SchemaInfo {
   final String name;
@@ -79,10 +81,15 @@ class SchemaService {
     if (input is Map<String, dynamic>) {
       content = input;
     } else if (!kIsWeb) {
-      // In IO mode, we expect a string path or a dynamic object that has a path
-      // But let's simplify: main.dart should pass content or a path
+      // In IO mode, we expect a string path
       if (input is String) {
-         content = await _fileService.readJson(input);
+         if (await io.fileExists(input)) {
+           final rawStr = await io.readString(input);
+           content = await IsolateWorker.instance.execute<Map<String, dynamic>>(
+             'parseSchema',
+             {'jsonStr': rawStr},
+           );
+         }
       }
     }
 
@@ -129,12 +136,24 @@ class SchemaService {
     
     if (!kIsWeb) {
       await io.copyFile(info.path, targetPath);
+    } else {
+      final content = await _fileService.readJson(info.path);
+      if (content != null) {
+        final jsonStr = jsonEncode(content);
+        downloadWebData(fileName, jsonStr);
+      }
     }
     await init();
   }
 
   Future<void> deleteSchema(SchemaInfo info) async {
-    await io.deleteFile(info.path);
+    await _fileService.deleteFile(info.path);
     await init();
   }
+}
+
+// Top-level schema parser helper for IsolateWorker
+Map<String, dynamic> parseSchemaJsonInIsolate(String jsonStr) {
+  final decoded = jsonDecode(jsonStr);
+  return decoded is Map ? decoded.cast<String, dynamic>() : decoded;
 }

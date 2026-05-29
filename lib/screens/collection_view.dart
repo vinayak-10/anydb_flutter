@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import '../components/composite.dart';
 import '../components/drawer_content.dart';
 import '../components/overlapping_screen.dart';
 import 'element_editor.dart';
+import '../core/settings_provider.dart';
 
 class CollectionView extends ConsumerStatefulWidget {
   final List<AppContent> contents;
@@ -114,6 +116,8 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
 
     if (confirmed == true) {
       final statusNotifier = ValueNotifier<String>("Finalizing database records...");
+      // Completer that resolves once the loading dialog is painted on screen.
+      final dialogReady = Completer<void>();
 
       // Show loading indicator
       if (mounted) {
@@ -151,11 +155,22 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
             },
           ),
         );
+        // Signal after the dialog's first paint so heavy processing never
+        // races ahead of the UI render.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!dialogReady.isCompleted) dialogReady.complete();
+        });
+      } else {
+        dialogReady.complete(); // not mounted – skip wait
       }
+      // Wait for the dialog frame to be committed to the screen.
+      await dialogReady.future;
+      await Future.delayed(const Duration(milliseconds: 300)); // Yield to allow browser to complete first paint of dialog
 
       try {
         // 1. Export database locally
         statusNotifier.value = "Saving database records locally...";
+        await Future.delayed(const Duration(milliseconds: 150)); // Yield to paint status text
         await _exportDb(db);
 
         // 2. Cloud Backup to Google Drive
@@ -166,6 +181,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           
           if (googleDriveService.isLoggedIn) {
             statusNotifier.value = "Uploading backup to Google Drive...";
+            await Future.delayed(const Duration(milliseconds: 150)); // Yield to paint status text
             await googleDriveService.uploadJson(
               jsonStr, 
               "${db.key}_backup_${DateTime.now().millisecondsSinceEpoch}.json",
@@ -184,6 +200,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
 
         // 3. Generate Reports
         statusNotifier.value = "Generating Daily and Monthly reports...";
+        await Future.delayed(const Duration(milliseconds: 150)); // Yield to paint status text
         final aggregatorContent = widget.contents.firstWhere((c) => c.type == ContentType.aggregator);
         final agg = aggregatorContent.service as AggregatorService;
         
@@ -636,7 +653,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
   }
 }
 
-class _DatabaseView extends StatefulWidget {
+class _DatabaseView extends ConsumerStatefulWidget {
   final ElementDb db;
   final String schemaTitle;
   final String searchQuery;
@@ -654,13 +671,15 @@ class _DatabaseView extends StatefulWidget {
   });
 
   @override
-  State<_DatabaseView> createState() => _DatabaseViewState();
+  ConsumerState<_DatabaseView> createState() => _DatabaseViewState();
 }
 
-class _DatabaseViewState extends State<_DatabaseView> {
+class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   String _currentFilter = 'Active';
   bool _initialized = false;
   final ScrollController _listScrollController = ScrollController();
+  ElementModel? _draftNewElement;
+  ElementModel? _selectedElementForDetail;
 
   @override
   void initState() {
@@ -676,43 +695,136 @@ class _DatabaseViewState extends State<_DatabaseView> {
 
   Future<void> _init({bool forced = false}) async {
     await widget.db.initDb(forced: forced, filter: [_currentFilter]);
-    if (mounted) setState(() => _initialized = true);
+    if (mounted) {
+      setState(() {
+        _initialized = true;
+        if (_selectedElementForDetail != null) {
+          final matched = widget.db.elements.where((e) => e.key == _selectedElementForDetail!.key);
+          if (matched.isNotEmpty) {
+            _selectedElementForDetail = matched.first;
+          } else {
+            _selectedElementForDetail = null;
+          }
+        }
+      });
+    }
   }
 
   void refresh() {
     _init(forced: true);
   }
 
+  void _resumeDraft() async {
+    if (_draftNewElement == null) return;
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ElementEditor(
+          db: widget.db,
+          element: _draftNewElement!,
+          isNew: true,
+        ),
+      ),
+    );
+    if (saved == true) {
+      setState(() {
+        _draftNewElement = null;
+      });
+    }
+    _init(forced: true);
+  }
+
   void onAdd() async {
+    if (_draftNewElement != null) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Active Draft Found"),
+          content: const Text("You already have an unsaved draft. What would you like to do?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, "resume"),
+              child: const Text("RESUME DRAFT", style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, "discard"),
+              child: const Text("DISCARD & START FRESH", style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, "cancel"),
+              child: const Text("CANCEL"),
+            ),
+          ],
+        ),
+      );
+
+      if (choice == "resume") {
+        _resumeDraft();
+        return;
+      } else if (choice == "discard") {
+        setState(() {
+          _draftNewElement = null;
+        });
+      } else {
+        return; // Cancel
+      }
+    }
+
     final newElement = ElementModel();
     newElement.init(widget.db.dbSchema, widget.db.intf);
     newElement.key = "Record ${widget.db.elements.length + 1}";
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => ElementEditor(db: widget.db, element: newElement, isNew: true)));
+    setState(() {
+      _draftNewElement = newElement;
+    });
+
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (context) => ElementEditor(db: widget.db, element: newElement, isNew: true))
+    );
+
+    if (saved == true) {
+      setState(() {
+        _draftNewElement = null;
+      });
+    }
     _init(forced: true);
   }
 
   void _openEditor(ElementModel element) async {
     await Navigator.push(context, MaterialPageRoute(builder: (context) => ElementView(db: widget.db, element: element)));
+    if (!mounted) return;
     _init(forced: true);
   }
 
   Future<void> _handleCardAction(String action, ElementModel element) async {
     if (action == 'archive') {
       await widget.db.markArchive(element);
+      if (_selectedElementForDetail?.key == element.key) {
+        _selectedElementForDetail = null;
+      }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Marked as Archived")));
     } else if (action == 'restore') {
       await widget.db.restore(element);
+      if (_selectedElementForDetail?.key == element.key) {
+        _selectedElementForDetail = null;
+      }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Restored to Active")));
     } else if (action == 'delete') {
       final confirmed = await _showConfirm("Mark for Delete", "This will move the record to the 'Deleted' bin for 72 hours before it is permanently purged.");
       if (confirmed) {
         await widget.db.markDelete(element);
+        if (_selectedElementForDetail?.key == element.key) {
+          _selectedElementForDetail = null;
+        }
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Marked for deletion (72h remaining)")));
       }
     } else if (action == 'permanent') {
       final confirmed = await _showConfirm("PERMANENT DELETE", "Are you sure? This action CANNOT be undone and the data will be lost forever.", isDestructive: true);
       if (confirmed) {
         await widget.db.removeRecord(element.key);
+        if (_selectedElementForDetail?.key == element.key) {
+          _selectedElementForDetail = null;
+        }
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Record permanently deleted")));
       }
     }
@@ -771,6 +883,340 @@ class _DatabaseViewState extends State<_DatabaseView> {
         .where((e) => widget.searchQuery.isEmpty || e.match(widget.searchQuery, exact: widget.isExactMatch)[0])
         .toList();
 
+    final settings = ref.watch(settingsProvider);
+    final mediaWidth = MediaQuery.of(context).size.width;
+    final useSplitView = settings.enableTabletSplitView && mediaWidth >= 800;
+
+    if (useSplitView) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Row(
+          children: [
+            // Left master pane (350px width)
+            SizedBox(
+              width: 350,
+              child: Column(
+                children: [
+                  Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: ['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                          child: ChoiceChip(
+                            label: Text(f, style: const TextStyle(fontSize: 10)),
+                            selected: _currentFilter == f,
+                            backgroundColor: Colors.white,
+                            selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                            onSelected: (selected) {
+                              if (selected && _currentFilter != f) {
+                                setState(() {
+                                  _currentFilter = f;
+                                  _initialized = false;
+                                  _selectedElementForDetail = null;
+                                });
+                                _init(forced: true);
+                              }
+                            },
+                          ),
+                        )
+                      ).toList(),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Colors.black12),
+                  if (_draftNewElement != null)
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00796B).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF00796B), width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.edit_document, color: Color(0xFF00796B), size: 20),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  "Unsaved Draft",
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF004D40), fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "ID: ${_draftNewElement!.key}",
+                            style: const TextStyle(fontSize: 11, color: Colors.black54),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: _resumeDraft,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFF00796B),
+                                  backgroundColor: const Color(0xFF00796B).withOpacity(0.1),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                ),
+                                child: const Text("RESUME", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text("Discard Draft"),
+                                      content: const Text("Are you sure you want to discard this unsaved draft? All edits will be permanently lost."),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            setState(() {
+                                              _draftNewElement = null;
+                                            });
+                                          }, 
+                                          child: const Text("DISCARD", style: TextStyle(color: Colors.red)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text("DISCARD", style: TextStyle(fontSize: 11)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.separated(
+                      controller: _listScrollController,
+                      itemCount: filteredElements.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
+                      itemBuilder: (context, index) {
+                        final element = filteredElements[index];
+                        final isSelectedInSplit = _selectedElementForDetail?.key == element.key;
+                        final isSelectedForBatch = widget.selectedKeys.contains(element.key);
+
+                        final borderHighlightColor = isSelectedForBatch 
+                            ? Colors.orange.shade300 
+                            : (isSelectedInSplit ? const Color(0xFFE9967A) : Colors.grey.shade200);
+                        final borderHighlightWidth = (isSelectedForBatch || isSelectedInSplit) ? 2.0 : 1.0;
+                        final cardBgColor = isSelectedInSplit ? const Color(0xFFE9967A).withOpacity(0.05) : Colors.white;
+
+                        if (element.components.isNotEmpty && element.components.first is ListHeader) {
+                          final header = element.components.first as ListHeader;
+                          header.setDbSchema(widget.db.dbSchema);
+
+                          final Map<String, dynamic> recordData = element.fetch();
+                          final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
+                          final isArchived = metaData.containsKey('a');
+                          final isDeleted = metaData.containsKey('d');
+                          
+                          Color statusColor = Colors.black87;
+                          if (isDeleted) {
+                            statusColor = Colors.red;
+                          } else if (isArchived) {
+                            statusColor = Colors.blue;
+                          }
+
+                          final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
+                          final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
+                            await widget.db.addRecord(element);
+                            setState(() {});
+                          });
+
+                          return Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: cardBgColor,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: borderHighlightColor,
+                                width: borderHighlightWidth,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isSelectedForBatch || isSelectedInSplit)
+                                      ? const Color(0xFFE9967A).withOpacity(0.08)
+                                      : Colors.black.withOpacity(0.04),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: widget.selectedKeys.isNotEmpty 
+                                ? () => widget.onToggleSelection(element.key)
+                                : () => setState(() => _selectedElementForDetail = element),
+                              onLongPress: () => widget.onToggleSelection(element.key),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (isSelectedForBatch)
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 6.0, top: 2.0),
+                                            child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 20),
+                                          ),
+                                        Expanded(
+                                          child: DefaultTextStyle(
+                                            style: TextStyle(
+                                              fontSize: 16, 
+                                              fontWeight: FontWeight.w900, 
+                                              color: statusColor,
+                                              letterSpacing: -0.2
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: titleWidgets.map((group) => Wrap(spacing: 8, children: group)).toList(),
+                                            ),
+                                          ),
+                                        ),
+                                        PopupMenuButton<String>(
+                                          icon: const Icon(Icons.more_horiz, size: 24),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onSelected: (val) => _handleCardAction(val, element),
+                                          itemBuilder: (context) => [
+                                            if (isArchived || isDeleted)
+                                              const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
+                                            if (!isArchived)
+                                              const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
+                                            if (!isDeleted)
+                                              const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
+                                            const PopupMenuDivider(),
+                                            const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (elementWidgets.isNotEmpty)
+                                      DefaultTextStyle(
+                                        style: const TextStyle(fontSize: 13, color: Colors.black87),
+                                        child: Text(
+                                          elementWidgets[0].map((w) {
+                                            if (w is Text) return w.data;
+                                            return '';
+                                          }).where((t) => t != null && t.isNotEmpty).join(' | '),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        
+                        return Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: cardBgColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: borderHighlightColor,
+                              width: borderHighlightWidth,
+                            ),
+                          ),
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            leading: isSelectedForBatch ? Icon(Icons.check_circle, color: Colors.orange.shade700, size: 20) : null,
+                            title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text(
+                              element.getDisplays(onlyValue: true).map((w) {
+                                if (w is Text) return w.data;
+                                return '';
+                              }).where((t) => t != null && t.isNotEmpty).join(' | '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            onTap: widget.selectedKeys.isNotEmpty 
+                              ? () => widget.onToggleSelection(element.key)
+                              : () => setState(() => _selectedElementForDetail = element),
+                            onLongPress: () => widget.onToggleSelection(element.key),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1, color: Colors.black12),
+            // Right detail pane
+            Expanded(
+              child: _selectedElementForDetail == null
+                  ? Container(
+                      color: Colors.grey.shade50,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.layers, size: 80, color: const Color(0xFFE9967A).withOpacity(0.3)),
+                            const SizedBox(height: 16),
+                            const Text(
+                              "No Record Selected",
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black54),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              "Select a record from the list to view or edit details.",
+                              style: TextStyle(fontSize: 14, color: Colors.black38),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ElementView(
+                      db: widget.db,
+                      element: _selectedElementForDetail!,
+                      key: ValueKey("split_detail_${_selectedElementForDetail!.key}"),
+                      onChanged: () => setState(() {}),
+                    ),
+            ),
+          ],
+        ),
+        floatingActionButton: widget.selectedKeys.isEmpty ? FloatingActionButton.extended(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add),
+          label: const Text("NEW RECORD"),
+        ) : null,
+      );
+    }
+
+    // Default layout for viewports < 800px or when enableTabletSplitView setting is disabled
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
@@ -804,6 +1250,74 @@ class _DatabaseViewState extends State<_DatabaseView> {
             ),
           ),
           const Divider(height: 1, color: Colors.black12),
+          if (_draftNewElement != null)
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00796B).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF00796B), width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit_document, color: Color(0xFF00796B), size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Unsaved Draft in Progress",
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF004D40)),
+                        ),
+                        Text(
+                          "ID: ${_draftNewElement!.key}",
+                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _resumeDraft,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF00796B),
+                      backgroundColor: const Color(0xFF00796B).withOpacity(0.1),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text("RESUME", style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text("Discard Draft"),
+                          content: const Text("Are you sure you want to discard this unsaved draft? All edits will be permanently lost."),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                setState(() {
+                                  _draftNewElement = null;
+                                });
+                              }, 
+                              child: const Text("DISCARD", style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                    child: const Text("DISCARD"),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: ListView.separated(
               controller: _listScrollController,
@@ -1025,7 +1539,8 @@ class _DatabaseViewState extends State<_DatabaseView> {
 class ElementView extends StatefulWidget {
   final ElementDb db;
   final ElementModel element;
-  const ElementView({super.key, required this.db, required this.element});
+  final VoidCallback? onChanged;
+  const ElementView({super.key, required this.db, required this.element, this.onChanged});
 
   @override
   State<ElementView> createState() => _ElementViewState();
@@ -1061,6 +1576,7 @@ class _ElementViewState extends State<ElementView> {
             onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (context) => ElementEditor(db: widget.db, element: widget.element)));
               setState(() {});
+              widget.onChanged?.call();
             },
             tooltip: "Edit Full Record",
           ),
@@ -1105,6 +1621,7 @@ class _ElementViewState extends State<ElementView> {
                       onChanged: () async {
                         await widget.db.addRecord(widget.element);
                         setState(() {});
+                        widget.onChanged?.call();
                       }
                     ),
                   ),
@@ -1157,6 +1674,7 @@ class _ElementViewState extends State<ElementView> {
       c.populate(cClone.fetch());
       await widget.db.addRecord(widget.element);
       setState(() {});
+      widget.onChanged?.call();
     }
   }
 }
@@ -1182,7 +1700,7 @@ class AggregatorReportView extends ConsumerStatefulWidget {
 }
 
 class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
-  bool _isGenerating = false;
+  bool _isGenerating = true; // true from the start so spinner shows on first frame
   bool _isSearching = false;
   List<dynamic> _aoa = [];
   String? _lastGeneratedPath;
@@ -1324,6 +1842,14 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
 
   void _generate({bool force = false}) async {
     setState(() => _isGenerating = true);
+    // Yield to the frame pipeline so the spinner is painted before heavy work.
+    final frameReady = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!frameReady.isCompleted) frameReady.complete();
+    });
+    await frameReady.future;
+    await Future.delayed(const Duration(milliseconds: 150)); // Yield to paint spinner
+
     try {
       final result = await widget.agg.generate(
         widget.report,
@@ -1564,13 +2090,26 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                     label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
                     onPressed: () async {
                       if (_lastGeneratedPath == null) {
-                        // Explicitly generate for web/mobile if not yet done
-                        final path = await widget.agg.generateWorkbook(
-                          widget.report,
-                          date: widget.selectedRange ?? widget.selectedDate,
-                        );
-                        setState(() => _lastGeneratedPath = path);
-                        await widget.agg.openReport(path);
+                        setState(() => _isGenerating = true);
+                        await Future.delayed(const Duration(milliseconds: 150));
+                        try {
+                          final path = await widget.agg.generateWorkbook(
+                            widget.report,
+                            date: widget.selectedRange ?? widget.selectedDate,
+                          );
+                          setState(() {
+                            _lastGeneratedPath = path;
+                            _isGenerating = false;
+                          });
+                          await widget.agg.openReport(path);
+                        } catch (e) {
+                          setState(() => _isGenerating = false);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Error: $e")),
+                            );
+                          }
+                        }
                       } else {
                         await widget.agg.openReport(_lastGeneratedPath);
                       }
@@ -1971,6 +2510,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () async {
+                        final batchDialogReady = Completer<void>();
                         showDialog(
                           context: context,
                           barrierDismissible: false,
@@ -1992,9 +2532,15 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                             ),
                           ),
                         );
+                        // Wait for dialog to paint before blocking with heavy work.
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!batchDialogReady.isCompleted) batchDialogReady.complete();
+                        });
+                        await batchDialogReady.future;
 
                         try {
                           final path = await widget.agg.generateMonthlyBatch(_selectedDate, force: true);
+
                           
                           // Load the generated monthly data into UI
                           final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));

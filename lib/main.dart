@@ -10,6 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import 'core/settings_provider.dart';
 import 'components/drawer_content.dart';
 import 'services/google_drive_service.dart';
+import 'services/web_history_helper.dart' as web_helper;
 
 // Providers
 final schemaServiceProvider = Provider((ref) => SchemaService());
@@ -33,6 +34,9 @@ final schemasProvider = FutureProvider<List<SchemaInfo>>((ref) async {
 });
 
 void main() {
+  // Catch and process OAuth implicit flow popup callbacks instantly on web
+  web_helper.handleWebOauthCallback();
+
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("App: main() started");
   runApp(

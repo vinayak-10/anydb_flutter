@@ -94,10 +94,7 @@ add_custom_command(
     ${CPP_WRAPPER_SOURCES_CORE} ${CPP_WRAPPER_SOURCES_PLUGIN}
     ${CPP_WRAPPER_SOURCES_APP}
     ${PHONY_OUTPUT}
-  COMMAND ${CMAKE_COMMAND} -E env
-    ${FLUTTER_TOOL_ENVIRONMENT}
-    "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.bat"
-      ${FLUTTER_TARGET_PLATFORM} $<CONFIG>
+  COMMAND ${CMAKE_COMMAND} -E echo "Bypassing tool_backend.bat on Linux host..."
   VERBATIM
 )
 add_custom_target(flutter_assemble DEPENDS

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,7 +18,8 @@ class FileService {
   Future<String> getInternalRoot() async {
     if (kIsWeb) return await _getWebInternalRoot();
     if (isLinux()) {
-      return p.join(Platform.environment['HOME']!, 'Documents', parentDir, appName);
+      final home = pp.getHomeDir();
+      return p.join(home ?? '', 'Documents', parentDir, appName);
     }
     final path = await pp.getAppDocsDir();
     return p.join(path ?? "", parentDir, appName);
@@ -28,7 +28,8 @@ class FileService {
   Future<String> getExternalRoot() async {
     if (kIsWeb) return p.join('web_external', parentDir, appName);
     if (isLinux()) {
-      return p.join(Platform.environment['HOME']!, 'Documents', parentDir, appName);
+      final home = pp.getHomeDir();
+      return p.join(home ?? '', 'Documents', parentDir, appName);
     }
     
     String? rootPath;
@@ -87,17 +88,29 @@ class FileService {
       _webCache[fullPath] = jsonStr;
       final prefs = await SharedPreferences.getInstance();
       
-      // Update file registry for the directory
-      List<String> files = prefs.getStringList(path) ?? [];
-      if (!files.contains(fullPath)) {
-        files.add(fullPath);
-        await prefs.setStringList(path, files);
+      try {
+        // Update file registry for the directory
+        List<String> files = prefs.getStringList(path) ?? [];
+        if (!files.contains(fullPath)) {
+          files.add(fullPath);
+          await prefs.setStringList(path, files);
+        }
+      } catch (e) {
+        if (e.toString().contains("QuotaExceededError") || 
+            e.toString().contains("quota") || 
+            e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
+          debugPrint("FileService: Web Quota Exceeded during registry update.");
+        } else {
+          rethrow;
+        }
       }
 
       try {
         await prefs.setString(fullPath, jsonStr);
       } catch (e) {
-        if (e.toString().contains("QuotaExceededError") || e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
+        if (e.toString().contains("QuotaExceededError") || 
+            e.toString().contains("quota") || 
+            e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
           debugPrint("FileService: Web Quota Exceeded. Using In-Memory fallback.");
         } else {
           rethrow;
@@ -174,7 +187,7 @@ class FileService {
     
     return io.listDir(dirPath)
         .where((e) => e.path.endsWith('.$extension'))
-        .map((e) => e.path)
+        .map((e) => e.path as String)
         .toList();
   }
 

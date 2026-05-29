@@ -10,6 +10,16 @@
 //
 #include "winres.h"
 
+// Undefine and redefine with no-L suffix for llvm-rc compatibility on Linux
+#undef VS_FFI_FILEFLAGSMASK
+#define VS_FFI_FILEFLAGSMASK 0x3f
+#undef VOS__WINDOWS32
+#define VOS__WINDOWS32 0x00040004
+#undef VFT_APP
+#define VFT_APP 0x1
+#undef VS_FF_DEBUG
+#define VS_FF_DEBUG 0x1
+
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
 
@@ -17,32 +27,9 @@
 // English (United States) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
-LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+LANGUAGE 9, 1
 
-#ifdef APSTUDIO_INVOKED
-/////////////////////////////////////////////////////////////////////////////
-//
-// TEXTINCLUDE
-//
 
-1 TEXTINCLUDE
-BEGIN
-    "resource.h\0"
-END
-
-2 TEXTINCLUDE
-BEGIN
-    "#include ""winres.h""\r\n"
-    "\0"
-END
-
-3 TEXTINCLUDE
-BEGIN
-    "\r\n"
-    "\0"
-END
-
-#endif    // APSTUDIO_INVOKED
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -52,7 +39,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
+IDI_APP_ICON            ICON                    "resources/app_icon.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -60,43 +47,30 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 // Version
 //
 
-#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) && defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)
-#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD
-#else
 #define VERSION_AS_NUMBER 1,0,0,0
-#endif
-
-#if defined(FLUTTER_VERSION)
-#define VERSION_AS_STRING FLUTTER_VERSION
-#else
 #define VERSION_AS_STRING "1.0.0"
-#endif
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION VERSION_AS_NUMBER
- PRODUCTVERSION VERSION_AS_NUMBER
- FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
-#ifdef _DEBUG
- FILEFLAGS VS_FF_DEBUG
-#else
- FILEFLAGS 0x0L
-#endif
- FILEOS VOS__WINDOWS32
- FILETYPE VFT_APP
- FILESUBTYPE 0x0L
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3f
+ FILEFLAGS 0
+ FILEOS 0x00040004
+ FILETYPE 0x1
+ FILESUBTYPE 0
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "anydb" "\0"
-            VALUE "InternalName", "anydb_flutter" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "anydb_flutter.exe" "\0"
-            VALUE "ProductName", "anydb" "\0"
+            VALUE "CompanyName", "com.example"
+            VALUE "FileDescription", "anydb"
+            VALUE "InternalName", "anydb_flutter"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved."
+            VALUE "OriginalFilename", "anydb_flutter.exe"
+            VALUE "ProductName", "anydb"
 
-            VALUE "ProductVersion", VERSION_AS_STRING "\0"
+            VALUE "ProductVersion", "1.0.0"
         END
     END
     BLOCK "VarFileInfo"

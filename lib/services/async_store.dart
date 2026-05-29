@@ -6,6 +6,7 @@ import 'sqlite_helper.dart';
 class AsyncStore {
   static final Map<String, String> _webCache = {};
   static SharedPreferences? _prefs;
+  static bool _isQuotaExceeded = false;
 
   static Future<SharedPreferences> _getPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -80,12 +81,19 @@ class AsyncStore {
     final jsonStr = jsonEncode(val);
     if (kIsWeb) _webCache[key] = jsonStr;
 
+    if (kIsWeb && _isQuotaExceeded) {
+      return; // Skip writing if quota is already known to be exceeded
+    }
+
     final prefs = await _getPrefs();
     try {
       await prefs.setString(key, jsonStr);
     } catch (e) {
-      if (e.toString().contains("QuotaExceededError")) {
-        debugPrint("AsyncStore: Quota Exceeded.");
+      if (e.toString().contains("QuotaExceededError") ||
+          e.toString().contains("quota") ||
+          e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
+        _isQuotaExceeded = true;
+        debugPrint("AsyncStore: Quota Exceeded. Kept in-memory.");
       } else {
         rethrow;
       }
@@ -100,22 +108,25 @@ class AsyncStore {
 
     final prefs = await _getPrefs();
     
-    int count = 0;
     for (var entry in items.entries) {
       final jsonStr = jsonEncode(entry.value);
       if (kIsWeb) _webCache[entry.key] = jsonStr;
       
-      // Periodically await to keep the event loop responsive
-      if (count % 100 == 0) {
+      if (_isQuotaExceeded) continue;
+
+      try {
+        // Must ALWAYS await to prevent uncaught asynchronous QuotaExceededError crashes
         await prefs.setString(entry.key, jsonStr);
-      } else {
-        prefs.setString(entry.key, jsonStr);
+      } catch (e) {
+        if (e.toString().contains("QuotaExceededError") ||
+            e.toString().contains("quota") ||
+            e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
+          _isQuotaExceeded = true;
+          debugPrint("AsyncStore.updateAll: Web Quota Exceeded. Kept in-memory.");
+        } else {
+          rethrow;
+        }
       }
-      count++;
-    }
-    
-    if (items.isNotEmpty) {
-       await prefs.setString(items.keys.last, jsonEncode(items.values.last));
     }
   }
 
@@ -143,11 +154,9 @@ class AsyncStore {
     final keys = prefs.getKeys().where((k) => k.startsWith('$dbName:'));
     for (var key in keys) {
       if (kIsWeb) _webCache.remove(key);
-      prefs.remove(key);
+      await prefs.remove(key);
     }
-    if (keys.isNotEmpty) {
-      await prefs.remove(keys.first);
-    }
+    _isQuotaExceeded = false; // Reset quota exceeded status
   }
 
   static Future<void> clearAll() async {
@@ -159,5 +168,6 @@ class AsyncStore {
     final prefs = await _getPrefs();
     await prefs.clear();
     _webCache.clear();
+    _isQuotaExceeded = false; // Reset quota exceeded status
   }
 }

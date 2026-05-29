@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -16,7 +15,7 @@ class LogsPage extends ConsumerStatefulWidget {
 }
 
 class _LogsPageState extends ConsumerState<LogsPage> {
-  List<FileSystemEntity> _logFiles = [];
+  List<dynamic> _logFiles = [];
   bool _loading = true;
   String? _logsRoot;
 
@@ -31,7 +30,7 @@ class _LogsPageState extends ConsumerState<LogsPage> {
     final root = await fileService.getExternalRoot();
     _logsRoot = p.join(root, 'Logs');
     
-    List<FileSystemEntity> allLogs = [];
+    List<dynamic> allLogs = [];
     if (await io.dirExists(_logsRoot!)) {
       await _collectLogs(_logsRoot!, allLogs);
     }
@@ -51,10 +50,10 @@ class _LogsPageState extends ConsumerState<LogsPage> {
     }
   }
 
-  Future<void> _collectLogs(String dirPath, List<FileSystemEntity> results) async {
+  Future<void> _collectLogs(String dirPath, List<dynamic> results) async {
     final entities = io.listDir(dirPath);
     for (var entity in entities) {
-      if (entity is Directory) {
+      if (io.isDirectory(entity)) {
         await _collectLogs(entity.path, results);
       } else if (entity.path.endsWith('.log')) {
         results.add(entity);

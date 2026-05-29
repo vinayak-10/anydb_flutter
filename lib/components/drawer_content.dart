@@ -154,6 +154,16 @@ class DrawerContent extends ConsumerWidget {
                     ],
                   ),
                 ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.splitscreen),
+                  title: const Text('Tablet Split-Screen'),
+                  subtitle: const Text('Dual-pane layout on wide screens'),
+                  activeColor: const Color(0xFFE9967A),
+                  value: settings.enableTabletSplitView,
+                  onChanged: (val) {
+                    ref.read(settingsProvider.notifier).setTabletSplitView(val);
+                  },
+                ),
                 if (currentSchemaName != null) ...[
                   const Divider(),
                   const Padding(

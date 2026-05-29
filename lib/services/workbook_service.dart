@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'file_service.dart';
 import 'invoker_service.dart';
+import 'isolate_worker.dart';
 import '../core/formula_engine.dart';
 import '../core/cell_helper.dart';
 import '../core/logger.dart';
@@ -31,9 +32,6 @@ class WorkbookService {
     final reportName = meta['aggregator'] ?? 'Report';
     final now = timestamp ?? DateTime.now();
     
-    // JS Logic: monthly reports and daily reports for the same aggregator 
-    // should probably be in the same file if the name matches.
-    // In RN, Workbook.js uses meta.collection for the filename.
     final String collectionName = meta['collection'] ?? 'Report';
     
     String fileName = meta['fileName'] ?? "";
@@ -50,44 +48,59 @@ class WorkbookService {
     final fullPath = p.join(aggregatorDir, fileName);
     final String targetPath = p.isAbsolute(fullPath) ? fullPath : p.absolute(fullPath);
     
-    Excel excel;
-    if (_cachedExcel != null) {
-      excel = _cachedExcel!;
-    } else if (!kIsWeb && await io.fileExists(targetPath)) {
-      final bytes = await io.readBytes(targetPath);
-      excel = Excel.decodeBytes(bytes!);
-      _cachedExcel = excel;
-    } else {
-      excel = Excel.createExcel();
-      _cachedExcel = excel;
-    }
-
     final String entryName = meta['entry'] ?? 'Default';
     final sheetName = _fileService.sanitizeName(entryName);
     logger.log("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
     
-    // In excel library, creating a sheet if it doesn't exist
-    final Sheet reportSheet = excel[sheetName];
-    _prepareSheet(reportSheet, data, sheetName);
-
-    // Robust sheet cleanup: remove default sheets if they are not our target
-    final List<String> sheetsToDelete = [];
-    for (var sn in excel.sheets.keys) {
-      if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
-        sheetsToDelete.add(sn);
+    List<int>? fileBytes;
+    if (kIsWeb) {
+      Excel excel;
+      if (_cachedExcel != null) {
+        excel = _cachedExcel!;
+      } else {
+        excel = Excel.createExcel();
+        _cachedExcel = excel;
       }
-    }
-    
-    if (sheetsToDelete.isNotEmpty && excel.sheets.length > sheetsToDelete.length) {
-      for (var sn in sheetsToDelete) {
-        excel.delete(sn);
+      final Sheet reportSheet = excel[sheetName];
+      _prepareSheet(reportSheet, data, sheetName);
+      
+      final List<String> sheetsToDelete = [];
+      for (var sn in excel.sheets.keys) {
+        if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
+          sheetsToDelete.add(sn);
+        }
+      }
+      if (sheetsToDelete.isNotEmpty && excel.sheets.length > sheetsToDelete.length) {
+        for (var sn in sheetsToDelete) {
+          excel.delete(sn);
+        }
+      }
+      fileBytes = excel.save();
+    } else {
+      List<int>? existingBytes;
+      if (_cachedExcel != null) {
+        existingBytes = _cachedExcel!.save();
+      } else if (await io.fileExists(targetPath)) {
+        existingBytes = await io.readBytes(targetPath);
+      }
+      
+      fileBytes = await IsolateWorker.instance.execute<List<int>?>(
+        'writeExcel',
+        {
+          'existingBytes': existingBytes,
+          'data': data,
+          'sheetName': sheetName,
+        },
+      );
+      
+      if (fileBytes != null) {
+        _cachedExcel = Excel.decodeBytes(fileBytes);
       }
     }
 
     _lastReportPath = targetPath;
     
     if (kIsWeb) {
-      final fileBytes = excel.save();
       if (fileBytes != null) {
         final base64Data = base64Encode(fileBytes);
         _lastReportPath = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,$base64Data|$fileName";
@@ -96,11 +109,8 @@ class WorkbookService {
       return fileName;
     }
 
-    final fileBytes = excel.save();
     if (fileBytes != null) {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
-      // In JS, copy to external is also done.
-      // But we are already writing to an 'external' path in aggregatorDir.
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 
@@ -109,7 +119,7 @@ class WorkbookService {
     return _lastReportPath!;
   }
 
-  void _prepareSheet(Sheet ws, Map<String, dynamic> jo, String sheetName) {
+  static void _prepareSheet(Sheet ws, Map<String, dynamic> jo, String sheetName) {
     // Set default column width for the first 30 columns to prevent '###'
     for (int i = 0; i < 30; i++) {
       ws.setColumnWidth(i, 20.0);
@@ -239,7 +249,7 @@ class WorkbookService {
     }
   }
 
-  void _setCellValue(Sheet sheet, int c, int r, dynamic val) {
+  static void _setCellValue(Sheet sheet, int c, int r, dynamic val) {
     final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
     final unwrapped = CellHelper.unwrap(val);
     
@@ -376,8 +386,10 @@ class WorkbookService {
         debugPrint("WorkbookService: Could not read workbook for discovery at $targetPath");
         return [];
       }
-      final excel = Excel.decodeBytes(bytes);
-      return _getMatchedSheets(excel, type);
+      return await IsolateWorker.instance.execute<List<String>>(
+        'getMatchedSheets',
+        {'bytes': bytes, 'type': type},
+      );
     } catch (e) {
       debugPrint("WorkbookService: getSheetNames Error: $e");
       return [];
@@ -469,11 +481,16 @@ class WorkbookService {
 
       final bytes = await io.readBytes(targetPath);
       if (bytes == null) return [];
-      final excel = Excel.decodeBytes(bytes);
-      final sheet = excel.tables[sheetName];
-      if (sheet == null) return [];
-
-      return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();
+      
+      final dynamic rawRows = await IsolateWorker.instance.execute(
+        'readSheet',
+        {'bytes': bytes, 'sheetName': sheetName},
+      );
+      
+      if (rawRows is List) {
+        return rawRows.map((row) => (row as List).toList()).toList();
+      }
+      return [];
     } catch (e) {
       debugPrint("WorkbookService: read Error: $e");
       return [];
@@ -493,5 +510,65 @@ class WorkbookService {
     final String gmt = "GMT_$sign$hours$mins";
 
     return "${dayName}_${monthName}_${rest}_$gmt";
+  }
+
+  // --- Static Isolate Workers Dispatchers ---
+  static List<int>? writeExcelInIsolate(Map<String, dynamic> params) {
+    final List<int>? existingBytes = params['existingBytes'];
+    final Map<String, dynamic> data = params['data'];
+    final String sheetName = params['sheetName'];
+    
+    Excel excel;
+    if (existingBytes != null && existingBytes.isNotEmpty) {
+      excel = Excel.decodeBytes(existingBytes);
+    } else {
+      excel = Excel.createExcel();
+    }
+    
+    final Sheet ws = excel[sheetName];
+    _prepareSheet(ws, data, sheetName);
+    
+    final List<String> sheetsToDelete = [];
+    for (var sn in excel.sheets.keys) {
+      if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
+        sheetsToDelete.add(sn);
+      }
+    }
+    if (sheetsToDelete.isNotEmpty && excel.sheets.length > sheetsToDelete.length) {
+      for (var sn in sheetsToDelete) {
+        excel.delete(sn);
+      }
+    }
+    return excel.save();
+  }
+
+  static List<String> getMatchedSheetsInIsolate(Map<String, dynamic> params) {
+    final List<int> bytes = params['bytes'];
+    final String type = params['type'];
+    final excel = Excel.decodeBytes(bytes);
+    
+    List<String> matchedSheets = [];
+    for (var table in excel.tables.keys) {
+      final sheet = excel.tables[table];
+      if (sheet == null) continue;
+      if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
+        final val = CellHelper.unwrap(cell.value);
+        if (val.toString().trim().toLowerCase() == type.toLowerCase()) {
+          matchedSheets.add(table);
+        }
+      }
+    }
+    return matchedSheets;
+  }
+
+  static List<List<dynamic>> readSheetInIsolate(Map<String, dynamic> params) {
+    final List<int> bytes = params['bytes'];
+    final String sheetName = params['sheetName'];
+    final excel = Excel.decodeBytes(bytes);
+    final sheet = excel.tables[sheetName];
+    if (sheet == null) return [];
+    
+    return sheet.rows.map((row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList()).toList();
   }
 }

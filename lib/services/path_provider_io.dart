@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:path_provider/path_provider.dart';
 
 Future<String?> getAppDocsDir() async {
@@ -16,4 +17,8 @@ Future<String?> getExtStorageDir() async {
   } catch (e) {
     return null;
   }
+}
+
+String? getHomeDir() {
+  return Platform.environment['HOME'];
 }
