@@ -652,6 +652,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                   _searchController.text = query;
                 });
               },
+              onLandingPageChanged: () {
+                setState(() {});
+              },
             );
           } else {
             return _AggregatorView(
@@ -693,6 +696,7 @@ class _DatabaseView extends ConsumerStatefulWidget {
   final Set<String> selectedKeys;
   final Function(String) onToggleSelection;
   final Function(String)? onSearchSubmitted;
+  final VoidCallback? onLandingPageChanged;
   const _DatabaseView({
     super.key, 
     required this.db, 
@@ -702,6 +706,7 @@ class _DatabaseView extends ConsumerStatefulWidget {
     required this.selectedKeys,
     required this.onToggleSelection,
     this.onSearchSubmitted,
+    this.onLandingPageChanged,
   });
 
   @override
@@ -734,7 +739,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     if (widget.searchQuery != oldWidget.searchQuery) {
       _landingSearchController.text = widget.searchQuery;
       if (widget.searchQuery.isNotEmpty) {
-        _showLandingPage = false;
+        setState(() {
+          _showLandingPage = false;
+        });
+        widget.onLandingPageChanged?.call();
       }
     }
   }
@@ -776,6 +784,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
       _currentFilter = 'Active';
       _initialized = false;
     });
+    widget.onLandingPageChanged?.call();
     _init(forced: true);
   }
 
@@ -786,6 +795,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
         _currentFilter = 'Active'; // Defaults list view to 'Active' records
         _initialized = false;
       });
+      widget.onLandingPageChanged?.call();
       _init(forced: true);
       if (widget.onSearchSubmitted != null) {
         widget.onSearchSubmitted!(query);
@@ -809,7 +819,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
             .take(8)
             .toList();
 
-    // 1. Center brand logo/text when empty, or collapsed at top/sticky when typing
+    // 1. Center brand logo when empty, or collapsed at top/sticky when typing (removed 'anydb' text per request)
     Widget logoAndText = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -818,27 +828,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
           width: 64.0,
           height: 64.0,
           fit: BoxFit.contain,
-        ),
-        const SizedBox(height: 16.0),
-        ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [
-              Color(0xFF6B1524), // Velvet Crimson
-              Color(0xFFF4A261), // Gilded Saffron
-              Color(0xFFE5C158), // Polished Gold
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ).createShader(bounds),
-          child: const Text(
-            "anydb",
-            style: TextStyle(
-              fontSize: 72.0,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: -2.0,
-            ),
-          ),
         ),
       ],
     );
@@ -1609,6 +1598,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                           setState(() {
                             _showLandingPage = true;
                           });
+                          widget.onLandingPageChanged?.call();
                         },
                         tooltip: "Back to Home Landing",
                         child: const Icon(Icons.home),
@@ -1886,6 +1876,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                   setState(() {
                     _showLandingPage = true;
                   });
+                  widget.onLandingPageChanged?.call();
                 },
                 tooltip: "Back to Home Landing",
                 child: const Icon(Icons.home),
