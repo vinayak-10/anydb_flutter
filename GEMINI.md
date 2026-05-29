@@ -42,9 +42,11 @@
 - **Thread Offloading:** Delegated Excel encoder/decoder operations, workbook parsing, schema parsing, and B-tree import cache merging to the Isolate, preventing main-thread UI lockups.
 - **Web Fallback & Spinner Yielding:** Supported synchronous execution on Web targets while adding post-frame micro-delays (`Future.delayed(150ms)`) to guarantee visual paint cycles for loaders and progress bars.
 
-### 8. Minimizable Record Drafts & Teal banner
-- **In-Memory Draft Store:** Supported minimizable draft structures for new record additions. Programmed a warning dialog if the user attempts to add a new record while a draft exists.
-- **Emerald Teal Banner:** Rendered a beautiful Emerald Teal (`#00796B`) banner above list views to Resume/Discard the active draft with confirmation dialogs.
+### 8. Concurrent Record Drafts & Adaptive Speed Dial FAB
+- **Multiple Concurrent Drafts:** Supported an in-memory collection (`_drafts`) allowing users to minimize and manage multiple drafts concurrently without blocking the UI or using modal restriction banners.
+- **Expandable Speed Dial FAB:** Designed a premium, native Floating Action Button speed dial menu presenting minimizable drafts.
+- **Adaptive/Responsive Sizing:** Integrated size heuristics so that speed dial sub-buttons, main action labels, capsules, padding, and icons scale dynamically based on viewport widths, switching style attributes automatically between mobile and high-resolution tablet screens.
+- **Recursive Nested Key Resolution:** Overhauled the unique key extraction and draft labeling systems to walk nested map structures recursively. This ensures container component fields (such as `Card Number` inside `Registration` composite) are resolved case-insensitively and accurately for draft titles, active lifecycle validations, and soft-archiving transactions.
 
 ### 9. Tablet Split View Responsive Layout
 - **Responsive Dual-Pane Splits:** Configured a side-by-side list-detail split view for viewport dimensions >= 800px.
@@ -64,5 +66,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `7e410c6` (style: align split view cards visually with original cards and update .gitignore)
+- **Last Stable Commit:** `f09442c` (docs: update GEMINI.md project checkpoint context)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
