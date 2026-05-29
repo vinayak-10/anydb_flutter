@@ -780,8 +780,8 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                   if (!showResults) ...[
                     SvgPicture.asset(
                       'assets/anydb_logo_yantra_prism.svg',
-                      width: 100.0,
-                      height: 100.0,
+                      width: 64.0,
+                      height: 64.0,
                       fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 16.0),
@@ -831,7 +831,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                       decoration: InputDecoration(
                         hintText: "Search patients, unique keys, or diagnoses...",
                         hintStyle: const TextStyle(color: Colors.grey, fontSize: 16.0),
-                        prefixIcon: const Icon(Icons.search, color: Color(0xFF00796B)),
+                        prefixIcon: const Icon(Icons.search, color: Color(0xFF6B1524)),
                         suffixIcon: showResults
                             ? IconButton(
                                 icon: const Icon(Icons.clear, color: Colors.grey),
@@ -860,20 +860,23 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                         ElevatedButton(
                           onPressed: () => _executeSearch(_landingSearchController.text),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00796B),
+                            backgroundColor: const Color(0xFF6B1524),
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+                            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 14.0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20.0),
+                              side: const BorderSide(color: Color(0xFFE5C158), width: 1.0),
+                            ),
                             elevation: 2.0,
                           ),
-                          child: const Text("Search Database", style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text("Search", style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                         const SizedBox(width: 16.0),
                         OutlinedButton(
                           onPressed: () => _executeSearch(""),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF00796B),
-                            side: const BorderSide(color: Color(0xFF00796B), width: 1.5),
+                            foregroundColor: const Color(0xFF6B1524),
+                            side: const BorderSide(color: Color(0xFF6B1524), width: 1.5),
                             padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
                           ),
@@ -882,36 +885,130 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                       ],
                     ),
                   ] else ...[
-                    // Dynamic Search Results Cards
+                    // Dynamic Search Results Cards (Matching Default Cards styling exactly)
                     Container(
                       constraints: const BoxConstraints(maxWidth: 580.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           ...matchingRecords.map((element) {
-                            final displayName = _getDraftLabel(element);
-                            return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 6.0),
-                              elevation: 2,
-                              color: Colors.white,
-                              shape: RoundedRectangleBorder(
+                            if (element.components.isEmpty || element.components.first is! ListHeader) {
+                              return const SizedBox.shrink();
+                            }
+                            final header = element.components.first as ListHeader;
+                            header.setDbSchema(widget.db.dbSchema);
+
+                            final Map<String, dynamic> recordData = element.fetch();
+                            final metaData = (recordData.values.first as Map)['__meta__']?['time'] ?? {};
+                            final isArchived = metaData.containsKey('a');
+                            final isDeleted = metaData.containsKey('d');
+                            
+                            Color statusColor = Colors.black87;
+                            if (isDeleted) {
+                              statusColor = Colors.red;
+                            } else if (isArchived) {
+                              statusColor = Colors.blue;
+                            }
+
+                            final titleWidgets = header.displayHeader(context, headerType: 'title', allComponents: element.components);
+                            final elementWidgets = header.displayHeader(context, headerType: 'elements', allComponents: element.components, onChanged: () async {
+                              await widget.db.addRecord(element);
+                              setState(() {});
+                            });
+
+                            return Container(
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
                                 borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: Colors.grey.shade200),
+                                border: Border.all(
+                                  color: Colors.grey.shade200,
+                                  width: 1.0,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
                               ),
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                                leading: const Icon(Icons.person, color: Color(0xFF00796B)),
-                                title: Text(
-                                  displayName,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.0),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _openEditor(element),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: DefaultTextStyle(
+                                              style: TextStyle(
+                                                fontSize: 22, 
+                                                fontWeight: FontWeight.w900, 
+                                                color: statusColor,
+                                                letterSpacing: -0.2
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
+                                              ),
+                                            ),
+                                          ),
+                                          PopupMenuButton<String>(
+                                            icon: const Icon(Icons.more_horiz, size: 32),
+                                            onSelected: (val) => _handleCardAction(val, element),
+                                            itemBuilder: (context) => [
+                                              if (isArchived || isDeleted)
+                                                const PopupMenuItem(value: 'restore', child: Text("Restore Record")),
+                                              if (!isArchived)
+                                                const PopupMenuItem(value: 'archive', child: Text("Archive Record")),
+                                              if (!isDeleted)
+                                                const PopupMenuItem(value: 'delete', child: Text("Mark for Delete")),
+                                              const PopupMenuDivider(),
+                                              const PopupMenuItem(value: 'permanent', child: Text("PURGE DATA", style: TextStyle(color: Colors.red))),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      
+                                      if (elementWidgets.isNotEmpty)
+                                        DefaultTextStyle(
+                                          style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                          child: _buildGroupedSection(context, "PATIENT DETAILS", 
+                                            Wrap(spacing: 20, children: elementWidgets[0]),
+                                            color: Colors.white,
+                                            isOutlined: true,
+                                            headingColor: Colors.blueGrey.shade900
+                                          ),
+                                        ),
+                                      
+                                      const SizedBox(height: 16),
+                                      
+                                      _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
+                                        DefaultTextStyle(
+                                          style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
+                                              if (elementWidgets.length > 2) ...[
+                                                const Divider(height: 24, color: Colors.black12),
+                                                Wrap(spacing: 20, children: elementWidgets[2]),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                        color: Colors.white,
+                                        headingColor: Colors.blueGrey.shade900
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: element.getDisplays(onlyValue: true),
-                                ),
-                                onTap: () {
-                                  _openEditor(element);
-                                },
                               ),
                             );
                           }),
@@ -944,7 +1041,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
               mini: true,
               heroTag: "fab_search_landing_toggle",
               backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF00796B),
+              foregroundColor: const Color(0xFF6B1524),
               elevation: 2,
               onPressed: () {
                 setState(() {
