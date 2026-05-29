@@ -1,21 +1,63 @@
-# AnyDb Branding & System Overhaul Tasks
+# AnyDb Multi-Platform Compilation & Verification Tasks
 
-## Completed Branding & Asset Deployment
-- `[x]` Refine logo concepts based on classical Indian heritage & modern minimalist aesthetics.
-- `[x]` Generate 7 production-grade, infinitely scalable Vector SVG files under [assets/logo_concepts/](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/assets/logo_concepts/).
-- `[x]` Design the new **Yantra-Prism Hybrid** superposition concept as a standard-compliant Vector SVG [anydb_logo_yantra_prism.svg](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/assets/logo_concepts/anydb_logo_yantra_prism.svg).
-- `[x]` Build the automated Pillow-based PNG generator script [generate_hybrid.py](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/assets/generate_hybrid.py) to draw the high-fidelity superposition logo directly.
-- `[x]` Develop Pillow-based conversion script `assets/convert.py` to translate JPEG binary streams into standard-compliant PNGs.
-- `[x]` Integrate SVG logo into both drawer states (anonymous and logged-in headers) in [drawer_content.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/components/drawer_content.dart).
-- `[x]` Auto-resize and deploy high-fidelity `ic_launcher.png` assets across all 5 Android resource mipmap subdirectories under [android/app/src/main/res/](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/android/app/src/main/res/) to replace the launcher/app home screen icons.
-- `[x]` User selection of active official logo concept (Yantra-Prism Hybrid SVG) integrated directly as a vector asset without PNG color shift.
+- `[x]` Pre-populate the Windows ephemeral cache directory
+  - `[x]` Write and execute `prepare_windows_build.sh` script
+  - `[x]` Confirm all engine DLLs, import libraries, and header structures are created
+  - `[x]` Copy the ICU database (`icudtl.dat`) from the SDK cache
+  - `[x]` Build the C++ client wrapper directory structure and populate headers and source files
+- `[x]` Configure CMake and Toolchain Scripts
+  - `[x]` Write `windows/toolchain.cmake` defining the LLVM compilation targets and system search paths
+  - `[x]` Modify `windows/flutter/CMakeLists.txt` to bypass `tool_backend.bat`
+- `[x]` Resolve C++ Link-Time conflicts & Debug CRT issues
+  - `[x]` Define `CMAKE_MSVC_RUNTIME_LIBRARY` as `MultiThreadedDLL` to target the Release C Runtime (`/MD`)
+  - `[x]` Inject `#undef _DEBUG` in `xyz.maya/preinclude.h` to force all standard headers to skip debug-mode CRT reporting
+  - `[x]` Completely disable debug iterators via `/D_ITERATOR_DEBUG_LEVEL=0` to resolve missing `_CrtDbgReport` references
+- `[x]` Windows Build Verification & Compilation
+  - `[x]` Purge the stale object cache directory `build_win/` to ensure a 100% clean build
+  - `[x]` Pre-build Flutter assets and JIT kernel bundle (via `flutter build bundle`)
+  - `[x]` Run fresh CMake configuration in JIT Debug mode
+  - `[x]` Resolve preprocessor conditional block limitations in `Runner.rc`
+  - `[x]` Bypass Windows-only `vs_link_rc` launcher in `rules.ninja` on Linux
+  - `[x]` Qualify template dependent names and namespaces inside `share_plus`'s `vector.h` to comply with standard C++
+  - `[x]` Run CMake build and link all C++ plugins and the `anydb_flutter.exe` target cleanly
+  - `[x]` Run CMake install step to package the complete application, DLLs, and JIT assets into `build_win/runner/`
+- `[x]` Restore NSIS & Generate Desktop Installer
+  - `[x]` Re-download and unpack portable Debian packages of `nsis` and `nsis-common` natively in user space
+  - `[x]` Compile `windows/installer.nsi` to generate `build_win/anydb_installer_x64.exe`
+  - `[x]` Zip the `build_win/runner/` folder to generate `build_win/anydb_portable_x64.zip`
+- `[x]` Fix Web Google Drive Integration
+  - `[x]` Inject the mandatory `google-signin-client_id` meta tag inside the `<head>` of `web/index.html`
+  - `[x]` Rebuild the Flutter Web production bundle in Release mode
+  - `[x]` Deploy the updated web application live to Firebase Hosting (`https://loyal-flames-450705-u4.web.app`)
+- `[x]` Complete Walkthrough Documentation
+  - `[x]` Write and summarize the JIT Debug findings, preinclude overrides, and Web GIS tag inside `walkthrough.md`
+- `[x]` Fix Web Schema selection page features (Crash-free Deletion & Exporting)
+  - `[x]` Remove unused direct `dart:io` imports across common files (`logger.dart`, `google_drive_service.dart`)
+  - `[x]` Isolate native `clientViaUserConsent` into `desktop_auth_helper.dart` with conditional redirect
+  - `[x]` Refactor platform `Platform.environment['HOME']` to `pp.getHomeDir()` in `file_service.dart`
+  - `[x]` Refactor native `File` media stream uploading in `google_drive_service.dart` using web-safe `io.readBytes(filePath)`
+  - `[x]` Cast file list paths dynamically in `file_service.dart` to solve the generic list casting analyzer check
+  - `[x]` Use high-level `_fileService.deleteFile` inside `schema_service.dart` to support Web storage cleanup
+  - `[x]` Support browser downloads of schema configurations on Web via `downloadWebData` inside `exportSchema`
+- `[x]` Troubleshoot Admin Access Blocked Error
+  - `[x]` Identify Google Cloud Console's OAuth screen "Testing" mode sandboxing
+  - `[x]` Formulate the explicit user-guided test email whitelisting steps
+- `[x]` Recompile & Redeploy
+  - `[x]` Compile and package clean optimized release for Web
+  - `[x]` Redeploy live to Firebase Hosting with zero errors
+- `[x]` Fix Web Large Database Import Quota Crash (`QuotaExceededError`)
+  - `[x]` Wrap localStorage file document setString writes inside `file_service.dart` in a comprehensive try-catch block
+  - `[x]` Wrap localStorage registry list update writes inside `file_service.dart` in a comprehensive try-catch block
+  - `[x]` Wrap single record updates inside `async_store.dart` in a robust try-catch block catching all quota signatures
+  - `[x]` Wrap batch record `updateAll` loops inside `async_store.dart` in robust try-catch blocks to prevent import crashes
+  - `[x]` Support fallback to highly efficient in-memory static `_webCache` map when browser localStorage is full
+- `[x]` Fix Android App Icon White Background in App Drawer
+  - `[x]` Rewrite `generate_adaptive.py` to bake the coral brand colour (#E9967A) into legacy `ic_launcher.png` files
+  - `[x]` Keep adaptive foreground layers transparent (colour supplied at OS level by `ic_launcher_background` in `colors.xml`)
+  - `[x]` Re-run the script to regenerate all 5 DPI tiers (mdpi → xxxhdpi)
+- `[x]` Fix Daily Report Loading Indicator Not Showing
+  - `[x]` Initialise `_isGenerating = true` in `_AggregatorReportViewState` so the spinner renders on the very first frame
+  - `[x]` Add `Future.delayed(100ms)` after showing the Done-flow loading dialog in `_handleDone` so the dialog paints before heavy processing begins
 
-## Execution of System Improvements
-- `[x]` Refactor congested TabBar in `collection_view.dart` with dynamic `isScrollable` and custom label padding.
-- `[x]` Configure premium orange theme seed color `Color(0xFFE9967A)` in `main.dart` and enforce clean white Scaffold, dialog, and drawer backgrounds.
-- `[x]` Update `drawer_content.dart` to inherit primary theme colors for headers and set drawer background explicitly to white.
-- `[x]` Implement robust accounting bounds checking in `simple_account.dart` to cap negative discounts.
-- `[x]` Wrap text in `_SimpleAccountSummary` inside an `Expanded` widget to prevent transaction detail layout overflow.
-- `[x]` Implement `_getSortTime(ElementModel e)` and stable record sorting in `element_db.dart`.
-- `[x]` Update `_flatten` in `extractor_service.dart` to correctly parse and recursive-flatten dot-separated and non-colon transaction list arrays.
-- `[x]` Validate implementation with `flutter analyze` and run a full `flutter clean` clean/build verification.
+
+
