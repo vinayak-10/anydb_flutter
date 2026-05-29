@@ -54,3 +54,12 @@ secrets.json
 *.p12
 *.pfx
 key.properties
+
+# Local cross-compilation caches and build outputs
+.xwin-cache/
+build_win/
+.antigravitycli/
+
+# Maya local dependencies and MSVC SDK (excluding forced-preinclude header)
+xyz.maya/*
+!xyz.maya/preinclude.h

@@ -892,9 +892,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
         backgroundColor: Colors.white,
         body: Row(
           children: [
-            // Left master pane (350px width)
+            // Left master pane (adaptive width: 35% clamped between 320px and 480px)
             SizedBox(
-              width: 350,
+              width: (MediaQuery.of(context).size.width * 0.35).clamp(320.0, 480.0),
               child: Column(
                 children: [
                   Container(
@@ -1049,7 +1049,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                           });
 
                           return Container(
-                            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                             decoration: BoxDecoration(
                               color: cardBgColor,
                               borderRadius: BorderRadius.circular(12),
@@ -1062,8 +1062,8 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                                   color: (isSelectedForBatch || isSelectedInSplit)
                                       ? const Color(0xFFE9967A).withOpacity(0.08)
                                       : Colors.black.withOpacity(0.04),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
                                 ),
                               ],
                             ),
@@ -1074,7 +1074,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                                 : () => setState(() => _selectedElementForDetail = element),
                               onLongPress: () => widget.onToggleSelection(element.key),
                               child: Padding(
-                                padding: const EdgeInsets.all(12.0),
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -1083,27 +1083,25 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                                       children: [
                                         if (isSelectedForBatch)
                                           Padding(
-                                            padding: const EdgeInsets.only(right: 6.0, top: 2.0),
-                                            child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 20),
+                                            padding: const EdgeInsets.only(right: 12.0, top: 4.0),
+                                            child: Icon(Icons.check_circle, color: Colors.orange.shade700, size: 28),
                                           ),
                                         Expanded(
                                           child: DefaultTextStyle(
                                             style: TextStyle(
-                                              fontSize: 16, 
+                                              fontSize: 22, 
                                               fontWeight: FontWeight.w900, 
                                               color: statusColor,
                                               letterSpacing: -0.2
                                             ),
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: titleWidgets.map((group) => Wrap(spacing: 8, children: group)).toList(),
+                                              children: titleWidgets.map((group) => Wrap(spacing: 20, children: group)).toList(),
                                             ),
                                           ),
                                         ),
                                         PopupMenuButton<String>(
-                                          icon: const Icon(Icons.more_horiz, size: 24),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
+                                          icon: const Icon(Icons.more_horiz, size: 32),
                                           onSelected: (val) => _handleCardAction(val, element),
                                           itemBuilder: (context) => [
                                             if (isArchived || isDeleted)
@@ -1118,19 +1116,38 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 16),
+                                    
                                     if (elementWidgets.isNotEmpty)
                                       DefaultTextStyle(
-                                        style: const TextStyle(fontSize: 13, color: Colors.black87),
-                                        child: Text(
-                                          elementWidgets[0].map((w) {
-                                            if (w is Text) return w.data;
-                                            return '';
-                                          }).where((t) => t != null && t.isNotEmpty).join(' | '),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                        child: _buildGroupedSection(context, "PATIENT DETAILS", 
+                                          Wrap(spacing: 20, children: elementWidgets[0]),
+                                          color: Colors.white,
+                                          isOutlined: true,
+                                          headingColor: Colors.blueGrey.shade900
                                         ),
                                       ),
+                                    
+                                    const SizedBox(height: 16),
+                                    
+                                    _buildGroupedSection(context, "FINANCIAL ACCOUNT & RENEWAL", 
+                                      DefaultTextStyle(
+                                        style: const TextStyle(fontSize: 18, color: Colors.black87),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            if (elementWidgets.length > 1) Wrap(spacing: 20, children: elementWidgets[1]),
+                                            if (elementWidgets.length > 2) ...[
+                                              const Divider(height: 24, color: Colors.black12),
+                                              Wrap(spacing: 20, children: elementWidgets[2]),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      color: Colors.white,
+                                      headingColor: Colors.blueGrey.shade900
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1139,7 +1156,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                         }
                         
                         return Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                           decoration: BoxDecoration(
                             color: cardBgColor,
                             borderRadius: BorderRadius.circular(12),
@@ -1147,20 +1164,23 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                               color: borderHighlightColor,
                               width: borderHighlightWidth,
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (isSelectedForBatch || isSelectedInSplit)
+                                    ? const Color(0xFFE9967A).withOpacity(0.08)
+                                    : Colors.black.withOpacity(0.04),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
                           ),
                           child: ListTile(
-                            dense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            leading: isSelectedForBatch ? Icon(Icons.check_circle, color: Colors.orange.shade700, size: 20) : null,
-                            title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            subtitle: Text(
-                              element.getDisplays(onlyValue: true).map((w) {
-                                if (w is Text) return w.data;
-                                return '';
-                              }).where((t) => t != null && t.isNotEmpty).join(' | '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            leading: isSelectedForBatch ? Icon(Icons.check_circle, color: Colors.orange.shade700) : null,
+                            title: Text(element.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: element.getDisplays(onlyValue: true),
                             ),
                             onTap: widget.selectedKeys.isNotEmpty 
                               ? () => widget.onToggleSelection(element.key)
