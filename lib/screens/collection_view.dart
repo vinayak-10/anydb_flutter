@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -753,6 +754,17 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   }
 
   Widget _buildSearchLandingPage() {
+    final String currentQuery = _landingSearchController.text.trim();
+    final bool showResults = currentQuery.isNotEmpty;
+
+    // Real-time local database query matching
+    final List<ElementModel> matchingRecords = currentQuery.isEmpty
+        ? []
+        : widget.db.elements
+            .where((e) => e.match(currentQuery, exact: false)[0])
+            .take(8)
+            .toList();
+
     return Stack(
       children: [
         Container(
@@ -764,25 +776,40 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // 1. Sleek Gradient Logo
-                  ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [Color(0xFF00796B), Color(0xFF004D40)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ).createShader(bounds),
-                    child: const Text(
-                      "anydb",
-                      style: TextStyle(
-                        fontSize: 72.0,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -2.0,
+                  // 1. Dynamic Yantra Vector Logo & Gradient Text (only shown when not searching)
+                  if (!showResults) ...[
+                    SvgPicture.asset(
+                      'assets/anydb_logo_yantra_prism.svg',
+                      width: 100.0,
+                      height: 100.0,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 16.0),
+                    ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [
+                          Color(0xFF6B1524), // Velvet Crimson
+                          Color(0xFFF4A261), // Gilded Saffron
+                          Color(0xFFE5C158), // Polished Gold
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ).createShader(bounds),
+                      child: const Text(
+                        "anydb",
+                        style: TextStyle(
+                          fontSize: 72.0,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: -2.0,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 32.0),
-                  
+                    const SizedBox(height: 32.0),
+                  ] else ...[
+                    const SizedBox(height: 48.0),
+                  ],
+
                   // 2. Large Pill Search Input Bar
                   Container(
                     constraints: const BoxConstraints(maxWidth: 580.0),
@@ -801,46 +828,108 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                     child: TextField(
                       controller: _landingSearchController,
                       style: const TextStyle(fontSize: 16.0),
-                      decoration: const InputDecoration(
-                        hintText: "Search data, records, or entities...",
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 16.0),
-                        prefixIcon: Icon(Icons.search, color: Color(0xFF00796B)),
+                      decoration: InputDecoration(
+                        hintText: "Search patients, unique keys, or diagnoses...",
+                        hintStyle: const TextStyle(color: Colors.grey, fontSize: 16.0),
+                        prefixIcon: const Icon(Icons.search, color: Color(0xFF00796B)),
+                        suffixIcon: showResults
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  _landingSearchController.clear();
+                                  setState(() {});
+                                },
+                              )
+                            : null,
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
                       ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
                       onSubmitted: (val) => _executeSearch(val),
                     ),
                   ),
                   const SizedBox(height: 24.0),
-                  
-                  // 3. Action Buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _executeSearch(_landingSearchController.text),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00796B),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
-                          elevation: 2.0,
+
+                  // 3. Dynamic Section: Buttons vs. Search Results
+                  if (!showResults) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () => _executeSearch(_landingSearchController.text),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00796B),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+                            elevation: 2.0,
+                          ),
+                          child: const Text("Search Database", style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text("Search Database", style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      const SizedBox(width: 16.0),
-                      OutlinedButton(
-                        onPressed: () => _executeSearch(""),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF00796B),
-                          side: const BorderSide(color: Color(0xFF00796B), width: 1.5),
-                          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+                        const SizedBox(width: 16.0),
+                        OutlinedButton(
+                          onPressed: () => _executeSearch(""),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF00796B),
+                            side: const BorderSide(color: Color(0xFF00796B), width: 1.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+                          ),
+                          child: const Text("Show All Records", style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text("Show All Records", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ] else ...[
+                    // Dynamic Search Results Cards
+                    Container(
+                      constraints: const BoxConstraints(maxWidth: 580.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ...matchingRecords.map((element) {
+                            final displayName = _getDraftLabel(element);
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 6.0),
+                              elevation: 2,
+                              color: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(color: Colors.grey.shade200),
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                                leading: const Icon(Icons.person, color: Color(0xFF00796B)),
+                                title: Text(
+                                  displayName,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.0),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: element.getDisplays(onlyValue: true),
+                                ),
+                                onTap: () {
+                                  _openEditor(element);
+                                },
+                              ),
+                            );
+                          }),
+                          if (matchingRecords.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 32.0),
+                              child: Center(
+                                child: Text(
+                                  "No matching records found.",
+                                  style: TextStyle(color: Colors.grey, fontSize: 16.0),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                  const SizedBox(height: 80.0),
                 ],
               ),
             ),
