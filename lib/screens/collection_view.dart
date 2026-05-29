@@ -621,6 +621,13 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                   }
                 });
               },
+              onSearchSubmitted: (query) {
+                setState(() {
+                  _searchQuery = query;
+                  _isSearching = query.isNotEmpty;
+                  _searchController.text = query;
+                });
+              },
             );
           } else {
             return _AggregatorView(
@@ -661,6 +668,7 @@ class _DatabaseView extends ConsumerStatefulWidget {
   final bool isExactMatch;
   final Set<String> selectedKeys;
   final Function(String) onToggleSelection;
+  final Function(String)? onSearchSubmitted;
   const _DatabaseView({
     super.key, 
     required this.db, 
@@ -669,6 +677,7 @@ class _DatabaseView extends ConsumerStatefulWidget {
     required this.isExactMatch,
     required this.selectedKeys,
     required this.onToggleSelection,
+    this.onSearchSubmitted,
   });
 
   @override
@@ -683,16 +692,31 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   ElementModel? _selectedElementForDetail;
   bool _isSpeedDialOpen = false;
   String? _activeBusinessKeyName;
+  bool _showLandingPage = true;
+  late TextEditingController _landingSearchController;
 
   @override
   void initState() {
     super.initState();
+    _landingSearchController = TextEditingController(text: widget.searchQuery);
     _init();
+  }
+
+  @override
+  void didUpdateWidget(_DatabaseView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.searchQuery != oldWidget.searchQuery) {
+      _landingSearchController.text = widget.searchQuery;
+      if (widget.searchQuery.isNotEmpty) {
+        _showLandingPage = false;
+      }
+    }
   }
 
   @override
   void dispose() {
     _listScrollController.dispose();
+    _landingSearchController.dispose();
     super.dispose();
   }
 
@@ -717,6 +741,133 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
 
   void refresh() {
     _init(forced: true);
+  }
+
+  void _executeSearch(String query) {
+    setState(() {
+      _showLandingPage = false;
+    });
+    if (widget.onSearchSubmitted != null) {
+      widget.onSearchSubmitted!(query);
+    }
+  }
+
+  Widget _buildSearchLandingPage() {
+    return Stack(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 1. Sleek Gradient Logo
+                  ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [Color(0xFF00796B), Color(0xFF004D40)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(bounds),
+                    child: const Text(
+                      "anydb",
+                      style: TextStyle(
+                        fontSize: 72.0,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: -2.0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32.0),
+                  
+                  // 2. Large Pill Search Input Bar
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 580.0),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30.0),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 16.0,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: TextField(
+                      controller: _landingSearchController,
+                      style: const TextStyle(fontSize: 16.0),
+                      decoration: const InputDecoration(
+                        hintText: "Search data, records, or entities...",
+                        hintStyle: TextStyle(color: Colors.grey, fontSize: 16.0),
+                        prefixIcon: Icon(Icons.search, color: Color(0xFF00796B)),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                      ),
+                      onSubmitted: (val) => _executeSearch(val),
+                    ),
+                  ),
+                  const SizedBox(height: 24.0),
+                  
+                  // 3. Action Buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () => _executeSearch(_landingSearchController.text),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00796B),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+                          elevation: 2.0,
+                        ),
+                        child: const Text("Search Database", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(width: 16.0),
+                      OutlinedButton(
+                        onPressed: () => _executeSearch(""),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF00796B),
+                          side: const BorderSide(color: Color(0xFF00796B), width: 1.5),
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 14.0),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+                        ),
+                        child: const Text("Show All Records", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // 4. Quick Toggle Icon in Top Right
+        Positioned(
+          top: 16,
+          right: 16,
+          child: SafeArea(
+            child: FloatingActionButton(
+              mini: true,
+              heroTag: "fab_search_landing_toggle",
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF00796B),
+              elevation: 2,
+              onPressed: () {
+                setState(() {
+                  _showLandingPage = false;
+                });
+              },
+              child: const Icon(Icons.list_alt),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   void _resumeDraft(ElementModel draft) async {
@@ -895,6 +1046,15 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
 
   @override
   Widget build(BuildContext context) {
+    final bool showLanding = _showLandingPage && widget.searchQuery.isEmpty;
+    if (showLanding) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: _buildSearchLandingPage(),
+        floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
+      );
+    }
+
     if (!_initialized) {
       return Center(
         child: Column(
@@ -946,30 +1106,46 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                     padding: const EdgeInsets.symmetric(vertical: 4.0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: ['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                      children: [
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                          child: ChoiceChip(
-                            label: Text(f, style: const TextStyle(fontSize: 10)),
-                            selected: _currentFilter == f,
+                          child: ActionChip(
+                            avatar: const Icon(Icons.home, size: 14, color: Color(0xFF00796B)),
+                            label: const Text("Landing", style: TextStyle(fontSize: 10, color: Color(0xFF00796B), fontWeight: FontWeight.bold)),
                             backgroundColor: Colors.white,
-                            selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
-                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
-                            onSelected: (selected) {
-                              if (selected && _currentFilter != f) {
-                                setState(() {
-                                  _currentFilter = f;
-                                  _initialized = false;
-                                  _selectedElementForDetail = null;
-                                });
-                                _init(forced: true);
-                              }
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.grey.shade200)),
+                            onPressed: () {
+                              setState(() {
+                                _showLandingPage = true;
+                              });
                             },
                           ),
-                        )
-                      ).toList(),
+                        ),
+                        ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                            child: ChoiceChip(
+                              label: Text(f, style: const TextStyle(fontSize: 10)),
+                              selected: _currentFilter == f,
+                              backgroundColor: Colors.white,
+                              selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                              onSelected: (selected) {
+                                if (selected && _currentFilter != f) {
+                                  setState(() {
+                                    _currentFilter = f;
+                                    _initialized = false;
+                                    _selectedElementForDetail = null;
+                                  });
+                                  _init(forced: true);
+                                }
+                              },
+                            ),
+                          )
+                        ).toList(),
+                      ],
                     ),
                   ),
 
@@ -1205,27 +1381,43 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
             padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: ['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+              children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                  child: ChoiceChip(
-                    label: Text(f, style: const TextStyle(fontSize: 12)),
-                    selected: _currentFilter == f,
+                  child: ActionChip(
+                    avatar: const Icon(Icons.home, size: 14, color: Color(0xFF00796B)),
+                    label: const Text("Landing", style: TextStyle(fontSize: 12, color: Color(0xFF00796B), fontWeight: FontWeight.bold)),
                     backgroundColor: Colors.white,
-                    selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
-                    onSelected: (selected) {
-                      if (selected && _currentFilter != f) {
-                        setState(() {
-                          _currentFilter = f;
-                          _initialized = false;
-                        });
-                        _init(forced: true);
-                      }
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.grey.shade200)),
+                    onPressed: () {
+                      setState(() {
+                        _showLandingPage = true;
+                      });
                     },
                   ),
-                )
-              ).toList(),
+                ),
+                ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: ChoiceChip(
+                      label: Text(f, style: const TextStyle(fontSize: 12)),
+                      selected: _currentFilter == f,
+                      backgroundColor: Colors.white,
+                      selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                      onSelected: (selected) {
+                        if (selected && _currentFilter != f) {
+                          setState(() {
+                            _currentFilter = f;
+                            _initialized = false;
+                          });
+                          _init(forced: true);
+                        }
+                      },
+                    ),
+                  )
+                ).toList(),
+              ],
             ),
           ),
 
