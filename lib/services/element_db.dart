@@ -252,6 +252,24 @@ class ElementDb {
     return null;
   }
 
+  String? _findValueRecursively(Map<String, dynamic> map, String targetKey) {
+    for (var entry in map.entries) {
+      if (entry.key.toLowerCase() == targetKey.toLowerCase()) {
+        final val = entry.value?.toString().trim();
+        if (val != null && val.isNotEmpty) {
+          return val;
+        }
+      }
+      if (entry.value is Map) {
+        final res = _findValueRecursively(Map<String, dynamic>.from(entry.value as Map), targetKey);
+        if (res != null && res.isNotEmpty) {
+          return res;
+        }
+      }
+    }
+    return null;
+  }
+
   Future<void> addRecord(ElementModel element) async {
     final data = element.fetch();
     final recordKey = data.keys.first;
@@ -261,14 +279,8 @@ class ElementDb {
     // 1. Retrieve the configured Business Unique Key
     final businessKeyName = await SqliteHelper.getBusinessUniqueKey(key);
     if (businessKeyName != null && businessKeyName.isNotEmpty) {
-      // 2. Extract the value of the unique field from this incoming record
-      String? businessKeyValue;
-      for (var entry in recordValData.entries) {
-        if (entry.key.toLowerCase() == businessKeyName.toLowerCase()) {
-          businessKeyValue = entry.value?.toString();
-          break;
-        }
-      }
+      // 2. Extract the value of the unique field from this incoming record recursively
+      final businessKeyValue = _findValueRecursively(recordValData, businessKeyName);
 
       if (businessKeyValue != null && businessKeyValue.isNotEmpty) {
         // 3. Search for any existing ACTIVE duplicate record in SQLite

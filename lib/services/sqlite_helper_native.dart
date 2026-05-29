@@ -94,13 +94,30 @@ class SqliteHelper {
     return null;
   }
 
+  static String? _findValueRecursively(Map<String, dynamic> map, String targetKey) {
+    for (var entry in map.entries) {
+      if (entry.key.toLowerCase() == targetKey.toLowerCase()) {
+        final val = entry.value?.toString().trim();
+        if (val != null && val.isNotEmpty) {
+          return val;
+        }
+      }
+      if (entry.value is Map) {
+        final res = _findValueRecursively(Map<String, dynamic>.from(entry.value as Map), targetKey);
+        if (res != null && res.isNotEmpty) {
+          return res;
+        }
+      }
+    }
+    return null;
+  }
+
   static Future<String?> _extractBusinessKeyValue(String dbName, Map<String, dynamic> val, String fallbackId) async {
     final businessKeyName = await getBusinessUniqueKey(dbName);
     if (businessKeyName != null) {
-      for (var entry in val.entries) {
-        if (entry.key.toLowerCase() == businessKeyName.toLowerCase()) {
-          return entry.value?.toString();
-        }
+      final res = _findValueRecursively(val, businessKeyName);
+      if (res != null && res.isNotEmpty) {
+        return res;
       }
     }
     return fallbackId;

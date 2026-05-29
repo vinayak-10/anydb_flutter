@@ -16,6 +16,7 @@ import '../services/file_service.dart';
 import '../services/io_helper.dart' as io;
 import '../services/web_downloader.dart';
 import '../services/google_drive_service.dart';
+import '../services/sqlite_helper.dart';
 import '../models/element_model.dart';
 import '../core/gen_interface.dart';
 import '../components/list_header.dart';
@@ -678,8 +679,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   String _currentFilter = 'Active';
   bool _initialized = false;
   final ScrollController _listScrollController = ScrollController();
-  ElementModel? _draftNewElement;
+  final List<ElementModel> _drafts = [];
   ElementModel? _selectedElementForDetail;
+  bool _isSpeedDialOpen = false;
+  String? _activeBusinessKeyName;
 
   @override
   void initState() {
@@ -695,6 +698,8 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
 
   Future<void> _init({bool forced = false}) async {
     await widget.db.initDb(forced: forced, filter: [_currentFilter]);
+    // Retrieve business unique key name dynamically for draft labeling
+    _activeBusinessKeyName = await SqliteHelper.getBusinessUniqueKey(widget.schemaTitle);
     if (mounted) {
       setState(() {
         _initialized = true;
@@ -714,67 +719,106 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     _init(forced: true);
   }
 
-  void _resumeDraft() async {
-    if (_draftNewElement == null) return;
+  void _resumeDraft(ElementModel draft) async {
     final saved = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => ElementEditor(
           db: widget.db,
-          element: _draftNewElement!,
+          element: draft,
           isNew: true,
         ),
       ),
     );
     if (saved == true) {
       setState(() {
-        _draftNewElement = null;
+        _drafts.remove(draft);
       });
     }
     _init(forced: true);
   }
 
-  void onAdd() async {
-    if (_draftNewElement != null) {
-      final choice = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text("Active Draft Found"),
-          content: const Text("You already have an unsaved draft. What would you like to do?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, "resume"),
-              child: const Text("RESUME DRAFT", style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, "discard"),
-              child: const Text("DISCARD & START FRESH", style: TextStyle(color: Colors.red)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, "cancel"),
-              child: const Text("CANCEL"),
-            ),
-          ],
-        ),
-      );
-
-      if (choice == "resume") {
-        _resumeDraft();
-        return;
-      } else if (choice == "discard") {
-        setState(() {
-          _draftNewElement = null;
-        });
-      } else {
-        return; // Cancel
+  String? _findValueRecursively(Map<String, dynamic> map, String targetKey) {
+    for (var entry in map.entries) {
+      if (entry.key.toLowerCase() == targetKey.toLowerCase()) {
+        final val = entry.value?.toString().trim();
+        if (val != null && val.isNotEmpty) {
+          return val;
+        }
+      }
+      if (entry.value is Map) {
+        final res = _findValueRecursively(Map<String, dynamic>.from(entry.value as Map), targetKey);
+        if (res != null && res.isNotEmpty) {
+          return res;
+        }
       }
     }
+    return null;
+  }
 
+  String _getDraftLabel(ElementModel draft) {
+    final draftData = draft.fetch();
+    if (draftData.isNotEmpty) {
+      final fields = draftData.values.first;
+      if (fields is Map) {
+        // 1. Search for active business key recursively
+        if (_activeBusinessKeyName != null) {
+          final val = _findValueRecursively(Map<String, dynamic>.from(fields), _activeBusinessKeyName!);
+          if (val != null && val.isNotEmpty) {
+            return "$_activeBusinessKeyName: $val";
+          }
+        }
+        
+        // 2. Fallback: search common fields recursively if active key has no value yet
+        for (var fallbackKey in ["name", "patient name", "title", "description"]) {
+          final val = _findValueRecursively(Map<String, dynamic>.from(fields), fallbackKey);
+          if (val != null && val.isNotEmpty) {
+            return val;
+          }
+        }
+      }
+    }
+    
+    return draft.key; // e.g. "Draft 1 (11:45:00)"
+  }
+
+  void _discardDraft(ElementModel draft) {
+    final displayName = _getDraftLabel(draft);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Discard Draft"),
+        content: Text("Are you sure you want to discard this draft ($displayName)? All edits will be permanently lost."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                _drafts.remove(draft);
+                if (_drafts.isEmpty) {
+                  _isSpeedDialOpen = false;
+                }
+              });
+            },
+            child: const Text("DISCARD", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void onAdd() async {
     final newElement = ElementModel();
     newElement.init(widget.db.dbSchema, widget.db.intf);
-    newElement.key = "Record ${widget.db.elements.length + 1}";
+    
+    // Create a readable default key with unique timestamp so drafts don't overwrite keys
+    final now = DateTime.now();
+    final timeStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
+    newElement.key = "Draft ${widget.db.elements.length + _drafts.length + 1} ($timeStr)";
+    
     setState(() {
-      _draftNewElement = newElement;
+      _drafts.add(newElement);
     });
 
     final saved = await Navigator.push<bool>(
@@ -784,7 +828,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
 
     if (saved == true) {
       setState(() {
-        _draftNewElement = null;
+        _drafts.remove(newElement);
       });
     }
     _init(forced: true);
@@ -928,88 +972,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                       ).toList(),
                     ),
                   ),
-                  const Divider(height: 1, color: Colors.black12),
-                  if (_draftNewElement != null)
-                    Container(
-                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00796B).withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF00796B), width: 1.5),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.edit_document, color: Color(0xFF00796B), size: 20),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  "Unsaved Draft",
-                                  style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF004D40), fontSize: 13),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "ID: ${_draftNewElement!.key}",
-                            style: const TextStyle(fontSize: 11, color: Colors.black54),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
-                                onPressed: _resumeDraft,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: const Color(0xFF00796B),
-                                  backgroundColor: const Color(0xFF00796B).withOpacity(0.1),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                ),
-                                child: const Text("RESUME", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                              ),
-                              const SizedBox(width: 8),
-                              TextButton(
-                                onPressed: () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text("Discard Draft"),
-                                      content: const Text("Are you sure you want to discard this unsaved draft? All edits will be permanently lost."),
-                                      actions: [
-                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                            setState(() {
-                                              _draftNewElement = null;
-                                            });
-                                          }, 
-                                          child: const Text("DISCARD", style: TextStyle(color: Colors.red)),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text("DISCARD", style: TextStyle(fontSize: 11)),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+
                   Expanded(
                     child: ListView.separated(
                       controller: _listScrollController,
@@ -1228,11 +1191,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
             ),
           ],
         ),
-        floatingActionButton: widget.selectedKeys.isEmpty ? FloatingActionButton.extended(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-          label: const Text("NEW RECORD"),
-        ) : null,
+        floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
       );
     }
 
@@ -1269,75 +1228,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
               ).toList(),
             ),
           ),
-          const Divider(height: 1, color: Colors.black12),
-          if (_draftNewElement != null)
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF00796B).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF00796B), width: 1.5),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.edit_document, color: Color(0xFF00796B), size: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Unsaved Draft in Progress",
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF004D40)),
-                        ),
-                        Text(
-                          "ID: ${_draftNewElement!.key}",
-                          style: const TextStyle(fontSize: 12, color: Colors.black54),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _resumeDraft,
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF00796B),
-                      backgroundColor: const Color(0xFF00796B).withOpacity(0.1),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text("RESUME", style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text("Discard Draft"),
-                          content: const Text("Are you sure you want to discard this unsaved draft? All edits will be permanently lost."),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                setState(() {
-                                  _draftNewElement = null;
-                                });
-                              }, 
-                              child: const Text("DISCARD", style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                    ),
-                    child: const Text("DISCARD"),
-                  ),
-                ],
-              ),
-            ),
+
           Expanded(
             child: ListView.separated(
               controller: _listScrollController,
@@ -1514,11 +1405,156 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
           ),
         ],
       ),
-      floatingActionButton: widget.selectedKeys.isEmpty ? FloatingActionButton.extended(
-        onPressed: onAdd,
-        icon: const Icon(Icons.add),
-        label: const Text("NEW RECORD"),
-      ) : null,
+      floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
+    );
+  }
+
+  Widget _buildSpeedDialFab() {
+    if (widget.selectedKeys.isNotEmpty) return const SizedBox.shrink();
+
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isTablet = screenWidth >= 800;
+    
+    // Icon sizing
+    final double mainIconSize = isTablet ? 30.0 : 26.0;
+    final double subIconSize = isTablet ? 26.0 : 22.0;
+    final double deleteIconSize = isTablet ? 24.0 : 20.0;
+    
+    // Font / text sizing
+    final double labelFontSize = isTablet ? 14.0 : 12.0;
+    final double mainFabFontSize = isTablet ? 16.0 : 14.0;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (_isSpeedDialOpen && _drafts.isNotEmpty) ...[
+          // Start Fresh Button
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  color: Colors.white,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isTablet ? 14.0 : 10.0,
+                      vertical: isTablet ? 8.0 : 6.0,
+                    ),
+                    child: Text(
+                      "Start New Record",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF00796B),
+                        fontSize: labelFontSize,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FloatingActionButton(
+                  mini: !isTablet,
+                  heroTag: "fab_speed_dial_fresh",
+                  backgroundColor: const Color(0xFFE0F2F1),
+                  foregroundColor: const Color(0xFF00796B),
+                  onPressed: () {
+                    setState(() {
+                      _isSpeedDialOpen = false;
+                    });
+                    onAdd();
+                  },
+                  child: Icon(Icons.add, size: subIconSize),
+                ),
+              ],
+            ),
+          ),
+          
+          // List of Drafts
+          ..._drafts.map((draft) {
+            final displayName = _getDraftLabel(draft);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.delete_outline, color: Colors.red, size: deleteIconSize),
+                    onPressed: () {
+                      _discardDraft(draft);
+                    },
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      elevation: 2,
+                      padding: isTablet ? const EdgeInsets.all(12) : const EdgeInsets.all(8),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    color: Colors.white,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isTablet ? 14.0 : 10.0,
+                        vertical: isTablet ? 8.0 : 6.0,
+                      ),
+                      child: Text(
+                        displayName,
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: labelFontSize),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FloatingActionButton(
+                    mini: !isTablet,
+                    heroTag: "fab_speed_dial_draft_${draft.hashCode}",
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF00796B),
+                    onPressed: () {
+                      setState(() {
+                        _isSpeedDialOpen = false;
+                      });
+                      _resumeDraft(draft);
+                    },
+                    child: Icon(Icons.description, size: subIconSize),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+        
+        // Main FAB
+        Badge(
+          label: Text('${_drafts.length}'),
+          isLabelVisible: !_isSpeedDialOpen && _drafts.isNotEmpty,
+          backgroundColor: const Color(0xFF00796B),
+          textColor: Colors.white,
+          child: FloatingActionButton.extended(
+            heroTag: "fab_speed_dial_main",
+            onPressed: () {
+              if (_drafts.isEmpty) {
+                onAdd();
+              } else {
+                setState(() {
+                  _isSpeedDialOpen = !_isSpeedDialOpen;
+                });
+              }
+            },
+            icon: Icon(_isSpeedDialOpen ? Icons.close : Icons.add, size: mainIconSize),
+            label: Text(
+              _isSpeedDialOpen ? "CLOSE" : "NEW RECORD",
+              style: TextStyle(
+                fontSize: mainFabFontSize,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
