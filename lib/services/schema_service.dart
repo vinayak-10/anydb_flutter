@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
+import 'package:http/http.dart' as http;
 import 'file_service.dart';
 import 'io_helper.dart' as io;
 import 'isolate_worker.dart';
@@ -64,14 +64,32 @@ class SchemaService {
   }
 
   Future<void> loadDefaultSchema() async {
-    debugPrint("SchemaService: loading default schema from assets");
+    debugPrint("SchemaService: loading default schema");
     try {
-      final defaultJson = await rootBundle.loadString('assets/RKM_Physio (1).json');
+      String defaultJson;
+      if (kIsWeb) {
+        // On Web, fetch the unbundled schema dynamically via HTTP
+        final response = await http.get(Uri.parse('assets/RKM_Physio (1).json'));
+        if (response.statusCode == 200) {
+          defaultJson = response.body;
+        } else {
+          final fallback = await http.get(Uri.parse('RKM_Physio (1).json'));
+          if (fallback.statusCode == 200) {
+            defaultJson = fallback.body;
+          } else {
+            throw "HTTP fetch failed (status: ${response.statusCode})";
+          }
+        }
+      } else {
+        // On native platforms, the schema from assets folder is not bundled per request
+        debugPrint("SchemaService: default schema is not bundled on native platforms");
+        return;
+      }
       final decoded = jsonDecode(defaultJson);
       final Map<String, dynamic> content = decoded is Map ? decoded.cast<String, dynamic>() : decoded;
       await addSchema(content);
     } catch (e) {
-      debugPrint("SchemaService Error: No default schema found in assets. $e");
+      debugPrint("SchemaService Error: Failed to load default schema. $e");
     }
   }
 

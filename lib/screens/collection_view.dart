@@ -501,6 +501,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                           style: TextStyle(
                             fontSize: 10, 
                             fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _isExactMatch ? Colors.white : Colors.black54,
+                            decorationThickness: 2.0,
                             color: _isExactMatch ? Colors.white : Colors.black54
                           ),
                         ),
@@ -655,6 +658,11 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
               onLandingPageChanged: () {
                 setState(() {});
               },
+              onToggleExactMatch: () {
+                setState(() {
+                  _isExactMatch = !_isExactMatch;
+                });
+              },
             );
           } else {
             return _AggregatorView(
@@ -697,6 +705,7 @@ class _DatabaseView extends ConsumerStatefulWidget {
   final Function(String) onToggleSelection;
   final Function(String)? onSearchSubmitted;
   final VoidCallback? onLandingPageChanged;
+  final VoidCallback? onToggleExactMatch;
   const _DatabaseView({
     super.key, 
     required this.db, 
@@ -707,6 +716,7 @@ class _DatabaseView extends ConsumerStatefulWidget {
     required this.onToggleSelection,
     this.onSearchSubmitted,
     this.onLandingPageChanged,
+    this.onToggleExactMatch,
   });
 
   @override
@@ -815,9 +825,16 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     final List<ElementModel> matchingRecords = currentQuery.isEmpty
         ? []
         : widget.db.elements
-            .where((e) => e.match(currentQuery, exact: false)[0])
+            .where((e) => e.match(currentQuery, exact: widget.isExactMatch)[0])
             .take(8)
             .toList();
+
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double screenHeight = MediaQuery.of(context).size.height;
+    
+    // Adaptive logo sizing: 22% of the smaller dimension, clamped between 100px and 220px
+    final double logoSize = (screenWidth < screenHeight ? screenWidth : screenHeight) * 0.22;
+    final double clampedLogoSize = logoSize.clamp(100.0, 220.0);
 
     // 1. Center brand logo when empty, or collapsed at top/sticky when typing (removed 'anydb' text per request)
     Widget logoAndText = Column(
@@ -825,8 +842,8 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
       children: [
         SvgPicture.asset(
           'assets/anydb_logo_yantra_prism.svg',
-          width: 64.0,
-          height: 64.0,
+          width: clampedLogoSize,
+          height: clampedLogoSize,
           fit: BoxFit.contain,
         ),
       ],
@@ -882,6 +899,33 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
               },
             ),
           ),
+          // Exact Match Toggle button
+          GestureDetector(
+            onTap: () {
+              widget.onToggleExactMatch?.call();
+              setState(() {});
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.isExactMatch ? const Color(0xFFE9967A) : Colors.grey.shade100,
+                border: Border.all(color: Colors.black12),
+              ),
+              child: Text(
+                "AB",
+                style: TextStyle(
+                  fontSize: 10, 
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.underline,
+                  decorationColor: widget.isExactMatch ? Colors.white : Colors.black54,
+                  decorationThickness: 2.0,
+                  color: widget.isExactMatch ? Colors.white : Colors.black54
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8.0),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6.0),
             child: ElevatedButton(
@@ -1086,6 +1130,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
         ),
       );
     } else {
+      // Calculate dynamic spacing to mathematically center the logo vertically between the header bar and the search bar
+      final double verticalSpacing = (screenHeight * 0.12).clamp(48.0, 140.0);
+      final double bottomOffset = (screenHeight * 0.15).clamp(80.0, 180.0);
       pageBody = Container(
         color: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -1095,12 +1142,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                SizedBox(height: verticalSpacing),
                 logoAndText,
-                const SizedBox(height: 32.0),
+                SizedBox(height: verticalSpacing),
                 searchBar,
                 const SizedBox(height: 24.0),
                 showAllButton,
-                const SizedBox(height: 80.0),
+                SizedBox(height: bottomOffset),
               ],
             ),
           ),
@@ -1364,14 +1412,11 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                 // Left master pane (adaptive width: 35% clamped between 320px and 480px)
                 SizedBox(
                   width: (MediaQuery.of(context).size.width * 0.35).clamp(320.0, 480.0),
-                  child: Stack(
-                    fit: StackFit.expand,
+                  child: Column(
                     children: [
-                      Column(
-                        children: [
-                          Container(
-                            color: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                      Container(
+                        color: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -1583,31 +1628,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                       ),
                     ],
                   ),
-                  // Home toggle FAB in row of Active, Archived selection buttons on the master pane
-                  Positioned(
-                    top: 6,
-                    right: 8,
-                    child: SafeArea(
-                      child: FloatingActionButton(
-                        mini: true,
-                        heroTag: "fab_list_home_toggle_split",
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF6B1524),
-                        elevation: 2,
-                        onPressed: () {
-                          setState(() {
-                            _showLandingPage = true;
-                          });
-                          widget.onLandingPageChanged?.call();
-                        },
-                        tooltip: "Back to Home Landing",
-                        child: const Icon(Icons.home),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
             const VerticalDivider(width: 1, color: Colors.black12),
                 // Right detail pane
                 Expanded(
@@ -1638,9 +1659,36 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                           element: _selectedElementForDetail!,
                           key: ValueKey("split_detail_${_selectedElementForDetail!.key}"),
                           onChanged: () => setState(() {}),
+                          onBack: () {
+                            setState(() {
+                              _selectedElementForDetail = null;
+                            });
+                          },
                         ),
                 ),
               ],
+            ),
+            // Home toggle FAB in Top Right (aligned with Active, Archive selection buttons row)
+            Positioned(
+              top: 6,
+              right: 16,
+              child: SafeArea(
+                child: FloatingActionButton(
+                  mini: true,
+                  heroTag: "fab_list_home_toggle_split",
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF6B1524),
+                  elevation: 2,
+                  onPressed: () {
+                    setState(() {
+                      _showLandingPage = true;
+                    });
+                    widget.onLandingPageChanged?.call();
+                  },
+                  tooltip: "Back to Home Landing",
+                  child: const Icon(Icons.home),
+                ),
+              ),
             ),
           ],
         ),
@@ -2076,7 +2124,14 @@ class ElementView extends StatefulWidget {
   final ElementDb db;
   final ElementModel element;
   final VoidCallback? onChanged;
-  const ElementView({super.key, required this.db, required this.element, this.onChanged});
+  final VoidCallback? onBack;
+  const ElementView({
+    super.key, 
+    required this.db, 
+    required this.element, 
+    this.onChanged,
+    this.onBack,
+  });
 
   @override
   State<ElementView> createState() => _ElementViewState();
@@ -2106,6 +2161,13 @@ class _ElementViewState extends State<ElementView> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: titleWidget,
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.black87),
+                onPressed: widget.onBack,
+                tooltip: "Close Pane",
+              )
+            : null,
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
@@ -2116,6 +2178,8 @@ class _ElementViewState extends State<ElementView> {
             },
             tooltip: "Edit Full Record",
           ),
+          if (widget.onBack != null)
+            const SizedBox(width: 56.0),
         ],
       ),
       body: ListView.builder(

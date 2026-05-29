@@ -78,7 +78,6 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/anydb_logo_yantra_prism.svg
-    - assets/RKM_Physio (1).json
   # https://flutter.dev/to/asset-from-package
 
   # To add custom fonts to your application, add a fonts section here,
