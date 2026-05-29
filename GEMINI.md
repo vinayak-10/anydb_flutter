@@ -61,6 +61,12 @@
 - **Universal Speed Dial FAB Overlay:** Retained the overlay of the newly added Speed Dial FAB on the landing page, offering quick-launch options for new records and instant resume/discard actions for active drafts.
 - **Landing Access ActionChip:** Integrated a beautiful Home "Landing" ActionChip inside both the mobile and tablet Choice Chip rows to allow users to toggle back to the landing search experience at any time.
 
+### 11. Custom Logo Adaptive Icon & Tab Favicon Overhaul
+- **Pillow Resampler Compatibility:** Added a robust Pillow-based generation script (`assets/update_all_icons.py`) featuring dynamic fallback support (`Image.Resampling.LANCZOS` / `Image.ANTIALIAS`) for maximum system portability across older and newer Pillow versions.
+- **Web Favicon & PWA Icons:** Regenerated all 5 Web favicon and PWA manifest assets (`favicon.png`, `Icon-192.png`, `Icon-512.png`, and maskable variants) from the master high-resolution logo to eliminate outdated white-bordered padding.
+- **Android Adaptive Launchers:** Ported adaptive icon support to Android launcher mipmap sets. Configured the adaptive background color to Velvet Crimson (`#6B1524`) in `colors.xml` and generated transparent-canvas foreground mipmaps (`ic_launcher_foreground.png`) with the logo scaled to a safe-zone `72%` to prevent Android mask clipping.
+- **Legacy Fallbacks:** Rewrote legacy solid `ic_launcher.png` formats across all density buckets (`mdpi` to `xxxhdpi`) for compatibility with older platforms.
+
 ## Development Standards & Walkthroughs
 
 ### 1. App Rename Policy
@@ -74,5 +80,6 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `56a76e9` (feat: refine search landing page visual proportions and card layout mirroring)
+- **Last Stable Commit:** `80e262d` (chore: fix browser tab favicon and Android adaptive launcher icon padding)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
+
