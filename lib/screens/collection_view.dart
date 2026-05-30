@@ -742,6 +742,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   void initState() {
     super.initState();
     _landingFocusNode = FocusNode();
+    _landingFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
     _landingSearchController = TextEditingController(text: widget.searchQuery);
     _landingSearchController.addListener(() {
       _triggerSearch(_landingSearchController.text);
@@ -1401,11 +1404,15 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   Widget build(BuildContext context) {
     final bool showLanding = _showLandingPage && widget.searchQuery.isEmpty;
     if (showLanding) {
+      final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+      final bool isSearchFocused = _landingFocusNode.hasFocus;
+      final bool hideFab = isKeyboardVisible || isSearchFocused;
+
       return Scaffold(
         backgroundColor: Colors.white,
         resizeToAvoidBottomInset: false, // Prevents keyboard from pushing up bottom elements (FAB disappears behind keyboard)
         body: _buildSearchLandingPage(),
-        floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
+        floatingActionButton: (widget.selectedKeys.isEmpty && !hideFab) ? _buildSpeedDialFab() : null,
       );
     }
 
