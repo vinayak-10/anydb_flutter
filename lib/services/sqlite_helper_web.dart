@@ -44,11 +44,43 @@ class SqliteHelper {
     return;
   }
 
+  static Future<String?> getBusinessUniqueKeyRaw(String schemaName) async {
+    return null;
+  }
+
+  static Future<void> setBusinessUniqueKeyRaw(String schemaName, String keyName) async {
+    return;
+  }
+
   static Future<List<Map<String, dynamic>>> getAllRaw(String dbName) async {
     return [];
   }
 
-  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items) async {
+  static Future<List<Map<String, String>>> getAllRawString(String dbName) async {
+    return [];
+  }
+
+  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items, [String? businessKeyName]) async {
     return;
+  }
+
+  static Future<void> initTimestampsTable() async {
+    return;
+  }
+
+  static Future<void> backfillTimestamps(String dbName) async {
+    return;
+  }
+
+  static Future<void> updateRecordTimestamp(String dbName, String id, int timestamp) async {
+    return;
+  }
+
+  static Future<List<String>> getTopRecentIds(String dbName, int limit) async {
+    return [];
+  }
+
+  static Future<List<Map<String, String>>> getRecordsByIds(String dbName, List<String> ids) async {
+    return [];
   }
 }

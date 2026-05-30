@@ -11,6 +11,8 @@ import 'core/settings_provider.dart';
 import 'components/drawer_content.dart';
 import 'services/google_drive_service.dart';
 import 'services/web_history_helper.dart' as web_helper;
+import 'services/isolate_worker.dart';
+import 'core/logger.dart';
 
 // Providers
 final schemaServiceProvider = Provider((ref) => SchemaService());
@@ -39,6 +41,26 @@ void main() {
 
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("App: main() started");
+
+  // 1. Capture all unhandled Flutter framework errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    logger.log("UNHANDLED FLUTTER ERROR: ${details.exceptionAsString()}\nStack: ${details.stack}");
+  };
+
+  // 2. Capture all unhandled asynchronous / engine errors
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    logger.log("UNHANDLED ASYNC ERROR: $error\nStack: $stack");
+    return true; // Error is handled
+  };
+
+  // Eagerly warm up the persistent isolate pool in the background (non-blocking)
+  if (!kIsWeb) {
+    IsolateWorker.instance.init().catchError((e) {
+      debugPrint("App: IsolateWorker warm up error: $e");
+    });
+  }
+
   runApp(
     const ProviderScope(
       child: AnyDbApp(),

@@ -137,12 +137,21 @@ class ElementModel {
     return [false, false];
   }
 
-  List<Widget> getEditors({required Function onChanged}) {
+  List<Widget> getEditors({required Function onChanged, bool autoFocusFirst = false}) {
     ensureHydrated();
-    return components.map((c) => c.editor(
-      key: ValueKey("editor_${c.getType()}_${c.getName()}"),
-      onChanged: (val) => onChanged(),
-    )).toList();
+    int editableCount = 0;
+    return components.map((c) {
+      final isHeader = c.getType() == 'list-header';
+      final shouldFocus = autoFocusFirst && !isHeader && (editableCount == 0);
+      if (!isHeader) {
+        editableCount++;
+      }
+      return c.editor(
+        key: ValueKey("editor_${c.getType()}_${c.getName()}"),
+        onChanged: (val) => onChanged(),
+        autoFocus: shouldFocus,
+      );
+    }).toList();
   }
 
   List<Widget> getDisplays({bool onlyValue = false}) {

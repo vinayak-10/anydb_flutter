@@ -130,8 +130,8 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
   mainSendPort.send(workerReceivePort.sendPort);
 
   // Background warm record memory cache
-  // Structure: { dbName: { recordId: MapValue } }
-  final Map<String, Map<String, dynamic>> bgCache = {};
+  // Structure: { dbName: { recordId: StringValue } }
+  final Map<String, Map<String, String>> bgCache = {};
 
   workerReceivePort.listen((message) async {
     if (message is Map) {
@@ -142,7 +142,7 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final String dbName = params['dbName'] ?? "";
         final tableCache = bgCache[dbName] ?? {};
         
-        final list = tableCache.entries.map((e) => {e.key: e.value}).toList();
+        final list = tableCache.entries.map((e) => {e.key: jsonDecode(e.value)}).toList();
         replyPort.send(list);
         return;
       }
@@ -212,51 +212,103 @@ void _processWorkerEntryPoint(SendPort mainSendPort) {
   });
 }
 
+bool _recordMatchesQuery(Map<String, dynamic> record, String query, List<String> searchableFields) {
+  final bool filterBySearchable = searchableFields.isNotEmpty;
+  
+  for (var entry in record.entries) {
+    final key = entry.key;
+    if (key == '__meta__') continue; // Always ignore metadata
+    
+    final val = entry.value;
+    final bool isSearchable = !filterBySearchable || searchableFields.contains(key);
+    
+    if (val is Map) {
+      if (_recordMatchesQuery(Map<String, dynamic>.from(val), query, searchableFields)) return true;
+    } else if (val is List) {
+      for (var item in val) {
+        if (item is Map) {
+          if (_recordMatchesQuery(Map<String, dynamic>.from(item), query, searchableFields)) return true;
+        } else if (isSearchable && item?.toString().toLowerCase().contains(query) == true) {
+          return true;
+        }
+      }
+    } else if (isSearchable && val?.toString().toLowerCase().contains(query) == true) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ==========================================
 // 3. Database Tasks execution logic
 // ==========================================
-Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<String, Map<String, dynamic>> bgCache) async {
+Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<String, Map<String, String>> bgCache) async {
   switch (type) {
+    case 'dbGetBusinessUniqueKey':
+      final String schemaName = params['schemaName'];
+      return await SqliteHelper.getBusinessUniqueKeyRaw(schemaName);
+
+    case 'dbSetBusinessUniqueKey':
+      final String schemaName = params['schemaName'];
+      final String keyName = params['keyName'];
+      await SqliteHelper.setBusinessUniqueKeyRaw(schemaName, keyName);
+      return null;
+
     case 'dbGetAll':
       final String dbName = params['dbName'];
       
-      // Query warm SQLite connection directly
-      final List<Map<String, dynamic>> allRecords = await SqliteHelper.getAllRaw(dbName);
+      // 1. Ensure timestamps table is initialized and backfilled
+      await SqliteHelper.backfillTimestamps(dbName);
       
-      // Populate background warm memory cache
-      final Map<String, dynamic> tableCache = bgCache[dbName] ??= {};
+      // 2. Fetch all raw string records from SQLite (near-instant)
+      final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+      
+      // 3. Populate background warm memory cache
+      final Map<String, String> tableCache = bgCache[dbName] ??= {};
       tableCache.clear();
-      for (var rec in allRecords) {
-        if (rec.isNotEmpty) {
-          tableCache[rec.keys.first] = rec.values.first;
-        }
+      for (var rec in rawRecords) {
+        tableCache[rec['id']!] = rec['value']!;
       }
       
-      // Sort descending based on last transaction date
-      final List<Map<String, dynamic>> sortedList = allRecords.toList();
-      sortedList.sort((a, b) {
-        final aVal = a.values.first as Map<String, dynamic>;
-        final bVal = b.values.first as Map<String, dynamic>;
-        return _getLatestDateStatic(bVal).compareTo(_getLatestDateStatic(aVal));
-      });
-      
-      // Dynamically calculate dynamic 30% boundary limit
-      final int totalCount = sortedList.length;
+      // 4. Determine 30% boundary limit
+      final int totalCount = rawRecords.length;
       final int limit = (totalCount * 0.30).round().clamp(100, totalCount);
-      return sortedList.take(limit).toList();
+      
+      // 5. Query top recent IDs from timestamps table
+      final List<String> recentIds = await SqliteHelper.getTopRecentIds(dbName, limit);
+      
+      // 6. Look up raw strings from cache map (avoid SQL re-query and avoid jsonDecode sort loop)
+      final List<Map<String, String>> results = [];
+      for (var id in recentIds) {
+        final val = tableCache[id];
+        if (val != null) {
+          results.add({'id': id, 'value': val});
+        }
+      }
+      return results;
 
     case 'dbSearch':
       final String dbName = params['dbName'];
       final String query = params['query'].toString().toLowerCase();
-      final tableCache = bgCache[dbName] ?? {};
+      final List<String> searchableFields = List<String>.from(params['searchableFields'] ?? []);
+      
+      // Auto-populate cache in background isolate if not loaded yet
+      var tableCache = bgCache[dbName];
+      if (tableCache == null || tableCache.isEmpty) {
+        final List<Map<String, String>> allRecords = await SqliteHelper.getAllRawString(dbName);
+        tableCache = bgCache[dbName] = {};
+        for (var rec in allRecords) {
+          tableCache[rec['id']!] = rec['value']!;
+        }
+      }
       
       final List<Map<String, dynamic>> matches = [];
       for (var entry in tableCache.entries) {
         final key = entry.key;
-        final value = entry.value;
-        final recordStr = jsonEncode(value).toLowerCase();
-        if (recordStr.contains(query)) {
-          matches.add({key: value});
+        final valueStr = entry.value;
+        final decoded = jsonDecode(valueStr);
+        if (decoded is Map && _recordMatchesQuery(Map<String, dynamic>.from(decoded), query, searchableFields)) {
+          matches.add({key: decoded});
         }
       }
       return matches;
@@ -264,15 +316,16 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
     case 'dbUpdateAll':
       final String dbName = params['dbName'];
       final Map<String, dynamic> items = Map<String, dynamic>.from(params['items']);
+      final String? businessKeyName = params['businessKeyName'];
       
       // Synchronous batch transaction on warm SQLite connection
-      await SqliteHelper.updateAllRaw(dbName, items);
+      await SqliteHelper.updateAllRaw(dbName, items, businessKeyName);
       
-      // Sync cache
+      // Sync cache as raw strings
       final tableCache = bgCache[dbName] ??= {};
       for (var entry in items.entries) {
         final id = entry.key.replaceFirst('$dbName:', '');
-        tableCache[id] = entry.value;
+        tableCache[id] = jsonEncode(entry.value);
       }
       return null;
 
@@ -280,13 +333,13 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       // Offload import logic merges inside the database Isolate
       final result = processImportLogic(params);
       
-      // Pre-update background cache for merged items to preserve immediate searchability
+      // Pre-update background cache for merged items as raw strings to preserve immediate searchability
       final String dbName = params['dbName'];
       final Map<String, dynamic> itemsToUpdate = result['itemsToUpdate'];
       final tableCache = bgCache[dbName] ??= {};
       for (var entry in itemsToUpdate.entries) {
         final id = entry.key.replaceFirst('$dbName:', '');
-        tableCache[id] = entry.value;
+        tableCache[id] = jsonEncode(entry.value);
       }
       return result;
 
@@ -333,41 +386,4 @@ dynamic _executeTaskSync(String type, Map<String, dynamic> params) {
   }
 }
 
-// ==========================================
-// 6. Helper Recursive Date Extractor Heuristics
-// ==========================================
-int _getLatestDateStatic(Map<String, dynamic> record) {
-  int maxDate = 0;
-  
-  void traverse(dynamic value) {
-    if (value is Map) {
-      for (var entry in value.entries) {
-        final lowerKey = entry.key.toString().toLowerCase();
-        if (lowerKey.contains('register') || lowerKey.contains('created') || lowerKey.contains('date')) {
-          final val = entry.value;
-          if (val is int) {
-            if (val > maxDate) maxDate = val;
-          } else if (val is String) {
-            final parsed = int.tryParse(val);
-            if (parsed != null) {
-              if (parsed > maxDate) maxDate = parsed;
-            } else {
-              final parsedDate = DateTime.tryParse(val);
-              if (parsedDate != null && parsedDate.millisecondsSinceEpoch > maxDate) {
-                maxDate = parsedDate.millisecondsSinceEpoch;
-              }
-            }
-          }
-        }
-        traverse(entry.value);
-      }
-    } else if (value is List) {
-      for (var item in value) {
-        traverse(item);
-      }
-    }
-  }
 
-  traverse(record);
-  return maxDate;
-}

@@ -734,12 +734,14 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   bool _showLandingPage = true;
   late TextEditingController _landingSearchController;
   List<ElementModel>? _searchResults;
+  late FocusNode _landingFocusNode;
 
   bool get showLandingPage => _showLandingPage;
 
   @override
   void initState() {
     super.initState();
+    _landingFocusNode = FocusNode();
     _landingSearchController = TextEditingController(text: widget.searchQuery);
     _landingSearchController.addListener(() {
       _triggerSearch(_landingSearchController.text);
@@ -769,6 +771,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   void dispose() {
     _listScrollController.dispose();
     _landingSearchController.dispose();
+    _landingFocusNode.dispose();
     super.dispose();
   }
 
@@ -792,7 +795,14 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   }
 
   Future<void> _init({bool forced = false}) async {
-    await widget.db.initDb(forced: forced, filter: [_currentFilter]);
+    // Lazy-load check: if search landing page is active and query is empty,
+    // we bypass loading the database to make landing page mounting near-instant.
+    final bool showLanding = _showLandingPage && _landingSearchController.text.trim().isEmpty;
+    
+    if (!showLanding) {
+      await widget.db.initDb(forced: forced, filter: [_currentFilter]);
+    }
+    
     // Retrieve business unique key name dynamically for draft labeling
     _activeBusinessKeyName = await SqliteHelper.getBusinessUniqueKey(widget.schemaTitle);
     if (mounted) {
@@ -898,7 +908,8 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
             child: TextField(
               key: const ValueKey('landing_search_field'),
               controller: _landingSearchController,
-              autofocus: true,
+              focusNode: _landingFocusNode,
+              autofocus: false,
               style: const TextStyle(fontSize: 16.0),
               decoration: InputDecoration(
                 hintText: "Search patients, unique keys, or diagnoses...",
@@ -1296,6 +1307,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   }
 
   void onAdd() async {
+    _landingFocusNode.unfocus();
+    FocusScope.of(context).unfocus();
+
     final newElement = ElementModel();
     newElement.init(widget.db.dbSchema, widget.db.intf);
     
@@ -1322,6 +1336,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   }
 
   void _openEditor(ElementModel element) async {
+    _landingFocusNode.unfocus();
+    FocusScope.of(context).unfocus();
+
     await Navigator.push(context, MaterialPageRoute(builder: (context) => ElementView(db: widget.db, element: element)));
     if (!mounted) return;
     _init(forced: true);
@@ -1386,6 +1403,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     if (showLanding) {
       return Scaffold(
         backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: false, // Prevents keyboard from pushing up bottom elements (FAB disappears behind keyboard)
         body: _buildSearchLandingPage(),
         floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
       );
@@ -2282,6 +2300,7 @@ class _ElementViewState extends State<ElementView> {
               builder: (context, setModalState) => cClone.editor(
                 key: ValueKey("overlap_edit_${c.getName()}"),
                 onChanged: (val) {},
+                autoFocus: true,
                 cbNotifyParent: (notifier, data, observers) {
                   if (cClone is SimpleAccount) {
                     setModalState(() {

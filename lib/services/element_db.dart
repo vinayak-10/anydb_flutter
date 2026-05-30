@@ -390,6 +390,22 @@ class ElementDb {
     }).toList();
   }
 
+  List<String> getSearchableFields(List<dynamic> schema) {
+    List<String> fields = [];
+    for (var f in schema) {
+      if (f is Map) {
+        if (f['searchable'] == true) {
+          fields.add(f['name']?.toString() ?? '');
+        }
+        final subSchema = f['schema'];
+        if (subSchema is List) {
+          fields.addAll(getSearchableFields(subSchema));
+        }
+      }
+    }
+    return fields.where((name) => name.isNotEmpty).toList();
+  }
+
   List<ElementModel> search(String query) {
     if (query.isEmpty) return elements;
     return elements.where((e) => e.match(query)[0]).toList();
@@ -398,9 +414,14 @@ class ElementDb {
   Future<List<ElementModel>> searchAsync(String query) async {
     if (query.isEmpty) return elements;
     try {
+      final searchableFields = getSearchableFields(dbSchema);
       final List<dynamic> rawResults = await IsolateWorker.instance.execute<List<dynamic>>(
         'dbSearch',
-        {'dbName': key, 'query': query},
+        {
+          'dbName': key, 
+          'query': query,
+          'searchableFields': searchableFields,
+        },
       );
       
       final mappedResults = rawResults.map((item) => Map<String, dynamic>.from(item as Map)).toList();

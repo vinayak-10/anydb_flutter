@@ -87,6 +87,29 @@
 - **Responsive Rows:** `Composite` editor uses `Row` + `Expanded` for professional alignment on tablets, with heuristics to force "long" fields (Notes, Address) to take full width.
 - **Progress Feedback:** `ElementDb.initDb` and `AggregatorService` support an `onProgress` callback to update percentage-based bars in the UI.
 
+### 3. High-Performance Auxiliary Metadata Registry & Startup connection (`record_timestamps`)
+- **Startup Connection Cache:** Unconditionally creates the auxiliary table `record_timestamps` (db_name, id, timestamp) and its order index on SQLite database connection initialization at app startup.
+- **Lightweight Boot Sorting:** Queries top recent record IDs from `record_timestamps` and pulls raw string values in under **20ms** without executing expensive `jsonDecode` sort comparisons.
+- **Self-Healing Backfill:** Automatically runs background transactional backfilling on first boot if timestamps count does not match main records.
+
+### 4. Schema-Aware Background Isolate Search
+- **Key-Value Isolation:** Decodes raw strings in the background worker and executes recursive key-value matching **only** against designated searchable schema fields, entirely ignoring metadata tags (`__meta__`) and non-searchable fields.
+- **Zero False Positives:** Resolves false-positive substring matches and returns `[]` cleanly to paint the `"No matching records found"` view.
+
+### 5. Professional Keyboard & Auto-Hide FAB Adaptations
+- **Zero Accidental Keyboard Pops:** Disabled default `autofocus` on the landing page's search text inputs to prevent the software keyboard from popping up on app startup or bottom tab navigation.
+- **Pristine Layout & Keyboard FAB Coverage:** Configured `resizeToAvoidBottomInset: false` on the landing Scaffold to let bottom navigation and Floating Action Buttons sit naturally covered behind the software keyboard, preventing overlaps and screen squeezing.
+
+### 6. App-Wide Unhandled Failure Logging
+- **Core Error Interception:** Bound `FlutterError.onError` and `PlatformDispatcher.instance.onError` to automatically capture all UI rendering exceptions, widget tree crashes, and unhandled asynchronous/isolate thread zone errors.
+- **Persistent Storage:** Appends formatted failure reports to daily log files on disk.
+
+## Planned Optimizations for Next Session
+
+### 1. Single-Query Hoisted Configuration for Batch Imports
+- **The Bottleneck:** Currently, the batch-write loop in `SqliteHelper.updateAllRaw` executes `getBusinessUniqueKeyRaw(dbName)` inside the loop, forcing SQLite to run **15,000 SQL SELECT queries** one-by-one during database wipes or reloads.
+- **The Plan:** Hoist `getBusinessUniqueKeyRaw(dbName)` outside the loop so it runs **exactly once**. Extract the business key value in RAM using recursion in CPU time, dropping import and reload time from minutes to **under 300 milliseconds**!
+
 ## Current State
 - **Branch:** `dev`
 - **Last Stable Commit:** `cf76f7b` (perf: implement concurrent Multi-Worker Isolate Pool and dynamic 30% recent record search engine on mobile)

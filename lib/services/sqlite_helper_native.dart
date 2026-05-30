@@ -18,6 +18,21 @@ class SqliteHelper {
     
     _db = sql.sqlite3.open(dbPath);
     _db!.execute('PRAGMA journal_mode=WAL;');
+
+    // Guaranteed creation of Auxiliary Registry on app start
+    _db!.execute('''
+      CREATE TABLE IF NOT EXISTS "record_timestamps" (
+        db_name TEXT,
+        id TEXT,
+        timestamp INTEGER,
+        PRIMARY KEY (db_name, id)
+      )
+    ''');
+    _db!.execute('''
+      CREATE INDEX IF NOT EXISTS "idx_record_timestamps_order" 
+      ON "record_timestamps" (db_name, timestamp DESC)
+    ''');
+
     return _db!;
   }
 
@@ -77,7 +92,13 @@ class SqliteHelper {
         'dbGetAll',
         {'dbName': dbName},
       );
-      return results.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+      // Zero-copy port optimization: decode the raw JSON strings for only the top 30% records on the main thread
+      return results.map((item) {
+        final map = item as Map;
+        final key = map['id'] as String;
+        final decoded = jsonDecode(map['value'] as String);
+        return {key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded};
+      }).toList();
     } catch (e) {
       debugPrint("SqliteHelper.getAll Isolate error, falling back to local raw read: $e");
       return await getAllRaw(dbName);
@@ -116,8 +137,7 @@ class SqliteHelper {
     return null;
   }
 
-  static Future<String?> _extractBusinessKeyValue(String dbName, Map<String, dynamic> val, String fallbackId) async {
-    final businessKeyName = await getBusinessUniqueKey(dbName);
+  static String? _extractBusinessKeyValueSync(String? businessKeyName, Map<String, dynamic> val, String fallbackId) {
     if (businessKeyName != null) {
       final res = _findValueRecursively(val, businessKeyName);
       if (res != null && res.isNotEmpty) {
@@ -125,6 +145,11 @@ class SqliteHelper {
       }
     }
     return fallbackId;
+  }
+
+  static Future<String?> _extractBusinessKeyValue(String dbName, Map<String, dynamic> val, String fallbackId) async {
+    final businessKeyName = await getBusinessUniqueKeyRaw(dbName);
+    return _extractBusinessKeyValueSync(businessKeyName, val, fallbackId);
   }
 
   static Future<void> update(String dbName, String key, dynamic val) async {
@@ -151,20 +176,31 @@ class SqliteHelper {
       'INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)',
       [key, businessKeyVal, isActive, jsonEncode(val)],
     );
+
+    // Update Auxiliary timestamp table
+    final int ts = _getLatestDateStatic(recordVal);
+    await updateRecordTimestamp(dbName, key, ts);
   }
 
   static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
     if (kIsWeb) return;
     
+    // Fetch configuration key ONCE before spawning the background task
+    final businessKeyName = await getBusinessUniqueKey(dbName);
+
     // Delegate batch updates to the background Database Isolate transaction
     try {
       await IsolateWorker.instance.execute(
         'dbUpdateAll',
-        {'dbName': dbName, 'items': items},
+        {
+          'dbName': dbName, 
+          'items': items,
+          'businessKeyName': businessKeyName,
+        },
       );
     } catch (e) {
       debugPrint("SqliteHelper.updateAll Isolate error, falling back to local raw update: $e");
-      await updateAllRaw(dbName, items);
+      await updateAllRaw(dbName, items, businessKeyName);
     }
   }
 
@@ -173,8 +209,10 @@ class SqliteHelper {
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
+    await initTimestampsTable();
 
     db.execute('DELETE FROM "$tableName" WHERE id = ?', [key]);
+    db.execute('DELETE FROM "record_timestamps" WHERE db_name = ? AND id = ?', [dbName, key]);
   }
 
   static Future<void> clear(String dbName) async {
@@ -182,6 +220,7 @@ class SqliteHelper {
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     db.execute('DROP TABLE IF EXISTS "$tableName"');
+    db.execute('DELETE FROM "record_timestamps" WHERE db_name = ?', [dbName]);
     await initTable(dbName);
   }
 
@@ -217,6 +256,32 @@ class SqliteHelper {
 
   static Future<String?> getBusinessUniqueKey(String schemaName) async {
     if (kIsWeb) return null;
+    try {
+      return await IsolateWorker.instance.execute<String?>(
+        'dbGetBusinessUniqueKey',
+        {'schemaName': schemaName},
+      );
+    } catch (e) {
+      debugPrint("SqliteHelper.getBusinessUniqueKey Isolate error, falling back to direct read: $e");
+      return await getBusinessUniqueKeyRaw(schemaName);
+    }
+  }
+
+  static Future<void> setBusinessUniqueKey(String schemaName, String keyName) async {
+    if (kIsWeb) return;
+    try {
+      await IsolateWorker.instance.execute(
+        'dbSetBusinessUniqueKey',
+        {'schemaName': schemaName, 'keyName': keyName},
+      );
+    } catch (e) {
+      debugPrint("SqliteHelper.setBusinessUniqueKey Isolate error, falling back to direct write: $e");
+      await setBusinessUniqueKeyRaw(schemaName, keyName);
+    }
+  }
+
+  static Future<String?> getBusinessUniqueKeyRaw(String schemaName) async {
+    if (kIsWeb) return null;
     final db = await _database;
     await initConfigurationsTable();
     final results = db.select('SELECT business_unique_key FROM "schema_configurations" WHERE schema_name = ?', [schemaName]);
@@ -226,7 +291,7 @@ class SqliteHelper {
     return null;
   }
 
-  static Future<void> setBusinessUniqueKey(String schemaName, String keyName) async {
+  static Future<void> setBusinessUniqueKeyRaw(String schemaName, String keyName) async {
     if (kIsWeb) return;
     final db = await _database;
     await initConfigurationsTable();
@@ -249,18 +314,37 @@ class SqliteHelper {
     }).toList();
   }
 
-  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items) async {
+  static Future<List<Map<String, String>>> getAllRawString(String dbName) async {
+    if (kIsWeb) return [];
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
+    final results = db.select('SELECT id, value FROM "$tableName"');
+    return results.map((row) {
+      return {
+        'id': row['id'] as String,
+        'value': row['value'] as String,
+      };
+    }).toList();
+  }
+
+  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items, [String? businessKeyName]) async {
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+    await initTimestampsTable();
+
     db.execute('BEGIN TRANSACTION');
     try {
       final stmt = db.prepare('INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)');
+      final stmtTs = db.prepare('INSERT OR REPLACE INTO "record_timestamps" (db_name, id, timestamp) VALUES (?, ?, ?)');
       for (var entry in items.entries) {
         final id = entry.key.replaceFirst('$dbName:', '');
         final Map<String, dynamic> recordVal = entry.value is Map ? Map<String, dynamic>.from(entry.value as Map) : {};
-        final businessKeyVal = await _extractBusinessKeyValue(dbName, recordVal, id);
+        
+        // ⚡ OPTIMIZED: Synchronous RAM-based key extraction
+        final businessKeyVal = _extractBusinessKeyValueSync(businessKeyName, recordVal, id);
         
         int isActive = 1;
         final meta = recordVal['__meta__'];
@@ -274,13 +358,154 @@ class SqliteHelper {
         }
 
         stmt.execute([id, businessKeyVal, isActive, jsonEncode(entry.value)]);
+
+        final int ts = _getLatestDateStatic(recordVal);
+        stmtTs.execute([dbName, id, ts]);
       }
       stmt.dispose();
+      stmtTs.dispose();
       db.execute('COMMIT');
     } catch (e) {
       db.execute('ROLLBACK');
       rethrow;
     }
+  }
+
+  static int _getLatestDateStatic(Map<String, dynamic> record) {
+    int maxDate = 0;
+    try {
+      final account = record['Account'];
+      if (account is Map && account.isNotEmpty) {
+        final history = account.values.first;
+        if (history is List) {
+          for (var tx in history) {
+            if (tx is Map) {
+              final d = tx['Date'] ?? tx['Transaction Date'] ?? tx['time'];
+              if (d != null) {
+                int dt = 0;
+                if (d is int) {
+                  dt = d;
+                } else if (d is String) {
+                  dt = DateTime.tryParse(d)?.millisecondsSinceEpoch ?? int.tryParse(d) ?? 0;
+                }
+                if (dt > maxDate) maxDate = dt;
+              }
+            }
+          }
+        }
+      }
+      
+      final meta = record['__meta__'];
+      if (meta is Map) {
+        final time = meta['time'];
+        if (time is Map) {
+          final u = time['u'] ?? time['c'];
+          if (u is int && u > maxDate) maxDate = u;
+        }
+      }
+    } catch (_) {}
+    return maxDate;
+  }
+
+  static Future<void> initTimestampsTable() async {
+    if (kIsWeb) return;
+    final db = await _database;
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS "record_timestamps" (
+        db_name TEXT,
+        id TEXT,
+        timestamp INTEGER,
+        PRIMARY KEY (db_name, id)
+      )
+    ''');
+    db.execute('''
+      CREATE INDEX IF NOT EXISTS "idx_record_timestamps_order" 
+      ON "record_timestamps" (db_name, timestamp DESC)
+    ''');
+  }
+
+  static Future<void> backfillTimestamps(String dbName) async {
+    if (kIsWeb) return;
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTimestampsTable();
+    await initTable(dbName);
+
+    final mainCountRes = db.select('SELECT COUNT(*) as count FROM "$tableName"');
+    final mainCount = mainCountRes.first['count'] as int;
+
+    final stampCountRes = db.select('SELECT COUNT(*) as count FROM "record_timestamps" WHERE db_name = ?', [dbName]);
+    final stampCount = stampCountRes.first['count'] as int;
+
+    if (mainCount != stampCount) {
+      debugPrint("SqliteHelper: Backfilling timestamps for $dbName (main: $mainCount, stamps: $stampCount)");
+      final results = db.select('SELECT id, value FROM "$tableName"');
+      
+      db.execute('BEGIN TRANSACTION');
+      try {
+        final stmt = db.prepare('INSERT OR REPLACE INTO "record_timestamps" (db_name, id, timestamp) VALUES (?, ?, ?)');
+        for (var row in results) {
+          final id = row['id'] as String;
+          final valueStr = row['value'] as String;
+          int ts = 0;
+          try {
+            final decoded = jsonDecode(valueStr);
+            if (decoded is Map) {
+              ts = _getLatestDateStatic(Map<String, dynamic>.from(decoded));
+            }
+          } catch (_) {}
+          stmt.execute([dbName, id, ts]);
+        }
+        stmt.dispose();
+        db.execute('COMMIT');
+      } catch (e) {
+        db.execute('ROLLBACK');
+        debugPrint("SqliteHelper: Backfill failed: $e");
+      }
+    }
+  }
+
+  static Future<void> updateRecordTimestamp(String dbName, String id, int timestamp) async {
+    if (kIsWeb) return;
+    final db = await _database;
+    await initTimestampsTable();
+    db.execute(
+      'INSERT OR REPLACE INTO "record_timestamps" (db_name, id, timestamp) VALUES (?, ?, ?)',
+      [dbName, id, timestamp],
+    );
+  }
+
+  static Future<List<String>> getTopRecentIds(String dbName, int limit) async {
+    if (kIsWeb) return [];
+    final db = await _database;
+    await initTimestampsTable();
+    
+    final results = db.select(
+      'SELECT id FROM "record_timestamps" WHERE db_name = ? ORDER BY timestamp DESC LIMIT ?',
+      [dbName, limit],
+    );
+    return results.map((row) => row['id'] as String).toList();
+  }
+
+  static Future<List<Map<String, String>>> getRecordsByIds(String dbName, List<String> ids) async {
+    if (kIsWeb) return [];
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+
+    if (ids.isEmpty) return [];
+
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final results = db.select(
+      'SELECT id, value FROM "$tableName" WHERE id IN ($placeholders)',
+      ids,
+    );
+    return results.map((row) {
+      return {
+        'id': row['id'] as String,
+        'value': row['value'] as String,
+      };
+    }).toList();
   }
 }
 

@@ -98,6 +98,7 @@ class TextAscii extends GenInterface {
       lines: lines,
       maxsize: maxsize,
       timed: timed,
+      autoFocus: autoFocus ?? false,
       onChanged: (txt) {
         value = txt;
         onChanged(txt);
@@ -131,6 +132,7 @@ class _TextAsciiEditor extends StatefulWidget {
   final int lines;
   final int maxsize;
   final bool timed;
+  final bool autoFocus;
   final Function(String) onChanged;
 
   const _TextAsciiEditor({
@@ -141,6 +143,7 @@ class _TextAsciiEditor extends StatefulWidget {
     required this.lines,
     required this.maxsize,
     required this.timed,
+    required this.autoFocus,
     required this.onChanged,
   });
 
@@ -198,6 +201,7 @@ class _TextAsciiEditorState extends State<_TextAsciiEditor> {
           child: TextField(
             controller: _controller,
             focusNode: _focusNode,
+            autofocus: widget.autoFocus,
             maxLines: widget.multiline ? null : widget.lines,
             maxLength: widget.maxsize,
             style: TextStyle(fontSize: settings.inputFontSize),

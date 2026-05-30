@@ -151,6 +151,7 @@ class TextNumber extends GenInterface {
       suffix: format["suffix"]!,
       readOnly: access["readOnly"]!,
       confirmWrite: access["confirmWrite"]!,
+      autoFocus: autoFocus ?? false,
       onChanged: (txt) {
         value = txt;
         onChanged(txt);
@@ -184,6 +185,7 @@ class _TextNumberEditor extends StatefulWidget {
   final String suffix;
   final bool readOnly;
   final bool confirmWrite;
+  final bool autoFocus;
   final Function(String) onChanged;
 
   const _TextNumberEditor({
@@ -194,6 +196,7 @@ class _TextNumberEditor extends StatefulWidget {
     required this.suffix,
     required this.readOnly,
     required this.confirmWrite,
+    required this.autoFocus,
     required this.onChanged,
   });
 
@@ -257,6 +260,7 @@ class _TextNumberEditorState extends State<_TextNumberEditor> {
           child: TextField(
             controller: _controller,
             focusNode: _focusNode,
+            autofocus: widget.autoFocus,
             keyboardType: TextInputType.number,
             style: TextStyle(fontSize: settings.inputFontSize),
             decoration: InputDecoration(

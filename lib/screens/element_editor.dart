@@ -79,10 +79,13 @@ class _ElementEditorState extends State<ElementEditor> {
               ),
               const Divider(height: 32),
               // Dynamic Editors from components
-              ..._editingElement.getEditors(onChanged: () {
-                // Trigger rebuild if necessary for dependent fields
-                setState(() {});
-              }),
+              ..._editingElement.getEditors(
+                onChanged: () {
+                  // Trigger rebuild if necessary for dependent fields
+                  setState(() {});
+                },
+                autoFocusFirst: true,
+              ),
               const SizedBox(height: 40),
               ElevatedButton.icon(
                 onPressed: _save,
