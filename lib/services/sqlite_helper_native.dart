@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:path/path.dart' as p;
 import 'file_service.dart';
+import 'isolate_worker.dart';
 
 class SqliteHelper {
   static sql.Database? _db;
@@ -16,6 +17,7 @@ class SqliteHelper {
     await _fileService.ensureDir(root);
     
     _db = sql.sqlite3.open(dbPath);
+    _db!.execute('PRAGMA journal_mode=WAL;');
     return _db!;
   }
 
@@ -68,16 +70,18 @@ class SqliteHelper {
 
   static Future<List<Map<String, dynamic>>> getAll(String dbName) async {
     if (kIsWeb) return [];
-    final db = await _database;
-    final tableName = _fileService.sanitizeName(dbName);
-    await initTable(dbName);
-
-    final results = db.select('SELECT id, value FROM "$tableName"');
-    return results.map((row) {
-      final key = row['id'] as String;
-      final value = jsonDecode(row['value'] as String);
-      return {key: value is Map ? Map<String, dynamic>.from(value) : value};
-    }).toList();
+    
+    // Delegate record reading and dynamic 30% recent sorting to the background Database Isolate
+    try {
+      final List<dynamic> results = await IsolateWorker.instance.execute<List<dynamic>>(
+        'dbGetAll',
+        {'dbName': dbName},
+      );
+      return results.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+    } catch (e) {
+      debugPrint("SqliteHelper.getAll Isolate error, falling back to local raw read: $e");
+      return await getAllRaw(dbName);
+    }
   }
 
   static Future<Map<String, dynamic>?> get(String dbName, String key) async {
@@ -151,36 +155,16 @@ class SqliteHelper {
 
   static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
     if (kIsWeb) return;
-    final db = await _database;
-    final tableName = _fileService.sanitizeName(dbName);
-    await initTable(dbName);
-
-    db.execute('BEGIN TRANSACTION');
+    
+    // Delegate batch updates to the background Database Isolate transaction
     try {
-      final stmt = db.prepare('INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)');
-      for (var entry in items.entries) {
-        final id = entry.key.replaceFirst('$dbName:', '');
-        final Map<String, dynamic> recordVal = entry.value is Map ? Map<String, dynamic>.from(entry.value as Map) : {};
-        final businessKeyVal = await _extractBusinessKeyValue(dbName, recordVal, id);
-        
-        int isActive = 1;
-        final meta = recordVal['__meta__'];
-        if (meta is Map) {
-          final time = meta['time'];
-          if (time is Map) {
-            if (time.containsKey('a') || time.containsKey('d')) {
-              isActive = 0;
-            }
-          }
-        }
-
-        stmt.execute([id, businessKeyVal, isActive, jsonEncode(entry.value)]);
-      }
-      stmt.dispose();
-      db.execute('COMMIT');
+      await IsolateWorker.instance.execute(
+        'dbUpdateAll',
+        {'dbName': dbName, 'items': items},
+      );
     } catch (e) {
-      db.execute('ROLLBACK');
-      rethrow;
+      debugPrint("SqliteHelper.updateAll Isolate error, falling back to local raw update: $e");
+      await updateAllRaw(dbName, items);
     }
   }
 
@@ -251,4 +235,53 @@ class SqliteHelper {
       [schemaName, keyName],
     );
   }
+
+  static Future<List<Map<String, dynamic>>> getAllRaw(String dbName) async {
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+
+    final results = db.select('SELECT id, value FROM "$tableName"');
+    return results.map((row) {
+      final key = row['id'] as String;
+      final value = jsonDecode(row['value'] as String);
+      return {key: value is Map ? Map<String, dynamic>.from(value) : value};
+    }).toList();
+  }
+
+  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items) async {
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+
+    db.execute('BEGIN TRANSACTION');
+    try {
+      final stmt = db.prepare('INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)');
+      for (var entry in items.entries) {
+        final id = entry.key.replaceFirst('$dbName:', '');
+        final Map<String, dynamic> recordVal = entry.value is Map ? Map<String, dynamic>.from(entry.value as Map) : {};
+        final businessKeyVal = await _extractBusinessKeyValue(dbName, recordVal, id);
+        
+        int isActive = 1;
+        final meta = recordVal['__meta__'];
+        if (meta is Map) {
+          final time = meta['time'];
+          if (time is Map) {
+            if (time.containsKey('a') || time.containsKey('d')) {
+              isActive = 0;
+            }
+          }
+        }
+
+        stmt.execute([id, businessKeyVal, isActive, jsonEncode(entry.value)]);
+      }
+      stmt.dispose();
+      db.execute('COMMIT');
+    } catch (e) {
+      db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
 }
+
+

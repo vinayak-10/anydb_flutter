@@ -4,6 +4,7 @@ import 'storage_service.dart';
 import 'meta_service.dart';
 import 'event_trigger_service.dart';
 import 'sqlite_helper.dart';
+import 'isolate_worker.dart';
 
 class ElementDb {
   String key = '';
@@ -392,6 +393,52 @@ class ElementDb {
   List<ElementModel> search(String query) {
     if (query.isEmpty) return elements;
     return elements.where((e) => e.match(query)[0]).toList();
+  }
+
+  Future<List<ElementModel>> searchAsync(String query) async {
+    if (query.isEmpty) return elements;
+    try {
+      final List<dynamic> rawResults = await IsolateWorker.instance.execute<List<dynamic>>(
+        'dbSearch',
+        {'dbName': key, 'query': query},
+      );
+      
+      final mappedResults = rawResults.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+      return mappedResults.map((data) => ElementModel.lazy(dbSchema, intf, data)).toList();
+    } catch (e) {
+      debugPrint("ElementDb.searchAsync error, falling back to local sync search: $e");
+      return search(query);
+    }
+  }
+
+  List<ElementModel> applyFilterTo(List<ElementModel> list, String filterType) {
+    if (filterType == 'All') return list;
+    
+    return list.where((e) {
+      final data = e.fetch();
+      final val = data.values.first;
+      final meta = val['__meta__'];
+      
+      if (filterType == 'Active') {
+        if (meta == null) return true;
+        final time = meta['time'] ?? {};
+        return !time.containsKey('a') && !time.containsKey('d');
+      }
+      
+      if (filterType == 'Archived') {
+        if (meta == null) return false;
+        final time = meta['time'] ?? {};
+        return time.containsKey('a');
+      }
+
+      if (filterType == 'Deleted') {
+        if (meta == null) return false;
+        final time = meta['time'] ?? {};
+        return time.containsKey('d');
+      }
+      
+      return true;
+    }).toList();
   }
 
   Future<void> close() async {

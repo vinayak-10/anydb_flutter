@@ -9,7 +9,7 @@ class SettingsState {
   SettingsState({
     this.fontScale = 1.0, 
     this.inputFontScale = 1.0,
-    this.enableTabletSplitView = true,
+    this.enableTabletSplitView = false,
   });
 
   SettingsState copyWith({
@@ -32,14 +32,14 @@ class SettingsNotifier extends Notifier<SettingsState> {
   @override
   SettingsState build() {
     _load();
-    return SettingsState(fontScale: 1.0, inputFontScale: 1.0, enableTabletSplitView: true);
+    return SettingsState(fontScale: 1.0, inputFontScale: 1.0, enableTabletSplitView: false);
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final scale = prefs.getDouble('fontScale') ?? 1.0;
     final inputScale = prefs.getDouble('inputFontScale') ?? 1.0;
-    final tabletSplit = prefs.getBool('enableTabletSplitView') ?? true;
+    final tabletSplit = prefs.getBool('enableTabletSplitView') ?? false;
     state = state.copyWith(
       fontScale: scale, 
       inputFontScale: inputScale,

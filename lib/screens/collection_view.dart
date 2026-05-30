@@ -733,6 +733,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   String? _activeBusinessKeyName;
   bool _showLandingPage = true;
   late TextEditingController _landingSearchController;
+  List<ElementModel>? _searchResults;
 
   bool get showLandingPage => _showLandingPage;
 
@@ -740,7 +741,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   void initState() {
     super.initState();
     _landingSearchController = TextEditingController(text: widget.searchQuery);
+    _landingSearchController.addListener(() {
+      _triggerSearch(_landingSearchController.text);
+    });
     _init();
+    if (widget.searchQuery.isNotEmpty) {
+      _triggerSearch(widget.searchQuery);
+    }
   }
 
   @override
@@ -748,6 +755,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     super.didUpdateWidget(oldWidget);
     if (widget.searchQuery != oldWidget.searchQuery) {
       _landingSearchController.text = widget.searchQuery;
+      _triggerSearch(widget.searchQuery);
       if (widget.searchQuery.isNotEmpty) {
         setState(() {
           _showLandingPage = false;
@@ -762,6 +770,25 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     _listScrollController.dispose();
     _landingSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _triggerSearch(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      if (_searchResults != null) {
+        setState(() {
+          _searchResults = null;
+        });
+      }
+      return;
+    }
+    
+    final results = await widget.db.searchAsync(trimmed);
+    if (mounted) {
+      setState(() {
+        _searchResults = results;
+      });
+    }
   }
 
   Future<void> _init({bool forced = false}) async {
@@ -821,13 +848,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
     final String currentQuery = _landingSearchController.text.trim();
     final bool showResults = currentQuery.isNotEmpty;
 
-    // Real-time local database query matching
-    final List<ElementModel> matchingRecords = currentQuery.isEmpty
-        ? []
-        : widget.db.elements
-            .where((e) => e.match(currentQuery, exact: widget.isExactMatch)[0])
-            .take(8)
-            .toList();
+    // Real-time background-filtered database search matches across 100% of records
+    final List<ElementModel> matchingRecords = _searchResults != null
+        ? _searchResults!.take(8).toList()
+        : [];
 
     final double screenWidth = MediaQuery.of(context).size.width;
     final double screenHeight = MediaQuery.of(context).size.height;
@@ -1395,9 +1419,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
       );
     }
 
-    final filteredElements = widget.db.applyFilter(_currentFilter)
-        .where((e) => widget.searchQuery.isEmpty || e.match(widget.searchQuery, exact: widget.isExactMatch)[0])
-        .toList();
+    final filteredElements = _searchResults != null
+        ? widget.db.applyFilterTo(_searchResults!, _currentFilter)
+        : widget.db.applyFilter(_currentFilter);
     final settings = ref.watch(settingsProvider);
     final mediaWidth = MediaQuery.of(context).size.width;
     final useSplitView = settings.enableTabletSplitView && mediaWidth >= 800;
@@ -1417,34 +1441,37 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
                       Container(
                         color: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 4.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                                child: ChoiceChip(
-                                  label: Text(f, style: const TextStyle(fontSize: 10)),
-                                  selected: _currentFilter == f,
-                                  backgroundColor: Colors.white,
-                                  selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
-                                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
-                                  onSelected: (selected) {
-                                    if (selected && _currentFilter != f) {
-                                      setState(() {
-                                        _currentFilter = f;
-                                        _initialized = false;
-                                        _selectedElementForDetail = null;
-                                      });
-                                      _init(forced: true);
-                                    }
-                                  },
-                                ),
-                              )
-                            ).toList(),
-                          ],
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: Row(
+                            children: [
+                              ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                                  child: ChoiceChip(
+                                    label: Text(f, style: const TextStyle(fontSize: 10)),
+                                    selected: _currentFilter == f,
+                                    backgroundColor: Colors.white,
+                                    selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                                    onSelected: (selected) {
+                                      if (selected && _currentFilter != f) {
+                                        setState(() {
+                                          _currentFilter = f;
+                                          _initialized = false;
+                                          _selectedElementForDetail = null;
+                                        });
+                                        _init(forced: true);
+                                      }
+                                    },
+                                  ),
+                                )
+                              ).toList(),
+                            ],
+                          ),
                         ),
                       ),
 
@@ -1705,31 +1732,34 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                        child: ChoiceChip(
-                          label: Text(f, style: const TextStyle(fontSize: 12)),
-                          selected: _currentFilter == f,
-                          backgroundColor: Colors.white,
-                          selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
-                          onSelected: (selected) {
-                            if (selected && _currentFilter != f) {
-                              setState(() {
-                                _currentFilter = f;
-                                _initialized = false;
-                              });
-                              _init(forced: true);
-                            }
-                          },
-                        ),
-                      )
-                    ).toList(),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(left: 16.0, right: 72.0),
+                  child: Row(
+                    children: [
+                      ...['Active', 'Archived', 'Deleted', 'All'].map((f) => 
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                          child: ChoiceChip(
+                            label: Text(f, style: const TextStyle(fontSize: 12)),
+                            selected: _currentFilter == f,
+                            backgroundColor: Colors.white,
+                            selectedColor: const Color(0xFFE9967A).withOpacity(0.1),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: _currentFilter == f ? const Color(0xFFE9967A) : Colors.grey.shade200)),
+                            onSelected: (selected) {
+                              if (selected && _currentFilter != f) {
+                                setState(() {
+                                  _currentFilter = f;
+                                  _initialized = false;
+                                });
+                                _init(forced: true);
+                              }
+                            },
+                          ),
+                        )
+                      ).toList(),
+                    ],
+                  ),
                 ),
               ),
 

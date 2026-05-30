@@ -1,9 +1,4 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'file_service.dart';
-
 class SqliteHelper {
-  static final FileService _fileService = FileService();
 
   static Future<void> initTable(String dbName) async {
     return;
@@ -46,6 +41,14 @@ class SqliteHelper {
   }
 
   static Future<void> setBusinessUniqueKey(String schemaName, String keyName) async {
+    return;
+  }
+
+  static Future<List<Map<String, dynamic>>> getAllRaw(String dbName) async {
+    return [];
+  }
+
+  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items) async {
     return;
   }
 }
