@@ -407,6 +407,35 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
     }
   }
 
+  void _generateDailyReportForToday() {
+    AppContent? reportsContent;
+    for (var content in widget.contents) {
+      if (content.type == ContentType.aggregator) {
+        reportsContent = content;
+        break;
+      }
+    }
+    if (reportsContent == null || reportsContent.service is! AggregatorService) return;
+    
+    final agg = reportsContent.service as AggregatorService;
+    final dailyReport = agg.reports.firstWhere(
+      (r) => r.key.toLowerCase().contains("daily"),
+      orElse: () => agg.reports.first,
+    );
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AggregatorReportView(
+          report: dailyReport,
+          agg: agg,
+          selectedDate: DateTime.now(),
+          schemaTitle: widget.title,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.contents.isEmpty) {
@@ -549,7 +578,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (!isDatabaseLanding)
+                          if (currentContent.type == ContentType.database && !isDatabaseLanding)
                             IconButton(
                               icon: const Icon(Icons.search, size: 26, color: Colors.brown),
                               onPressed: () => setState(() => _isSearching = true),
@@ -677,22 +706,107 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           }
         }).toList(),
       ),
-      bottomNavigationBar: Container(
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF6B1524),
+        foregroundColor: Colors.white,
+        elevation: 6,
+        shape: const CircleBorder(side: BorderSide(color: Color(0xFFE5C158), width: 1.5)),
+        onPressed: () {
+          if (_currentTabIndex == 0) {
+            int dbIdx = -1;
+            for (int i = 0; i < widget.contents.length; i++) {
+              if (widget.contents[i].type == ContentType.database) {
+                dbIdx = i;
+                break;
+              }
+            }
+            if (dbIdx != -1) {
+              final dbState = _dbKeys[dbIdx].currentState;
+              if (dbState != null) {
+                dbState.toggleLandingPage();
+              }
+            }
+          } else {
+            _generateDailyReportForToday();
+          }
+        },
+        child: Icon(
+          _currentTabIndex == 0 
+            ? (isDatabaseLanding ? Icons.list : Icons.home) 
+            : Icons.today, 
+          size: 28,
+        ),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8.0,
         color: Colors.white,
+        elevation: 8,
         child: SafeArea(
-          bottom: true,
-          child: TabBar(
-            controller: _tabController,
-            isScrollable: widget.contents.length > 3,
-            tabAlignment: widget.contents.length > 3 ? TabAlignment.center : TabAlignment.fill,
-            labelColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Theme.of(context).colorScheme.primary,
-            labelPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-            tabs: widget.contents.map<Widget>((c) => Tab(
-              text: c.name,
-              icon: Icon(c.type == ContentType.database ? Icons.storage : Icons.assessment),
-            )).toList(),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    if (_currentTabIndex != 0) {
+                      _tabController.animateTo(0);
+                    }
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        widget.contents[0].type == ContentType.database ? Icons.storage : Icons.assessment,
+                        color: _currentTabIndex == 0 ? const Color(0xFFE9967A) : Colors.grey,
+                        size: 24,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.contents[0].name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _currentTabIndex == 0 ? const Color(0xFFE9967A) : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 64),
+              if (widget.contents.length > 1)
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      if (_currentTabIndex != 1) {
+                        _tabController.animateTo(1);
+                      }
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          widget.contents[1].type == ContentType.database ? Icons.storage : Icons.assessment,
+                          color: _currentTabIndex == 1 ? const Color(0xFFE9967A) : Colors.grey,
+                          size: 24,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.contents[1].name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: _currentTabIndex == 1 ? const Color(0xFFE9967A) : Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -846,11 +960,24 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
     _init(forced: true);
   }
 
+  void toggleLandingPage() {
+    setState(() {
+      _showLandingPage = !_showLandingPage;
+      if (!_showLandingPage) {
+        _initialized = false;
+      }
+    });
+    widget.onLandingPageChanged?.call();
+    _init(forced: true);
+  }
+
   void _executeSearch(String query, {bool transitionToList = false}) {
     if (transitionToList) {
       setState(() {
         _showLandingPage = false;
         _currentFilter = 'Active'; // Defaults list view to 'Active' records
+        _searchResults = null; // Clear search results cache to reload full context!
+        _landingSearchController.clear(); // Clear search bar input text!
         _initialized = false;
       });
       widget.onLandingPageChanged?.call();
@@ -896,6 +1023,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
 
     // 2. Search Input pill row (Common)
     Widget searchBar = Container(
+      key: _landingSearchKey,
       constraints: BoxConstraints(maxWidth: showResults ? double.infinity : 580.0),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -917,7 +1045,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
           const SizedBox(width: 8.0),
           Expanded(
             child: TextField(
-              key: _landingSearchKey,
               controller: _landingSearchController,
               focusNode: _landingFocusNode,
               autofocus: false,
@@ -1729,28 +1856,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
                 ),
               ],
             ),
-            // Home toggle FAB in Top Right (aligned with Active, Archive selection buttons row)
-            Positioned(
-              top: 6,
-              right: 16,
-              child: SafeArea(
-                child: FloatingActionButton(
-                  mini: true,
-                  heroTag: "fab_list_home_toggle_split",
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF6B1524),
-                  elevation: 2,
-                  onPressed: () {
-                    setState(() {
-                      _showLandingPage = true;
-                    });
-                    widget.onLandingPageChanged?.call();
-                  },
-                  tooltip: "Back to Home Landing",
-                  child: const Icon(Icons.home),
-                ),
-              ),
-            ),
+            const SizedBox.shrink(),
           ],
         ),
         floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
@@ -1973,28 +2079,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
               ),
             ],
           ),
-          // Home toggle FAB in Top Right (aligned with Active, Archive selection buttons row)
-          Positioned(
-            top: 6,
-            right: 16,
-            child: SafeArea(
-              child: FloatingActionButton(
-                mini: true,
-                heroTag: "fab_list_home_toggle_default",
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF6B1524),
-                elevation: 2,
-                onPressed: () {
-                  setState(() {
-                    _showLandingPage = true;
-                  });
-                  widget.onLandingPageChanged?.call();
-                },
-                tooltip: "Back to Home Landing",
-                child: const Icon(Icons.home),
-              ),
-            ),
-          ),
+          const SizedBox.shrink(),
         ],
       ),
       floatingActionButton: widget.selectedKeys.isEmpty ? _buildSpeedDialFab() : null,
