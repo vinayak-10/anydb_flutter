@@ -72,7 +72,7 @@ class SqliteHelper {
     return;
   }
 
-  static Future<void> updateRecordTimestamp(String dbName, String id, int timestamp) async {
+  static Future<void> updateRecordTimestamp(String dbName, String id, int isActive, int timestamp) async {
     return;
   }
 

@@ -24,13 +24,22 @@ class SqliteHelper {
       CREATE TABLE IF NOT EXISTS "record_timestamps" (
         db_name TEXT,
         id TEXT,
+        is_active INTEGER DEFAULT 1,
         timestamp INTEGER,
         PRIMARY KEY (db_name, id)
       )
     ''');
+
+    // Add is_active column to record_timestamps if not present
+    final columns = _db!.select('PRAGMA table_info("record_timestamps")');
+    final columnNames = columns.map((c) => c['name'] as String).toSet();
+    if (!columnNames.contains('is_active')) {
+      _db!.execute('ALTER TABLE "record_timestamps" ADD COLUMN is_active INTEGER DEFAULT 1');
+    }
+
     _db!.execute('''
-      CREATE INDEX IF NOT EXISTS "idx_record_timestamps_order" 
-      ON "record_timestamps" (db_name, timestamp DESC)
+      CREATE INDEX IF NOT EXISTS "idx_record_timestamps_active_order" 
+      ON "record_timestamps" (db_name, is_active, timestamp DESC)
     ''');
 
     return _db!;
@@ -179,7 +188,7 @@ class SqliteHelper {
 
     // Update Auxiliary timestamp table
     final int ts = _getLatestDateStatic(recordVal);
-    await updateRecordTimestamp(dbName, key, ts);
+    await updateRecordTimestamp(dbName, key, isActive, ts);
   }
 
   static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
@@ -338,7 +347,7 @@ class SqliteHelper {
     db.execute('BEGIN TRANSACTION');
     try {
       final stmt = db.prepare('INSERT OR REPLACE INTO "$tableName" (id, business_key_value, is_active, value) VALUES (?, ?, ?, ?)');
-      final stmtTs = db.prepare('INSERT OR REPLACE INTO "record_timestamps" (db_name, id, timestamp) VALUES (?, ?, ?)');
+      final stmtTs = db.prepare('INSERT OR REPLACE INTO "record_timestamps" (db_name, id, is_active, timestamp) VALUES (?, ?, ?, ?)');
       for (var entry in items.entries) {
         final id = entry.key.replaceFirst('$dbName:', '');
         final Map<String, dynamic> recordVal = entry.value is Map ? Map<String, dynamic>.from(entry.value as Map) : {};
@@ -360,7 +369,7 @@ class SqliteHelper {
         stmt.execute([id, businessKeyVal, isActive, jsonEncode(entry.value)]);
 
         final int ts = _getLatestDateStatic(recordVal);
-        stmtTs.execute([dbName, id, ts]);
+        stmtTs.execute([dbName, id, isActive, ts]);
       }
       stmt.dispose();
       stmtTs.dispose();
@@ -414,13 +423,22 @@ class SqliteHelper {
       CREATE TABLE IF NOT EXISTS "record_timestamps" (
         db_name TEXT,
         id TEXT,
+        is_active INTEGER DEFAULT 1,
         timestamp INTEGER,
         PRIMARY KEY (db_name, id)
       )
     ''');
+
+    // Add is_active column to record_timestamps if not present
+    final columns = db.select('PRAGMA table_info("record_timestamps")');
+    final columnNames = columns.map((c) => c['name'] as String).toSet();
+    if (!columnNames.contains('is_active')) {
+      db.execute('ALTER TABLE "record_timestamps" ADD COLUMN is_active INTEGER DEFAULT 1');
+    }
+
     db.execute('''
-      CREATE INDEX IF NOT EXISTS "idx_record_timestamps_order" 
-      ON "record_timestamps" (db_name, timestamp DESC)
+      CREATE INDEX IF NOT EXISTS "idx_record_timestamps_active_order" 
+      ON "record_timestamps" (db_name, is_active, timestamp DESC)
     ''');
   }
 
@@ -443,18 +461,28 @@ class SqliteHelper {
       
       db.execute('BEGIN TRANSACTION');
       try {
-        final stmt = db.prepare('INSERT OR REPLACE INTO "record_timestamps" (db_name, id, timestamp) VALUES (?, ?, ?)');
+        final stmt = db.prepare('INSERT OR REPLACE INTO "record_timestamps" (db_name, id, is_active, timestamp) VALUES (?, ?, ?, ?)');
         for (var row in results) {
           final id = row['id'] as String;
           final valueStr = row['value'] as String;
           int ts = 0;
+          int isActive = 1;
           try {
             final decoded = jsonDecode(valueStr);
             if (decoded is Map) {
               ts = _getLatestDateStatic(Map<String, dynamic>.from(decoded));
+              final meta = decoded['__meta__'];
+              if (meta is Map) {
+                final time = meta['time'];
+                if (time is Map) {
+                  if (time.containsKey('a') || time.containsKey('d')) {
+                    isActive = 0;
+                  }
+                }
+              }
             }
           } catch (_) {}
-          stmt.execute([dbName, id, ts]);
+          stmt.execute([dbName, id, isActive, ts]);
         }
         stmt.dispose();
         db.execute('COMMIT');
@@ -465,13 +493,13 @@ class SqliteHelper {
     }
   }
 
-  static Future<void> updateRecordTimestamp(String dbName, String id, int timestamp) async {
+  static Future<void> updateRecordTimestamp(String dbName, String id, int isActive, int timestamp) async {
     if (kIsWeb) return;
     final db = await _database;
     await initTimestampsTable();
     db.execute(
-      'INSERT OR REPLACE INTO "record_timestamps" (db_name, id, timestamp) VALUES (?, ?, ?)',
-      [dbName, id, timestamp],
+      'INSERT OR REPLACE INTO "record_timestamps" (db_name, id, is_active, timestamp) VALUES (?, ?, ?, ?)',
+      [dbName, id, isActive, timestamp],
     );
   }
 
@@ -481,7 +509,7 @@ class SqliteHelper {
     await initTimestampsTable();
     
     final results = db.select(
-      'SELECT id FROM "record_timestamps" WHERE db_name = ? ORDER BY timestamp DESC LIMIT ?',
+      'SELECT id FROM "record_timestamps" WHERE db_name = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT ?',
       [dbName, limit],
     );
     return results.map((row) => row['id'] as String).toList();
