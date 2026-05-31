@@ -3142,24 +3142,6 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                             if (picked != null) setState(() => _selectedDate = picked);
                           },
                         ),
-                        if (widget.agg.key.toLowerCase().contains("monthly") || 
-                            widget.agg.reports.any((r) => r.key.toLowerCase().contains("monthly")))
-                          ListTile(
-                            leading: const Icon(Icons.date_range),
-                            title: const Text("Date Range (Optional)"),
-                            subtitle: Text(_selectedRange == null 
-                                ? "Select range for Monthly Report" 
-                                : "${DateFormat.yMd().format(_selectedRange!.start)} - ${DateFormat.yMd().format(_selectedRange!.end)}"),
-                            trailing: const Icon(Icons.edit),
-                            onTap: () async {
-                              final picked = await showDateRangePicker(
-                                context: context,
-                                firstDate: DateTime(2000),
-                                lastDate: DateTime(2100),
-                              );
-                              if (picked != null) setState(() => _selectedRange = picked);
-                            },
-                          ),
                       ],
                     ),
                   ),
