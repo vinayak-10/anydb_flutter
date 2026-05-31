@@ -30,36 +30,42 @@ class SchemaService {
     await _loadFromDir(internalRoot);
 
     // 2. Load from external storage
-    final externalRoot = await _fileService.getExternalRoot();
-    await _loadFromDir(externalRoot);
+    try {
+      final externalRoot = await _fileService.getExternalRoot();
+      await _loadFromDir(externalRoot);
+    } catch (e) {
+      debugPrint("SchemaService: External storage schema loading bypassed or failed: $e");
+    }
     
     debugPrint("SchemaService: init finished, loaded ${_schemas.length} schemas");
   }
 
   Future<void> _loadFromDir(String path) async {
-    if (!kIsWeb) {
-      if (!await io.dirExists(path)) {
-        await io.createDir(path);
+    try {
+      if (!kIsWeb) {
+        await _fileService.ensureDir(path);
       }
-    }
 
-    final files = await _fileService.getFiles(path, 'json');
-    for (var filePath in files) {
-      debugPrint("SchemaService: checking schema at $filePath");
-      try {
-        final content = await _fileService.readJson(filePath);
-        if (content != null && content is Map && content.containsKey('name')) {
-          // Avoid duplicates by path
-          if (!_schemas.any((s) => s.path == filePath)) {
-            _schemas.add(SchemaInfo(
-              name: content['name'].toString(),
-              path: filePath,
-            ));
+      final files = await _fileService.getFiles(path, 'json');
+      for (var filePath in files) {
+        debugPrint("SchemaService: checking schema at $filePath");
+        try {
+          final content = await _fileService.readJson(filePath);
+          if (content != null && content is Map && content.containsKey('name')) {
+            // Avoid duplicates by path
+            if (!_schemas.any((s) => s.path == filePath)) {
+              _schemas.add(SchemaInfo(
+                name: content['name'].toString(),
+                path: filePath,
+              ));
+            }
           }
+        } catch (e) {
+          debugPrint("SchemaService: Failed to load schema from $filePath: $e");
         }
-      } catch (e) {
-        debugPrint("SchemaService: Failed to load schema from $filePath: $e");
       }
+    } catch (e) {
+      debugPrint("SchemaService: Failed to load schemas from directory '$path': $e");
     }
   }
 

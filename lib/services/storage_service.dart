@@ -264,7 +264,14 @@ class FileStore extends StorageInterface {
   @override
   Future<void> importData(List<dynamic> data) async {
     if (kIsWeb) return;
-    await _fileService.writeJson(_dbPath, '$_dbName.json', data);
+    // Asynchronously offload serialization and disk write to the background Process Isolate
+    IsolateWorker.instance.execute('bgWriteJson', {
+      'path': _dbPath,
+      'fileName': '$_dbName.json',
+      'content': data,
+    }).catchError((e) {
+      debugPrint("FileStore: Background JSON write failed in Process Isolate: $e");
+    });
   }
 
   @override

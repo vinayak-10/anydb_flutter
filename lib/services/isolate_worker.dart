@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'workbook_service.dart';
 import 'schema_service.dart';
 import 'sqlite_helper.dart'; // Direct warm database access
+import 'file_service.dart';
+
 
 class IsolateWorker {
   static final IsolateWorker _instance = IsolateWorker._internal();
@@ -81,6 +83,13 @@ class IsolateWorker {
         'dbSendPort': _dbSendPort,
       });
 
+      // 4. Resolve raw internal path on main thread and establish SQLite folder mapping
+      final rootPath = await FileService().getInternalRoot();
+      _dbSendPort!.send({
+        'type': 'initPath',
+        'path': rootPath,
+      });
+
       _initialized = true;
       debugPrint("IsolateWorker: Dual persistent worker pool successfully established.");
     } catch (e) {
@@ -134,6 +143,12 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
 
   workerReceivePort.listen((message) async {
     if (message is Map) {
+      // Warm SQLite path handshake check
+      if (message['type'] == 'initPath') {
+        SqliteHelper.databasePathOverride = message['path'] as String?;
+        return;
+      }
+
       // IPC channel check
       if (message['type'] == 'ipcGetBackup') {
         final SendPort replyPort = message['replyPort'];
@@ -420,6 +435,12 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       return WorkbookService.readSheetInIsolate(params);
     case 'parseSchema':
       return parseSchemaJsonInIsolate(params['jsonStr'] ?? "");
+    case 'bgWriteJson':
+      final String path = params['path'];
+      final String fileName = params['fileName'];
+      final dynamic content = params['content'];
+      await FileService().writeJson(path, fileName, content);
+      return null;
     default:
       throw "Process Isolate: Unknown task type '$type'";
   }
@@ -440,6 +461,12 @@ dynamic _executeTaskSync(String type, Map<String, dynamic> params) {
       return parseSchemaJsonInIsolate(params['jsonStr'] ?? "");
     case 'dbImportData':
       return 0;
+    case 'bgWriteJson':
+      final String path = params['path'];
+      final String fileName = params['fileName'];
+      final dynamic content = params['content'];
+      FileService().writeJson(path, fileName, content);
+      return null;
     default:
       throw "IsolateWorker: Unknown task type '$type'";
   }

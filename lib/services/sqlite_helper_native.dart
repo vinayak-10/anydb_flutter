@@ -8,16 +8,19 @@ import 'isolate_worker.dart';
 class SqliteHelper {
   static sql.Database? _db;
   static final FileService _fileService = FileService();
+  static String? databasePathOverride;
 
   static Future<sql.Database> get _database async {
     if (_db != null) return _db!;
     
-    final root = await _fileService.getInternalRoot();
+    final root = databasePathOverride ?? await _fileService.getInternalRoot();
     final dbPath = p.join(root, 'anydb_storage.db');
     await _fileService.ensureDir(root);
     
     _db = sql.sqlite3.open(dbPath);
     _db!.execute('PRAGMA journal_mode=WAL;');
+    _db!.execute('PRAGMA cache_size = -32000;');
+    _db!.execute('PRAGMA temp_store = MEMORY;');
 
     // Guaranteed creation of Auxiliary Registry on app start
     _db!.execute('''

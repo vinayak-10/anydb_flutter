@@ -1,4 +1,5 @@
 class SqliteHelper {
+  static String? databasePathOverride;
 
   static Future<void> initTable(String dbName) async {
     return;

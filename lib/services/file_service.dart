@@ -73,8 +73,12 @@ class FileService {
 
   Future<void> ensureDir(String path) async {
     if (kIsWeb) return;
-    if (!await io.dirExists(path)) {
-      await io.createDir(path);
+    try {
+      if (!await io.dirExists(path)) {
+        await io.createDir(path);
+      }
+    } catch (e) {
+      debugPrint("FileService: ensureDir failed for path '$path': $e");
     }
   }
 
