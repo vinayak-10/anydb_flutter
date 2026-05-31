@@ -64,21 +64,28 @@ class LocalStore extends StorageInterface {
 
   @override
   Future<void> importData(List<dynamic> data) async {
-    final currentEntries = await fetch();
-    
-    // Offload the heavy merging logic to the persistent background IsolateWorker pool
-    final result = await IsolateWorker.instance.execute<Map<String, dynamic>>(
-      'importMerge',
-      {'dbName': _dbName, 'data': data, 'currentEntries': currentEntries},
-    );
-
-    final Map<String, dynamic> itemsToUpdate = result['itemsToUpdate'];
-    final int importedCount = result['importedCount'];
-    
-    if (itemsToUpdate.isNotEmpty) {
-      await AsyncStore.updateAll(_dbName, itemsToUpdate);
+    if (kIsWeb) {
+      final currentEntries = await fetch();
+      final result = processImportLogic({
+        'dbName': _dbName,
+        'data': data,
+        'currentEntries': currentEntries,
+      });
+      final Map<String, dynamic> itemsToUpdate = result['itemsToUpdate'];
+      final int importedCount = result['importedCount'];
+      if (itemsToUpdate.isNotEmpty) {
+        await AsyncStore.updateAll(_dbName, itemsToUpdate);
+      }
+      debugPrint("LocalStore (Web): Imported $importedCount records.");
+      return;
     }
-    debugPrint("LocalStore: Imported $importedCount records (Total input: ${data.length}).");
+
+    // Native: Offload the entire fetch-merge-write sequence directly to the persistent background Database Isolate (Zero IPC round-trips!)
+    final int importedCount = await IsolateWorker.instance.execute<int>(
+      'dbImportData',
+      {'dbName': _dbName, 'data': data},
+    );
+    debugPrint("LocalStore (Native): Imported $importedCount records (Total input: ${data.length}).");
   }
 
   @override

@@ -4,7 +4,6 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'workbook_service.dart';
 import 'schema_service.dart';
-import 'storage_service.dart';
 import 'sqlite_helper.dart'; // Direct warm database access
 
 class IsolateWorker {
@@ -329,19 +328,79 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       }
       return null;
 
-    case 'importMerge':
-      // Offload import logic merges inside the database Isolate
-      final result = processImportLogic(params);
-      
-      // Pre-update background cache for merged items as raw strings to preserve immediate searchability
+    case 'dbImportData':
       final String dbName = params['dbName'];
-      final Map<String, dynamic> itemsToUpdate = result['itemsToUpdate'];
-      final tableCache = bgCache[dbName] ??= {};
-      for (var entry in itemsToUpdate.entries) {
-        final id = entry.key.replaceFirst('$dbName:', '');
-        tableCache[id] = jsonEncode(entry.value);
+      final List<dynamic> data = params['data'];
+
+      // 1. Fetch current raw string records directly inside the isolate in micro-seconds (No IPC!)
+      final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+      
+      // 2. Build the warm memory cache for fast O(1) matching
+      final Map<String, Map<String, dynamic>> cache = {};
+      for (var rec in rawRecords) {
+        final key = rec['id']!;
+        try {
+          final decoded = jsonDecode(rec['value']!);
+          if (decoded is Map) {
+            cache[key] = Map<String, dynamic>.from(decoded);
+          }
+        } catch (_) {}
       }
-      return result;
+
+      // 3. Process the merge comparison in Isolate RAM
+      final Map<String, dynamic> itemsToUpdate = {};
+      int importedCount = 0;
+
+      for (var item in data) {
+        try {
+          if (item is! Map) continue;
+          final Map<String, dynamic> m = Map<String, dynamic>.from(item);
+          if (m.isEmpty) continue;
+
+          String? key;
+          Map<String, dynamic>? val;
+
+          if (m.length == 1 && m.values.first is Map) {
+            key = m.keys.first;
+            val = Map<String, dynamic>.from(m.values.first as Map);
+          } else {
+            key = m['Card Number']?.toString() ?? m['key']?.toString() ?? m['id']?.toString();
+            val = m;
+          }
+
+          if (key == null) continue;
+
+          if (cache.containsKey(key)) {
+            final existingRecord = cache[key];
+            if (existingRecord != null) {
+              final existingDate = _getLatestDateStaticForImport(existingRecord);
+              final incomingDate = _getLatestDateStaticForImport(val);
+              if (incomingDate >= existingDate) {
+                itemsToUpdate['$dbName:$key'] = val;
+                importedCount++;
+              }
+            }
+          } else {
+            itemsToUpdate['$dbName:$key'] = val;
+            importedCount++;
+          }
+        } catch (_) {}
+      }
+
+      // 4. Perform direct transactional batch write to SQLite inside the Database Isolate (zero IPC!)
+      if (itemsToUpdate.isNotEmpty) {
+        final businessKeyName = await SqliteHelper.getBusinessUniqueKeyRaw(dbName);
+        await SqliteHelper.updateAllRaw(dbName, itemsToUpdate, businessKeyName);
+        
+        // 5. Update the background warm cache in place
+        final tableCache = bgCache[dbName] ??= {};
+        for (var entry in itemsToUpdate.entries) {
+          final id = entry.key.replaceFirst('$dbName:', '');
+          tableCache[id] = jsonEncode(entry.value);
+        }
+      }
+
+      return importedCount;
 
     default:
       throw "Database Isolate: Unknown task type '$type'";
@@ -379,11 +438,47 @@ dynamic _executeTaskSync(String type, Map<String, dynamic> params) {
       return WorkbookService.readSheetInIsolate(params);
     case 'parseSchema':
       return parseSchemaJsonInIsolate(params['jsonStr'] ?? "");
-    case 'importMerge':
-      return processImportLogic(params);
+    case 'dbImportData':
+      return 0;
     default:
       throw "IsolateWorker: Unknown task type '$type'";
   }
+}
+
+int _getLatestDateStaticForImport(Map<String, dynamic> record) {
+  int maxDate = 0;
+  try {
+    final account = record['Account'];
+    if (account is Map && account.isNotEmpty) {
+      final history = account.values.first;
+      if (history is List) {
+        for (var tx in history) {
+          if (tx is Map) {
+            final d = tx['Date'] ?? tx['Transaction Date'] ?? tx['time'];
+            if (d != null) {
+              int dt = 0;
+              if (d is int) {
+                dt = d;
+              } else if (d is String) {
+                dt = DateTime.tryParse(d)?.millisecondsSinceEpoch ?? int.tryParse(d) ?? 0;
+              }
+              if (dt > maxDate) maxDate = dt;
+            }
+          }
+        }
+      }
+    }
+    
+    final meta = record['__meta__'];
+    if (meta is Map) {
+      final time = meta['time'];
+      if (time is Map) {
+        final u = time['u'] ?? time['c'];
+        if (u is int && u > maxDate) maxDate = u;
+      }
+    }
+  } catch (_) {}
+  return maxDate;
 }
 
 
