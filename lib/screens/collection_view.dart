@@ -61,6 +61,10 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
         setState(() {
           _currentTabIndex = _tabController.index;
           _selectedKeys.clear();
+          // Reset outer search parameters on tab change
+          _isSearching = false;
+          _searchQuery = '';
+          _searchController.clear();
         });
       }
     });
@@ -723,7 +727,10 @@ class _DatabaseView extends ConsumerStatefulWidget {
   ConsumerState<_DatabaseView> createState() => _DatabaseViewState();
 }
 
-class _DatabaseViewState extends ConsumerState<_DatabaseView> {
+class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeepAliveClientMixin<_DatabaseView> {
+  @override
+  bool get wantKeepAlive => true;
+
   String _currentFilter = 'Active';
   bool _initialized = false;
   final ScrollController _listScrollController = ScrollController();
@@ -735,6 +742,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
   late TextEditingController _landingSearchController;
   List<ElementModel>? _searchResults;
   late FocusNode _landingFocusNode;
+  final GlobalKey _landingSearchKey = GlobalKey(debugLabel: 'landingSearchField');
 
   bool get showLandingPage => _showLandingPage;
 
@@ -909,7 +917,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
           const SizedBox(width: 8.0),
           Expanded(
             child: TextField(
-              key: const ValueKey('landing_search_field'),
+              key: _landingSearchKey,
               controller: _landingSearchController,
               focusNode: _landingFocusNode,
               autofocus: false,
@@ -1402,6 +1410,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final bool showLanding = _showLandingPage && widget.searchQuery.isEmpty;
     if (showLanding) {
       final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
