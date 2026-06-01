@@ -531,7 +531,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
 
     return Scaffold(
       backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       appBar: _selectedKeys.isNotEmpty 
         ? AppBar(
             backgroundColor: Colors.orange.shade50,
@@ -1732,7 +1732,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
 
       return Scaffold(
         backgroundColor: Colors.white,
-        resizeToAvoidBottomInset: false, // Prevents keyboard from pushing up bottom elements (FAB disappears behind keyboard)
+        resizeToAvoidBottomInset: true, // Allows search bar to slide up and stay visible above the keyboard
         body: _buildSearchLandingPage(),
         floatingActionButton: (widget.selectedKeys.isEmpty && !hideFab) ? _buildSpeedDialFab() : null,
       );
