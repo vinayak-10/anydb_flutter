@@ -226,7 +226,7 @@ void _processWorkerEntryPoint(SendPort mainSendPort) {
   });
 }
 
-bool _recordMatchesQuery(Map<String, dynamic> record, String query, List<String> searchableFields) {
+bool _recordMatchesQuery(Map<String, dynamic> record, String query, List<String> searchableFields, {bool exact = false}) {
   final bool filterBySearchable = searchableFields.isNotEmpty;
   
   for (var entry in record.entries) {
@@ -237,20 +237,57 @@ bool _recordMatchesQuery(Map<String, dynamic> record, String query, List<String>
     final bool isSearchable = !filterBySearchable || searchableFields.contains(key);
     
     if (val is Map) {
-      if (_recordMatchesQuery(Map<String, dynamic>.from(val), query, searchableFields)) return true;
+      if (_recordMatchesQuery(Map<String, dynamic>.from(val), query, searchableFields, exact: exact)) return true;
     } else if (val is List) {
       for (var item in val) {
         if (item is Map) {
-          if (_recordMatchesQuery(Map<String, dynamic>.from(item), query, searchableFields)) return true;
-        } else if (isSearchable && item?.toString().toLowerCase().contains(query) == true) {
-          return true;
+          if (_recordMatchesQuery(Map<String, dynamic>.from(item), query, searchableFields, exact: exact)) return true;
+        } else if (isSearchable) {
+          final itemStr = item?.toString().toLowerCase() ?? '';
+          final matched = exact ? (itemStr == query) : itemStr.contains(query);
+          if (matched) return true;
         }
       }
-    } else if (isSearchable && val?.toString().toLowerCase().contains(query) == true) {
-      return true;
+    } else if (isSearchable) {
+      final valStr = val?.toString().toLowerCase() ?? '';
+      final matched = exact ? (valStr == query) : valStr.contains(query);
+      if (matched) return true;
     }
   }
   return false;
+}
+bool _recordMatchesFilter(Map<String, dynamic> record, String filter) {
+  if (filter == 'All') return true;
+  
+  Map<dynamic, dynamic>? meta;
+  if (record.containsKey('__meta__')) {
+    meta = record['__meta__'] as Map?;
+  } else if (record.values.isNotEmpty && record.values.first is Map) {
+    final firstVal = record.values.first as Map;
+    if (firstVal.containsKey('__meta__')) {
+      meta = firstVal['__meta__'] as Map?;
+    }
+  }
+  
+  if (filter == 'Active') {
+    if (meta == null) return true;
+    final time = meta['time'] ?? {};
+    return !time.containsKey('a') && !time.containsKey('d');
+  }
+  
+  if (filter == 'Archived') {
+    if (meta == null) return false;
+    final time = meta['time'] ?? {};
+    return time.containsKey('a');
+  }
+  
+  if (filter == 'Deleted') {
+    if (meta == null) return false;
+    final time = meta['time'] ?? {};
+    return time.containsKey('d');
+  }
+  
+  return true;
 }
 
 // ==========================================
@@ -270,28 +307,41 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
 
     case 'dbGetAll':
       final String dbName = params['dbName'];
-      
+      final String filter = params['filter']?.toString() ?? 'Active';
+
       // 1. Ensure timestamps table is initialized and backfilled
       await SqliteHelper.backfillTimestamps(dbName);
-      
-      // 2. Fetch all raw string records from SQLite (near-instant)
-      final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
-      
+
+      // 2. Fetch raw records matching filter (near-instant)
+      List<Map<String, String>> rawRecords;
+      if (filter == 'Active') {
+        rawRecords = await SqliteHelper.getActiveRecordsRawString(dbName);
+      } else if (filter == 'Archived' || filter == 'Deleted') {
+        rawRecords = await SqliteHelper.getInactiveRecordsRawString(dbName);
+      } else {
+        rawRecords = await SqliteHelper.getAllRawString(dbName);
+      }
+
       // 3. Populate background warm memory cache
       final Map<String, String> tableCache = bgCache[dbName] ??= {};
-      tableCache.clear();
+      if (filter == 'Active') {
+        tableCache.clear();
+      }
       for (var rec in rawRecords) {
         tableCache[rec['id']!] = rec['value']!;
       }
-      
-      // 4. Determine 30% boundary limit
+      if (filter == 'Archived' || filter == 'Deleted' || filter == 'All') {
+        tableCache['__inactive_loaded__'] = 'true';
+      }
+
+      // 4. Determine 30% boundary limit based on the filtered records
       final int totalCount = rawRecords.length;
       final int limit = (totalCount * 0.30).round().clamp(100, totalCount);
-      
-      // 5. Query top recent IDs from timestamps table
-      final List<String> recentIds = await SqliteHelper.getTopRecentIds(dbName, limit);
-      
-      // 6. Look up raw strings from cache map (avoid SQL re-query and avoid jsonDecode sort loop)
+
+      // 5. Query top recent IDs from timestamps table using status filter
+      final List<String> recentIds = await SqliteHelper.getTopRecentIds(dbName, limit, filter: filter);
+
+      // 6. Look up raw strings from cache map
       final List<Map<String, String>> results = [];
       for (var id in recentIds) {
         final val = tableCache[id];
@@ -305,24 +355,46 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       final String dbName = params['dbName'];
       final String query = params['query'].toString().toLowerCase();
       final List<String> searchableFields = List<String>.from(params['searchableFields'] ?? []);
+      final bool exact = params['exact'] == true;
+      final String filter = params['filter']?.toString() ?? 'Active';
       
-      // Auto-populate cache in background isolate if not loaded yet
+      // Auto-populate cache with active records if not loaded yet
       var tableCache = bgCache[dbName];
       if (tableCache == null || tableCache.isEmpty) {
-        final List<Map<String, String>> allRecords = await SqliteHelper.getAllRawString(dbName);
+        final List<Map<String, String>> activeRecords = await SqliteHelper.getActiveRecordsRawString(dbName);
         tableCache = bgCache[dbName] = {};
-        for (var rec in allRecords) {
+        for (var rec in activeRecords) {
           tableCache[rec['id']!] = rec['value']!;
+        }
+      }
+      
+      // Lazy load inactive records when searching non-active views (Archived, Deleted, All)
+      if (filter != 'Active') {
+        final bool hasInactiveLoaded = tableCache['__inactive_loaded__'] == 'true';
+        if (!hasInactiveLoaded) {
+          final List<Map<String, String>> inactiveRecords = await SqliteHelper.getInactiveRecordsRawString(dbName);
+          for (var rec in inactiveRecords) {
+            tableCache[rec['id']!] = rec['value']!;
+          }
+          tableCache['__inactive_loaded__'] = 'true';
         }
       }
       
       final List<Map<String, dynamic>> matches = [];
       for (var entry in tableCache.entries) {
         final key = entry.key;
+        if (key.startsWith('__')) continue; // Ignore cache metadata like __inactive_loaded__
+        
         final valueStr = entry.value;
         final decoded = jsonDecode(valueStr);
-        if (decoded is Map && _recordMatchesQuery(Map<String, dynamic>.from(decoded), query, searchableFields)) {
-          matches.add({key: decoded});
+        if (decoded is Map) {
+          final decodedMap = Map<String, dynamic>.from(decoded);
+          
+          if (!_recordMatchesFilter(decodedMap, filter)) continue;
+          
+          if (_recordMatchesQuery(decodedMap, query, searchableFields, exact: exact)) {
+            matches.add({key: decoded});
+          }
         }
       }
       return matches;

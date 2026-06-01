@@ -27,6 +27,66 @@ import '../components/drawer_content.dart';
 import '../components/overlapping_screen.dart';
 import 'element_editor.dart';
 import '../core/settings_provider.dart';
+import '../utils/feedback_toast.dart';
+import '../components/empty_state_view.dart';
+
+class DbSearchState {
+  final bool isSearching;
+  final String searchQuery;
+  final bool showLandingPage;
+
+  DbSearchState({
+    this.isSearching = false,
+    this.searchQuery = '',
+    this.showLandingPage = true,
+  });
+
+  DbSearchState copyWith({
+    bool? isSearching,
+    String? searchQuery,
+    bool? showLandingPage,
+  }) {
+    return DbSearchState(
+      isSearching: isSearching ?? this.isSearching,
+      searchQuery: searchQuery ?? this.searchQuery,
+      showLandingPage: showLandingPage ?? this.showLandingPage,
+    );
+  }
+}
+
+class DbSearchNotifier extends Notifier<DbSearchState> {
+  @override
+  DbSearchState build() => DbSearchState();
+
+  void setSearching(bool val) {
+    state = state.copyWith(isSearching: val);
+  }
+
+  void setSearchQuery(String query) {
+    state = state.copyWith(searchQuery: query);
+  }
+
+  void setShowLandingPage(bool val) {
+    state = state.copyWith(showLandingPage: val);
+    // ⚡ RULE: If landing page becomes active, reset AppBar search state!
+    if (val) {
+      state = state.copyWith(isSearching: false, searchQuery: '');
+    }
+  }
+
+  void closeSearch() {
+    state = state.copyWith(isSearching: false, searchQuery: '');
+  }
+
+  void reset() {
+    state = DbSearchState();
+  }
+}
+
+// Global provider using standard Notifier
+final dbSearchProvider = NotifierProvider<DbSearchNotifier, DbSearchState>(() {
+  return DbSearchNotifier();
+});
 
 class CollectionView extends ConsumerStatefulWidget {
   final List<AppContent> contents;
@@ -41,9 +101,7 @@ class CollectionView extends ConsumerStatefulWidget {
 class _CollectionViewState extends ConsumerState<CollectionView> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _currentTabIndex = 0;
-  bool _isSearching = false;
   bool _isExactMatch = true;
-  String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   final List<GlobalKey<_DatabaseViewState>> _dbKeys = [];
   final Set<String> _selectedKeys = {};
@@ -61,11 +119,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
         setState(() {
           _currentTabIndex = _tabController.index;
           _selectedKeys.clear();
-          // Reset outer search parameters on tab change
-          _isSearching = false;
-          _searchQuery = '';
-          _searchController.clear();
         });
+        ref.read(dbSearchProvider.notifier).reset(); // Reset search state upon tab switches!
+        _searchController.clear();
       }
     });
   }
@@ -437,14 +493,15 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     if (widget.contents.isEmpty) {
       return const Scaffold(body: Center(child: Text("No contents in this Schema")));
     }
 
+    final searchState = ref.watch(dbSearchProvider);
     final currentContent = widget.contents[_currentTabIndex];
-    final bool isDatabaseLanding = currentContent.type == ContentType.database &&
-        (_dbKeys.length > _currentTabIndex && _dbKeys[_currentTabIndex].currentState?.showLandingPage == true);
+    final bool isDatabaseLanding = currentContent.type == ContentType.database && searchState.showLandingPage;
     String title = currentContent.name;
     String subtitle = "";
 
@@ -492,19 +549,16 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
             elevation: 0,
             toolbarHeight: 110.0,
             centerTitle: false,
-            leading: _isSearching 
+            leading: searchState.isSearching 
               ? IconButton(
                   icon: const Icon(Icons.keyboard_backspace, color: Color(0xFFE9967A)),
                   onPressed: () {
-                    setState(() {
-                      _isSearching = false;
-                      _searchQuery = '';
-                      _searchController.clear();
-                    });
+                    ref.read(dbSearchProvider.notifier).closeSearch();
+                    _searchController.clear();
                   },
                 )
               : null,
-            title: _isSearching 
+            title: searchState.isSearching 
               ? Row(
                   children: [
                     Expanded(
@@ -517,7 +571,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.symmetric(vertical: 20),
                         ),
-                        onChanged: (val) => setState(() => _searchQuery = val),
+                        onChanged: (val) => ref.read(dbSearchProvider.notifier).setSearchQuery(val),
                       ),
                     ),
                     GestureDetector(
@@ -581,7 +635,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                           if (currentContent.type == ContentType.database && !isDatabaseLanding)
                             IconButton(
                               icon: const Icon(Icons.search, size: 26, color: Colors.brown),
-                              onPressed: () => setState(() => _isSearching = true),
+                              onPressed: () => ref.read(dbSearchProvider.notifier).setSearching(true),
                               constraints: const BoxConstraints(),
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                             ),
@@ -626,14 +680,12 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                     ),
                   ],
                 ),
-        actions: (_selectedKeys.isEmpty && _isSearching) ? [
+        actions: (_selectedKeys.isEmpty && searchState.isSearching) ? [
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
-              setState(() {
-                _searchQuery = '';
-                _searchController.clear();
-              });
+              ref.read(dbSearchProvider.notifier).setSearchQuery('');
+              _searchController.clear();
             },
           ),
         ] : null,
@@ -641,11 +693,8 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
       drawer: DrawerContent(
         currentSchemaName: widget.title,
         onBackToHome: () {
-          setState(() {
-            _searchQuery = '';
-            _searchController.clear();
-            _isSearching = false;
-          });
+          ref.read(dbSearchProvider.notifier).reset();
+          _searchController.clear();
           int dbIdx = -1;
           for (int i = 0; i < widget.contents.length; i++) {
             if (widget.contents[i].type == ContentType.database) {
@@ -669,7 +718,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
               key: _dbKeys[idx],
               db: c.service as ElementDb, 
               schemaTitle: widget.title,
-              searchQuery: _searchQuery,
+              searchQuery: searchState.searchQuery,
               isExactMatch: _isExactMatch,
               selectedKeys: _selectedKeys,
               onToggleSelection: (key) {
@@ -682,11 +731,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                 });
               },
               onSearchSubmitted: (query) {
-                setState(() {
-                  _searchQuery = query;
-                  _isSearching = query.isNotEmpty;
-                  _searchController.text = query;
-                });
+                ref.read(dbSearchProvider.notifier).setSearchQuery(query);
+                ref.read(dbSearchProvider.notifier).setSearching(query.isNotEmpty);
+                _searchController.text = query;
               },
               onLandingPageChanged: () {
                 setState(() {});
@@ -714,20 +761,11 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
         shape: const CircleBorder(side: BorderSide(color: Color(0xFFE5C158), width: 1.5)),
         onPressed: () {
           if (_currentTabIndex == 0) {
-            int dbIdx = -1;
-            for (int i = 0; i < widget.contents.length; i++) {
-              if (widget.contents[i].type == ContentType.database) {
-                dbIdx = i;
-                break;
-              }
-            }
-            if (dbIdx != -1) {
-              final dbState = _dbKeys[dbIdx].currentState;
-              if (dbState != null) {
-                dbState.toggleLandingPage();
-              }
-            }
+            // Patients Tab: Toggle search landing page vs. list view via notifier
+            final currentShowLanding = ref.read(dbSearchProvider).showLandingPage;
+            ref.read(dbSearchProvider.notifier).setShowLandingPage(!currentShowLanding);
           } else {
+            // Reports Tab: Instantly generate Daily report for Today!
             _generateDailyReportForToday();
           }
         },
@@ -852,17 +890,17 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   ElementModel? _selectedElementForDetail;
   bool _isSpeedDialOpen = false;
   String? _activeBusinessKeyName;
-  bool _showLandingPage = true;
   late TextEditingController _landingSearchController;
   List<ElementModel>? _searchResults;
   late FocusNode _landingFocusNode;
-  final GlobalKey _landingSearchKey = GlobalKey(debugLabel: 'landingSearchField');
+  late final GlobalKey _landingSearchKey;
 
-  bool get showLandingPage => _showLandingPage;
+  bool get showLandingPage => ref.read(dbSearchProvider).showLandingPage;
 
   @override
   void initState() {
     super.initState();
+    _landingSearchKey = GlobalKey(debugLabel: 'landingSearchField_${widget.db.key}');
     _landingFocusNode = FocusNode();
     _landingFocusNode.addListener(() {
       if (mounted) setState(() {});
@@ -880,14 +918,18 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   @override
   void didUpdateWidget(_DatabaseView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.isExactMatch != oldWidget.isExactMatch) {
+      _triggerSearch(_landingSearchController.text);
+    }
     if (widget.searchQuery != oldWidget.searchQuery) {
       _landingSearchController.text = widget.searchQuery;
       _triggerSearch(widget.searchQuery);
       if (widget.searchQuery.isNotEmpty) {
-        setState(() {
-          _showLandingPage = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(dbSearchProvider.notifier).setShowLandingPage(false);
+          }
         });
-        widget.onLandingPageChanged?.call();
       }
     }
   }
@@ -911,7 +953,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
       return;
     }
     
-    final results = await widget.db.searchAsync(trimmed);
+    final bool showLanding = ref.read(dbSearchProvider).showLandingPage && widget.searchQuery.isEmpty;
+    final String activeFilter = showLanding ? 'Active' : _currentFilter;
+    
+    final results = await widget.db.searchAsync(trimmed, exact: widget.isExactMatch, filter: activeFilter);
     if (mounted) {
       setState(() {
         _searchResults = results;
@@ -920,13 +965,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   }
 
   Future<void> _init({bool forced = false}) async {
-    // Lazy-load check: if search landing page is active and query is empty,
-    // we bypass loading the database to make landing page mounting near-instant.
-    final bool showLanding = _showLandingPage && _landingSearchController.text.trim().isEmpty;
-    
-    if (!showLanding) {
-      await widget.db.initDb(forced: forced, filter: [_currentFilter]);
-    }
+    await widget.db.initDb(forced: forced, filter: [_currentFilter]);
     
     // Retrieve business unique key name dynamically for draft labeling
     _activeBusinessKeyName = await SqliteHelper.getBusinessUniqueKey(widget.schemaTitle);
@@ -950,8 +989,12 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   }
 
   void resetToLanding() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(dbSearchProvider.notifier).setShowLandingPage(true);
+      }
+    });
     setState(() {
-      _showLandingPage = true;
       _landingSearchController.clear();
       _currentFilter = 'Active';
       _initialized = false;
@@ -961,35 +1004,16 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   }
 
   void toggleLandingPage() {
-    setState(() {
-      _showLandingPage = !_showLandingPage;
-      if (!_showLandingPage) {
-        _initialized = false;
+    final currentVal = ref.read(dbSearchProvider).showLandingPage;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(dbSearchProvider.notifier).setShowLandingPage(!currentVal);
       }
     });
-    widget.onLandingPageChanged?.call();
+    setState(() {
+      _initialized = false;
+    });
     _init(forced: true);
-  }
-
-  void _executeSearch(String query, {bool transitionToList = false}) {
-    if (transitionToList) {
-      setState(() {
-        _showLandingPage = false;
-        _currentFilter = 'Active'; // Defaults list view to 'Active' records
-        _searchResults = null; // Clear search results cache to reload full context!
-        _landingSearchController.clear(); // Clear search bar input text!
-        _initialized = false;
-      });
-      widget.onLandingPageChanged?.call();
-      _init(forced: true);
-      if (widget.onSearchSubmitted != null) {
-        widget.onSearchSubmitted!(query);
-      }
-    } else {
-      setState(() {
-        _landingSearchController.text = query;
-      });
-    }
   }
 
   Widget _buildSearchLandingPage() {
@@ -1121,18 +1145,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
           const SizedBox(width: 4.0),
         ],
       ),
-    );
-
-    // 3. Show All Records / List button (only when empty)
-    Widget showAllButton = OutlinedButton(
-      onPressed: () => _executeSearch("", transitionToList: true),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFF6B1524),
-        side: const BorderSide(color: Color(0xFF6B1524), width: 1.5),
-        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 14.0),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
-      ),
-      child: const Text("Show All Records", style: TextStyle(fontWeight: FontWeight.bold)),
     );
 
     // 4. Results List widget
@@ -1319,8 +1331,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
                 logoAndText,
                 SizedBox(height: verticalSpacing),
                 searchBar,
-                const SizedBox(height: 24.0),
-                showAllButton,
                 SizedBox(height: bottomOffset),
               ],
             ),
@@ -1329,29 +1339,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
       );
     }
 
-    return Stack(
-      children: [
-        pageBody,
-        // 5. Switch to List View Floating Action Button
-        Positioned(
-          top: 6,
-          right: 16,
-          child: SafeArea(
-            child: FloatingActionButton(
-              mini: true,
-              heroTag: "fab_search_landing_toggle",
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF6B1524),
-              elevation: 2,
-              onPressed: () {
-                _executeSearch("", transitionToList: true);
-              },
-              tooltip: "Switch to List View",
-              child: const Icon(Icons.list),
-            ),
-          ),
-        ),
-      ],
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        _landingFocusNode.unfocus();
+        FocusScope.of(context).unfocus();
+      },
+      child: pageBody,
     );
   }
 
@@ -1488,13 +1482,24 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
       if (_selectedElementForDetail?.key == element.key) {
         _selectedElementForDetail = null;
       }
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Marked as Archived")));
+      if (mounted) {
+        FeedbackToast.undoable(
+          context, 
+          "Record archived successfully.",
+          onUndo: () async {
+            await widget.db.restore(element);
+            _init(forced: true);
+          },
+        );
+      }
     } else if (action == 'restore') {
       await widget.db.restore(element);
       if (_selectedElementForDetail?.key == element.key) {
         _selectedElementForDetail = null;
       }
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Restored to Active")));
+      if (mounted) {
+        FeedbackToast.success(context, "Record restored to Active.");
+      }
     } else if (action == 'delete') {
       final confirmed = await _showConfirm("Mark for Delete", "This will move the record to the 'Deleted' bin for 72 hours before it is permanently purged.");
       if (confirmed) {
@@ -1502,7 +1507,16 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
         if (_selectedElementForDetail?.key == element.key) {
           _selectedElementForDetail = null;
         }
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Marked for deletion (72h remaining)")));
+        if (mounted) {
+          FeedbackToast.undoable(
+            context,
+            "Record moved to trash bin.",
+            onUndo: () async {
+              await widget.db.restore(element);
+              _init(forced: true);
+            },
+          );
+        }
       }
     } else if (action == 'permanent') {
       final confirmed = await _showConfirm("PERMANENT DELETE", "Are you sure? This action CANNOT be undone and the data will be lost forever.", isDestructive: true);
@@ -1511,7 +1525,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
         if (_selectedElementForDetail?.key == element.key) {
           _selectedElementForDetail = null;
         }
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Record permanently deleted")));
+        if (mounted) {
+          FeedbackToast.success(context, "Record permanently deleted.");
+        }
       }
     }
     setState(() {});
@@ -1535,10 +1551,60 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
     return result ?? false;
   }
 
+  Widget _buildEmptyState() {
+    if (_searchResults != null) {
+      return EmptyStateView.searchEmpty();
+    }
+    if (_currentFilter == 'Active') {
+      return EmptyStateView.active(onCreateFirst: onAdd);
+    }
+    if (_currentFilter == 'Archived') {
+      return EmptyStateView.archived();
+    }
+    if (_currentFilter == 'Deleted') {
+      return EmptyStateView.deleted();
+    }
+    return const EmptyStateView(
+      icon: Icons.assignment_outlined,
+      title: "No Records Found",
+      subtitle: "The database table is empty.",
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final bool showLanding = _showLandingPage && widget.searchQuery.isEmpty;
+    final searchState = ref.watch(dbSearchProvider);
+
+    ref.listen<DbSearchState>(dbSearchProvider, (previous, next) {
+      if (next.showLandingPage != previous?.showLandingPage) {
+        if (!next.showLandingPage) {
+          // Exited landing page: Reset search results to reveal full list!
+          setState(() {
+            _searchResults = null;
+          });
+          // Clear query so it doesn't percolate
+          _landingSearchController.text = '';
+          ref.read(dbSearchProvider.notifier).closeSearch();
+
+          if (!_initialized) {
+            _init(forced: true);
+          }
+        } else {
+          // Entered landing page: ensure search query and results are cleared
+          setState(() {
+            _searchResults = null;
+          });
+          _landingSearchController.text = '';
+        }
+      }
+      if (next.searchQuery != previous?.searchQuery) {
+        _landingSearchController.text = next.searchQuery;
+        _triggerSearch(next.searchQuery);
+      }
+    });
+
+    final bool showLanding = searchState.showLandingPage && widget.searchQuery.isEmpty;
     if (showLanding) {
       final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
       final bool isSearchFocused = _landingFocusNode.hasFocus;
@@ -1637,10 +1703,12 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
                       ),
 
                       Expanded(
-                        child: ListView.separated(
-                          controller: _listScrollController,
-                          itemCount: filteredElements.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
+                        child: filteredElements.isEmpty 
+                          ? _buildEmptyState()
+                          : ListView.separated(
+                              controller: _listScrollController,
+                              itemCount: filteredElements.length,
+                              separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
                           itemBuilder: (context, index) {
                             final element = filteredElements[index];
                             final isSelectedInSplit = _selectedElementForDetail?.key == element.key;
@@ -1904,10 +1972,12 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
               ),
 
               Expanded(
-                child: ListView.separated(
-                  controller: _listScrollController,
-                  itemCount: filteredElements.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
+                child: filteredElements.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.separated(
+                      controller: _listScrollController,
+                      itemCount: filteredElements.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black12),
                   itemBuilder: (context, index) {
                     final element = filteredElements[index];
                     if (element.components.isNotEmpty && element.components.first is ListHeader) {
@@ -2099,7 +2169,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
     
     // Font / text sizing
     final double labelFontSize = isTablet ? 14.0 : 12.0;
-    final double mainFabFontSize = isTablet ? 16.0 : 14.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -2210,8 +2279,12 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
           isLabelVisible: !_isSpeedDialOpen && _drafts.isNotEmpty,
           backgroundColor: const Color(0xFF00796B),
           textColor: Colors.white,
-          child: FloatingActionButton.extended(
+          child: FloatingActionButton(
             heroTag: "fab_speed_dial_main",
+            backgroundColor: const Color(0xFF6B1524),
+            foregroundColor: Colors.white,
+            elevation: 6,
+            shape: const CircleBorder(side: BorderSide(color: Color(0xFFE5C158), width: 1.5)),
             onPressed: () {
               if (_drafts.isEmpty) {
                 onAdd();
@@ -2221,14 +2294,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
                 });
               }
             },
-            icon: Icon(_isSpeedDialOpen ? Icons.close : Icons.add, size: mainIconSize),
-            label: Text(
-              _isSpeedDialOpen ? "CLOSE" : "NEW RECORD",
-              style: TextStyle(
-                fontSize: mainFabFontSize,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            child: Icon(_isSpeedDialOpen ? Icons.close : Icons.add, size: mainIconSize),
           ),
         ),
       ],
@@ -2327,8 +2393,6 @@ class _ElementViewState extends State<ElementView> {
             },
             tooltip: "Edit Full Record",
           ),
-          if (widget.onBack != null)
-            const SizedBox(width: 56.0),
         ],
       ),
       body: ListView.builder(

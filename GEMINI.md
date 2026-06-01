@@ -1,4 +1,4 @@
-# Project Context: anydb_flutter (May 2026 Checkpoint)
+# Project Context: anydb_flutter (June 2026 Checkpoint)
 
 ## Core Accomplishments & Stabilized Features
 
@@ -76,6 +76,19 @@
 - **Selective Bypassing:** Configured tiny system and configurations tables to bypass the Isolate pool entirely and load directly on the main thread in `<1ms`.
 - **SQLite WAL Mode:** Enabled SQLite Write-Ahead Logging (`PRAGMA journal_mode=WAL;`) to support fully concurrent reads and writes with zero transaction locking conflicts.
 
+### 13. Active Database Pre-Warming, Inactive Lazy-Loading & Filter Percolation
+- **Startup Pre-Warming:** Optimised initial boots by pre-warming strictly the active records in the database background cache on startup, bringing active dashboards to paint in micro-seconds.
+- **Lazy Loading Historical Tabs:** Programmed inactive records (Archived/Deleted) to load lazily only when navigating to historical views (Archive/Trash tabs), conserving memory overhead.
+- **Root-Level Metadata Key Resolution:** Fixed search result filter leakages by upgrading background isolate query logic to parse `__meta__` keys correctly at both root and nested map levels, preventing archived/deleted records from polluting landing page active searches.
+- **Percolation Synchronization:** Implemented Riverpod search state observers that automatically reset list filters, search controllers, and overlay caches when switching tabs or toggling back to the Google-Search landing page.
+
+### 14. Modular Plug-and-Play Feedback Toast & Empty State Toolkit
+- **Plug-and-Play Named Feedback Toasts (`feedback_toast.dart`):** Engineered a highly modular SnackBar-based feedback constructor utility. Supports named configurations (`success`, `error`, `undoable`, and `retryable`) with dynamic saffron-accented `Action` closures to trigger robust item restorations (`widget.db.restore(element)`).
+- **Plug-and-Play Named Empty States (`empty_state_view.dart`):** Developed a unified empty state viewport component featuring named constructor configurations (`active`, `archived`, `deleted`, and `searchEmpty`) matching Velvet Crimson (#6B1524) and Coral (#E9967A) aesthetics.
+- **Symmetric Tablet AppBar Layout:** Stripped the hardcoded 56px action spacer block from the tablet split-pane details AppBar, natively aligning detail operations symmetrically to the right edge.
+
+---
+
 ## Development Standards & Walkthroughs
 
 ### 1. App Rename Policy
@@ -114,5 +127,3 @@
 - **Branch:** `dev`
 - **Last Stable Commit:** `cf76f7b` (perf: implement concurrent Multi-Worker Isolate Pool and dynamic 30% recent record search engine on mobile)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
-
-

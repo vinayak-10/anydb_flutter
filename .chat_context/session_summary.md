@@ -1,57 +1,56 @@
-# Session Summary: Android FileSystemException, Database Load & UI Optimizations
+# Session Summary: Active Database Pre-Warming, Modular UI Feedback & Empty States
 
 ## Problems Addressed
-1. **FileSystemException (Read-Only Filesystem) on Android:**
-   * **Cause:** The background Database Isolate worker pool had no access to Flutter MethodChannels. When it queried the application documents directory, it failed and returned `null`. This fell back to a relative database path (`xyz.maya/anydb`) which SQLite resolved to the read-only Android system root (`/`), causing a startup/import crash.
-2. **Sluggish Database Wipes & Imports (Android):**
-   * **Cause:** The active Patients database schema (`RKM_Physio.json`) registered both `local` (SQLite) and `file` (JSON) storage.
-   * Every database import forced a double-write. While SQLite completed in milliseconds, the `FileStore` converted all 15,000+ records to a JSON string and wrote it synchronously to the native flash memory on the main thread, choking UI painting and taking 1.5 minutes.
-3. **Severe Android OS Application Memory Restraints:**
-   * **Cause:** The `<application>` manifest block lacked custom heap memory allocations, severely restricting memory headroom and causing heavy garbage collection pauses.
-4. **Search Focus Loss on Typing First Character (Google-Search Landing Page):**
-   * **Cause:** Transitioning from empty (centered logo/layout) to active results dynamically swapped parent widget subtrees, causing the `TextField` to be disposed and keyboard to dismiss.
-5. **Persisting Search Bar in Header on Tab Switch:**
-   * **Cause:** Active search state variables (`_isSearching`) in the parent Scaffold were not reset when changing tabs.
-6. **Patients Tab State Reset on Tab Switch:**
-   * **Cause:** Inactive tabs are disposed of by the `TabBarView` to save memory, causing the Patients view to reset to its default landing experience on tab re-entry.
+
+1. **Unnecessary Resource Consumption on App Startup:**
+   * **Cause:** The database previously initialized by eager-loading 100% of all database records (both active and historical/deleted), increasing boot times and memory usage for large databases.
+2. **Archived/Deleted Record Leakage into Active Search Results:**
+   * **Cause:** Sub-optimal metadata resolving inside the background Isolate worker's search engine (`_recordMatchesFilter`) read user fields rather than the root/nested metadata tags (`__meta__`), resulting in archived/deleted records incorrectly polluting active search results on the landing page.
+3. **Dirty Search State on Tab Navigation:**
+   * **Cause:** Switching between bottom tabs or moving away from the Google-Search landing page did not clean active search query controllers, results list, or Riverpod state overlays, resulting in persistent search states that polluted subsequent views.
+4. **Scattered and Inconsistent UI Feedback & Empty State Layouts:**
+   * **Cause:** Native Flutter SnackBars and raw default lists were hardcoded directly in screens, offering poor reusability, basic visual aesthetics, and missing undoable actions.
+5. **Asymmetric Tablet Detail AppBars:**
+   * **Cause:** A hardcoded `SizedBox(width: 56.0)` action spacer block inside the split-pane detailed screen AppBar pushed menu actions away from the edge, creating a visually unbalanced layout on high-resolution screens.
 
 ---
 
 ## Solutions Implemented
 
-### 1. Isolate Path Handshake Resolution
-* Resolved the valid Documents directory path on the main thread inside `IsolateWorker.init()`.
-* Transmitted the path to the background Database Isolate thread via a FIFO `'initPath'` handshake message.
-* Configured the Database Isolate entry point to capture `'initPath'` and set the `SqliteHelper.databasePathOverride` property before executing any queries.
-* Wrapped `ensureDir` folder creation in try-catch boundaries to gracefully catch permission limits on startup rather than crashing.
+### 1. Hybrid Active Pre-Warming & Lazy Historical Loading
+* **SQLite Separation:** Added status-based SQLite extraction routines: `getActiveRecordsRawString(dbName)` and `getInactiveRecordsRawString(dbName)` inside `sqlite_helper_native.dart` (along with web stub counterparts in `sqlite_helper_web.dart`).
+* **Active Startup Cache:** Modified startup triggers to bypass landing page checks and pre-warm strictly active records in the background cache on startup (dashboard load time drops to micro-seconds).
+* **Lazy historical fetching:** Programmed Archived and Deleted tab views to lazily request inactive database elements only when the user explicitly navigates to those respective views.
 
-### 2. Offloaded Asynchronous JSON Backups
-* Modified `FileStore.importData` to offload the heavy JSON serialization and disk-write operations.
-* Dispatched a non-blocking asynchronous task `'bgWriteJson'` to the **Process Isolate**.
-* **Result:** The main UI thread immediately resumes in **under 300ms** after SQLite finishes, while the process worker handles the redundant JSON backup on a separate background thread without locking or UI stutters.
+### 2. Precise Root-Level Metadata Key Resolution
+* **Isolate Query Overhaul:** Upgraded `_recordMatchesFilter` inside `isolate_worker.dart` to walk and resolve `__meta__` tags correctly at both root and nested map levels.
+* **Search Integrity:** Eliminated false-positive matches, ensuring archived or soft-deleted records never leak into active searches.
 
-### 3. Native Cache & Heap Performance Tuning
-* **Android Heap Memory Boost:** Configured `android:largeHeap="true"` inside the main `<application>` tag in `AndroidManifest.xml` to expand application memory budget (up to 512MB-1GB).
-* **SQLite Cache Tuning:** Injected PRAGMA commands inside native SQLite startup:
-  * `PRAGMA cache_size = -32000;` (Allocates a warm 32MB RAM page cache)
-  * `PRAGMA temp_store = MEMORY;` (Allocates memory-only temporary tables and index stores)
-* **Result:** Completely eliminates disk thrashing and memory choking.
+### 3. Clear State Percolation
+* **Riverpod Tab Listeners:** Refactored Riverpod provider observers in `collection_view.dart` to intercept tab transitions and home landing page toggles, instantly cleaning local query states, active text controllers, and search result lists on exit.
 
-### 4. Search Focus & Keyboard Preservation (No Aesthetic Distortion)
-* Injected a persistent `GlobalKey` state variable (`_landingSearchKey`) inside `_DatabaseViewState` and assigned it directly to the landing page `TextField`.
-* **Result:** Instructs the Flutter widget tree to reuse and globally re-parent the existing `TextField` element across transitions, keeping the software keyboard open and cursor focus continuous with **zero aesthetic distortion** to the centered Google-Search design.
+### 4. Plug-and-Play Named Toast & Empty View Toolkit
+* **Modular Feedback Toast (`feedback_toast.dart`):** Built a standalone named constructor SnackBar builder in the `lib/utils/` directory. Provides premium visual presets:
+  * `FeedbackToast.success(context, message)`
+  * `FeedbackToast.error(context, message)`
+  * `FeedbackToast.undoable(context, message, onUndo)` — wires an actionable saffron button executing instant transactional record restorations (`widget.db.restore(element)`).
+* **Modular Empty States (`empty_state_view.dart`):** Created a responsive, clean placeholder viewport component inside the `lib/components/` directory using named factories:
+  * `EmptyStateView.active(context)`
+  * `EmptyStateView.archived(context)`
+  * `EmptyStateView.deleted(context)`
+  * `EmptyStateView.searchEmpty(context)`
+  * All variants render custom SVG/icon assets, velvet-crimson (#6B1524) title layers, and responsive spacing.
 
-### 5. Header Search Dismissal on Tab Switch
-* Reset outer search state variables (`_isSearching = false; _searchQuery = ''; _searchController.clear();`) inside the `_tabController` listener on Completed Tab Changes.
-* **Result:** Instantly cleans and closes the AppBar search view upon switching away from the active tab.
-
-### 6. Patients Tab View Keep-Alive State Preservation
-* Mixed in `AutomaticKeepAliveClientMixin<_DatabaseView>` to `_DatabaseViewState`.
-* Set `wantKeepAlive => true` and invoked `super.build(context)` inside the widget build sequence.
-* **Result:** Completely caches active filters, list scroll offsets, minimizable drafts, and details configurations in memory, allowing users to return precisely where they left off when toggling back to the Patients tab.
+### 5. Split Pane Visual Refinement
+* **Tablet AppBar Spacer Cleanup:** Stripped out `SizedBox(width: 56.0)` from `ElementView` detail screens, allowing action buttons to sit symmetrically aligned to the far right.
 
 ---
 
 ## Workspace Status
-* **Compilation:** Verified under `flutter analyze` with 0 compiler errors or warning anomalies.
-* **Git Status:** Successfully committed locally to branch `dev`.
+
+* **Branch:** `dev`
+* **Static Analysis:** Clean `flutter analyze` with 0 warnings, compile errors, or lint anomalies.
+* **File Structure:**
+  * **Toasts Toolkit:** [feedback_toast.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/utils/feedback_toast.dart)
+  * **Empty State Viewport:** [empty_state_view.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/components/empty_state_view.dart)
+  * **Database View Controllers:** [collection_view.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/screens/collection_view.dart)

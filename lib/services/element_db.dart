@@ -152,7 +152,7 @@ class ElementDb {
     }
 
     elements = [];
-    final allData = await storage.fetch();
+    final allData = await storage.fetch(filter: filter.isNotEmpty ? filter.first : 'Active');
 
     // 1. Trigger Database Start (Ported from RN)
     await _triggerService?.trigger('onDbStart', allData);
@@ -397,7 +397,7 @@ class ElementDb {
         if (f['searchable'] == true) {
           fields.add(f['name']?.toString() ?? '');
         }
-        final subSchema = f['schema'];
+        final subSchema = f['schema'] ?? f['elements'];
         if (subSchema is List) {
           fields.addAll(getSearchableFields(subSchema));
         }
@@ -406,12 +406,13 @@ class ElementDb {
     return fields.where((name) => name.isNotEmpty).toList();
   }
 
-  List<ElementModel> search(String query) {
+  List<ElementModel> search(String query, {bool exact = false, String filter = 'Active'}) {
     if (query.isEmpty) return elements;
-    return elements.where((e) => e.match(query)[0]).toList();
+    final filtered = applyFilter(filter);
+    return filtered.where((e) => e.match(query, exact: exact)[0]).toList();
   }
 
-  Future<List<ElementModel>> searchAsync(String query) async {
+  Future<List<ElementModel>> searchAsync(String query, {bool exact = false, String filter = 'Active'}) async {
     if (query.isEmpty) return elements;
     try {
       final searchableFields = getSearchableFields(dbSchema);
@@ -421,6 +422,8 @@ class ElementDb {
           'dbName': key, 
           'query': query,
           'searchableFields': searchableFields,
+          'exact': exact,
+          'filter': filter,
         },
       );
       
@@ -428,7 +431,7 @@ class ElementDb {
       return mappedResults.map((data) => ElementModel.lazy(dbSchema, intf, data)).toList();
     } catch (e) {
       debugPrint("ElementDb.searchAsync error, falling back to local sync search: $e");
-      return search(query);
+      return search(query, exact: exact, filter: filter);
     }
   }
 

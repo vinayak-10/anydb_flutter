@@ -95,14 +95,17 @@ class SqliteHelper {
     ''');
   }
 
-  static Future<List<Map<String, dynamic>>> getAll(String dbName) async {
+  static Future<List<Map<String, dynamic>>> getAll(String dbName, {String filter = 'Active'}) async {
     if (kIsWeb) return [];
     
     // Delegate record reading and dynamic 30% recent sorting to the background Database Isolate
     try {
       final List<dynamic> results = await IsolateWorker.instance.execute<List<dynamic>>(
         'dbGetAll',
-        {'dbName': dbName},
+        {
+          'dbName': dbName,
+          'filter': filter,
+        },
       );
       // Zero-copy port optimization: decode the raw JSON strings for only the top 30% records on the main thread
       return results.map((item) {
@@ -341,6 +344,36 @@ class SqliteHelper {
     }).toList();
   }
 
+  static Future<List<Map<String, String>>> getActiveRecordsRawString(String dbName) async {
+    if (kIsWeb) return [];
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+
+    final results = db.select('SELECT id, value FROM "$tableName" WHERE is_active = 1');
+    return results.map((row) {
+      return {
+        'id': row['id'] as String,
+        'value': row['value'] as String,
+      };
+    }).toList();
+  }
+
+  static Future<List<Map<String, String>>> getInactiveRecordsRawString(String dbName) async {
+    if (kIsWeb) return [];
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+
+    final results = db.select('SELECT id, value FROM "$tableName" WHERE is_active = 0');
+    return results.map((row) {
+      return {
+        'id': row['id'] as String,
+        'value': row['value'] as String,
+      };
+    }).toList();
+  }
+
   static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items, [String? businessKeyName]) async {
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
@@ -506,15 +539,25 @@ class SqliteHelper {
     );
   }
 
-  static Future<List<String>> getTopRecentIds(String dbName, int limit) async {
+  static Future<List<String>> getTopRecentIds(String dbName, int limit, {String filter = 'Active'}) async {
     if (kIsWeb) return [];
     final db = await _database;
     await initTimestampsTable();
-    
-    final results = db.select(
-      'SELECT id FROM "record_timestamps" WHERE db_name = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT ?',
-      [dbName, limit],
-    );
+
+    String query;
+    List<dynamic> args;
+    if (filter == 'Active') {
+      query = 'SELECT id FROM "record_timestamps" WHERE db_name = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT ?';
+      args = [dbName, limit];
+    } else if (filter == 'Archived' || filter == 'Deleted') {
+      query = 'SELECT id FROM "record_timestamps" WHERE db_name = ? AND is_active = 0 ORDER BY timestamp DESC LIMIT ?';
+      args = [dbName, limit];
+    } else {
+      query = 'SELECT id FROM "record_timestamps" WHERE db_name = ? ORDER BY timestamp DESC LIMIT ?';
+      args = [dbName, limit];
+    }
+
+    final results = db.select(query, args);
     return results.map((row) => row['id'] as String).toList();
   }
 

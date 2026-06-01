@@ -13,9 +13,9 @@ class AsyncStore {
     return _prefs!;
   }
 
-  static Future<List<Map<String, dynamic>>> getAll(String dbName) async {
+  static Future<List<Map<String, dynamic>>> getAll(String dbName, {String filter = 'Active'}) async {
     if (!kIsWeb) {
-      return await SqliteHelper.getAll(dbName);
+      return await SqliteHelper.getAll(dbName, filter: filter);
     }
 
     final prefs = await _getPrefs();
