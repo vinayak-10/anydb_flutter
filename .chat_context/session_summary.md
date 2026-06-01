@@ -1,42 +1,37 @@
-# Session Summary: Floating Tab Dock, Keyboard FAB Adaptations & Empty Search Alerts
+# Session Summary: Launcher Icon Centering, Web Favicon Restoration & Search Toast Spam Fix
 
 ## Problems Addressed
 
-1. **Cradle FAB and Bottom Navigation Overlap on Keyboard Launch:**
-   * **Cause:** When the software keyboard opened in the search view, the outer Scaffold (`CollectionView.build`) automatically resized its layout height. This squeezed the interface and pushed the bottom navigation bar and cradle FAB directly into the center of the screen, overlapping the search bar and results view.
-2. **Missing Alert/Feedback for Completely Empty Database Searches:**
-   * **Cause:** When a fresh database had zero records (no backups imported altogether), clicking search or typing query strings silently returned `[]` and displayed the generic `"No matching records found."` message. It did not guide the user to perform a database import.
-3. **Inexpressive Tab Bar Separation:**
-   * **Cause:** The previous bottom tab bar lay flat at the screen bottom, relying entirely on a soft shadow with no sharp visual border or active tab highlight. This blended the navigation interface into the main list content.
+1. **Unaligned & Clipped Launcher Icons (Android and Web):**
+   * **Cause:** The original master logo shifted the yantra prism graphic up to `y = 236` to leave space for the bottom `"anydb"` typography text. While great for landing page branding, it made launcher icons look off-center and caused system round/squircle masks to clip the text on Web and Android.
+2. **Empty Database Toast spamming on keystrokes:**
+   * **Cause:** In `lib/screens/collection_view.dart`, a text listener was registered on the search controller to trigger searches on every keystroke. In an empty database, this caused the empty database warning toast SnackBar to fire repeatedly on every single keypress, creating massive UI clutter.
 
 ---
 
 ## Solutions Implemented
 
-### 1. Zero Squeezing Keyboard & Cradle FAB Adaptations
-* **Outer Scaffold Prevention:** Injected `resizeToAvoidBottomInset: false` on the outer Scaffold of `CollectionView.build` (`lib/screens/collection_view.dart`, line 529).
-* **Keyboard FAB Auto-Hide:** Standardized dynamic detection of keyboard/focus states. When the search/landing page is active and the keyboard is launched, we set `floatingActionButton: null` and `bottomNavigationBar: null`. This hides the cradle FAB and dock during active input, providing 100% clean screen real estate for search results and input.
+### 1. Vector Logo Centering & Automated Icon Regeneration Pipeline
+- **Excluded Typography & Vertically Centered Master Canvas:** Upgraded `assets/generate_hybrid.py` to support an `exclude_text` parameter. When active, it automatically shifts all Y coordinates of the yantra prism, petals, facets, and nodes down by `20px` to mathematically center the yantra logo at exactly `(256, 256)` on the `512x512` canvas and completely omits the bottom serif text. Saves this clean, centered graphic to `assets/anydb_logo_centered.png`.
+- **Pipeline Re-routing:** Modified `assets/update_all_icons.py` to use the new `anydb_logo_centered.png` as the template source for all system integration assets.
+- **Resource Re-generation:** Ran the generation scripts to update:
+  - All Android adaptive launcher densities (`ic_launcher.png`, `ic_launcher_foreground.png`).
+  - All Web favicon and PWA manifest assets (`favicon.png`, `Icon-192.png`, `Icon-512.png`, and maskable variants).
 
-### 2. High-Performance Empty Database Search Trigger
-* **Ultra-Fast COUNT Queries:** Engineered a lightweight static query method `SqliteHelper.isTableEmpty(dbName)` on native SQLite (with a web stub) to query database empty states in microseconds.
-* **Exposed to `ElementDb`:** Added an asynchronous `.isEmpty()` getter inside `ElementDb` using standard B-tree indices and shared preference queries.
-* **Search Alerts and Visual Cards:** Inside `_DatabaseViewState._triggerSearch(query)`:
-  * If the database is 100% empty, we immediately launch a premium named SnackBar alert: `FeedbackToast.error(context, "No database found! Please import your database from the top-right menu first.")`.
-  * Rendered a beautiful, highly informative Velvet Crimson warning card in the results view. It provides custom action guidance, instructing the user exactly how to tap the top-right three-dots menu and select "Import" to restore JSON or Excel backups.
-
-### 3. Option B Premium Floating Tab Dock
-* **Detached Pill Shape:** Wrapped the bottom navigation bar in a floating `Container` with clean horizontal and bottom margins (`left: 16.0, right: 16.0, bottom: 20.0`) and high rounded corners (`borderRadius: BorderRadius.circular(24.0)`).
-* **Alabaster Cream Contrasting:** Applied a premium **Alabaster Cream (`#FAF8F5`)** background to the dock, casting a dual-layer upward-biased ambient shadow to lift it cleanly off the pure white background canvas and scrolling lists.
-* **Horizontal Indicator Line:** Engineered a rounded indicator pill (`3px` height) right at the top edge of the active tab. When the user switches tabs, this indicator line smoothly animates and glows in **Velvet Crimson (`#6B1524`)**, creating a visually stunning active tab state.
+### 2. Ephemeral State-Locked One-Shot Search Alerts
+- **One-Shot Flag Integration:** Introduced `_hasShownEmptyWarning = false;` inside `_DatabaseViewState` in `lib/screens/collection_view.dart`.
+- **Typing Toast Lock:** Configured `_triggerSearch` to check `_hasShownEmptyWarning`. Tapping the first character on search triggers the warning toast *exactly once* and sets `_hasShownEmptyWarning = true`. Subsequent characters typed do not spam the user.
+- **Resilient Reset Actions:** Programmed the warning flag to reset back to `false` when the search query is cleared or when database records are loaded, ensuring subsequent search processes are properly caught.
+- **Non-Intrusive Guidance:** Preserved the live-updating Velvet Crimson warning card below the search bar to guide users to the top-right import menu.
 
 ---
 
 ## Workspace Status
 
-* **Branch:** `dev`
-* **Static Analysis:** Clean `flutter analyze` with 0 warnings, compilation errors, or layout anomalies.
-* **File Structure:**
-  * **Database View Controllers:** [collection_view.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/screens/collection_view.dart)
-  * **Element Model Managers:** [element_db.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/services/element_db.dart)
-  * **SQLite Native B-Tree Helpers:** [sqlite_helper_native.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/services/sqlite_helper_native.dart)
-  * **SQLite Web Helpers:** [sqlite_helper_web.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/services/sqlite_helper_web.dart)
+- **Branch:** `dev`
+- **Last Stable Commit:** `426080f` (feat/style: center launcher icons, fix web favicon, and resolve search toast keystroke spam)
+- **Static Analysis:** Clean `flutter analyze` with 0 compile errors.
+- **File Structure:**
+  - **Asset Generator:** [generate_hybrid.py](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/assets/generate_hybrid.py)
+  - **Icon Pipeline:** [update_all_icons.py](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/assets/update_all_icons.py)
+  - **Search Controller:** [collection_view.dart](file:///home/ruggedcoder/softwares/fresh/anydb_flutter/lib/screens/collection_view.dart)

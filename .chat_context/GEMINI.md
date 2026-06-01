@@ -63,6 +63,7 @@
 
 ### 11. Custom Logo Adaptive Icon & Tab Favicon Overhaul
 - **Pillow Resampler Compatibility:** Added a robust Pillow-based generation script (`assets/update_all_icons.py`) featuring dynamic fallback support (`Image.Resampling.LANCZOS` / `Image.ANTIALIAS`) for maximum system portability across older and newer Pillow versions.
+- **Centering & Textless Master Canvas:** Designed a dedicated mathematically centered textless master logo `assets/anydb_logo_centered.png` shifting vector elements down by `20px` to map perfectly to `(256, 256)` on the `512x512` canvas. Used it for all Android adaptive foreground/legacy layers and all Web favicon and PWA manifest assets to resolve unalignment and clipping under squircle/round masking.
 - **Web Favicon & PWA Icons:** Regenerated all 5 Web favicon and PWA manifest assets (`favicon.png`, `Icon-192.png`, `Icon-512.png`, and maskable variants) from the master high-resolution logo to eliminate outdated white-bordered padding.
 - **Android Adaptive Launchers:** Ported adaptive icon support to Android launcher mipmap sets. Configured the adaptive background color to Velvet Crimson (`#6B1524`) in `colors.xml` and generated transparent-canvas foreground mipmaps (`ic_launcher_foreground.png`) with the logo scaled to a safe-zone `72%` to prevent Android mask clipping.
 - **Legacy Fallbacks:** Rewrote legacy solid `ic_launcher.png` formats across all density buckets (`mdpi` to `xxxhdpi`) for compatibility with older platforms.
@@ -91,6 +92,7 @@
 - **Option B Premium Floating Dock:** Re-designed the bottom tab bar as a detached floating dock styled in a premium Alabaster Cream (`#FAF8F5`) contrast layer featuring a rounded border radius (`24px`), horizontal/bottom margins, a sophisticated upward shadow glow, and active horizontal indicator lines (`3px` rounded pills) at the top edge of tabs.
 - **Keyboard FAB Auto-Hide:** Standardized outer Scaffold's `resizeToAvoidBottomInset: false` to allow bottom elements to sit naturally behind the software keyboard, while dynamically hiding the central Cradle FAB when the search view is active and focused, avoiding layout squeezing and overlaps.
 - **Empty Database Alert Trigger:** Implemented a low-level, high-performance static check `SqliteHelper.isTableEmpty(dbName)` to check for empty database states, triggering a premium warning SnackBar and displaying a gorgeous visual Velvet Crimson warning card in search results when no backup has been imported altogether.
+- **One-Shot Empty Warning:** Prevented Toast spamming on every keystroke by integrating a state-retained `_hasShownEmptyWarning` flag inside the search controller typing listener. This triggers the error SnackBar only once at the beginning of the typing sequence and resets cleanly when the query is cleared or when database records are successfully imported.
 
 ---
 
@@ -130,5 +132,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `daac428` (perf/refactor: implement active database pre-warming, modular empty states, named feedback toasts, and split view visual refinements)
+- **Last Stable Commit:** `426080f` (feat/style: center launcher icons, fix web favicon, and resolve search toast keystroke spam)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
