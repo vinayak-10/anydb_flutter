@@ -87,6 +87,11 @@
 - **Plug-and-Play Named Empty States (`empty_state_view.dart`):** Developed a unified empty state viewport component featuring named constructor configurations (`active`, `archived`, `deleted`, and `searchEmpty`) matching Velvet Crimson (#6B1524) and Coral (#E9967A) aesthetics.
 - **Symmetric Tablet AppBar Layout:** Stripped the hardcoded 56px action spacer block from the tablet split-pane details AppBar, natively aligning detail operations symmetrically to the right edge.
 
+### 15. Premium Floating Dock, Keyboard FAB Auto-Hide & Empty DB Alert Toolkit
+- **Option B Premium Floating Dock:** Re-designed the bottom tab bar as a detached floating dock styled in a premium Alabaster Cream (`#FAF8F5`) contrast layer featuring a rounded border radius (`24px`), horizontal/bottom margins, a sophisticated upward shadow glow, and active horizontal indicator lines (`3px` rounded pills) at the top edge of tabs.
+- **Keyboard FAB Auto-Hide:** Standardized outer Scaffold's `resizeToAvoidBottomInset: false` to allow bottom elements to sit naturally behind the software keyboard, while dynamically hiding the central Cradle FAB when the search view is active and focused, avoiding layout squeezing and overlaps.
+- **Empty Database Alert Trigger:** Implemented a low-level, high-performance static check `SqliteHelper.isTableEmpty(dbName)` to check for empty database states, triggering a premium warning SnackBar and displaying a gorgeous visual Velvet Crimson warning card in search results when no backup has been imported altogether.
+
 ---
 
 ## Development Standards & Walkthroughs
@@ -125,5 +130,5 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `cf76f7b` (perf: implement concurrent Multi-Worker Isolate Pool and dynamic 30% recent record search engine on mobile)
+- **Last Stable Commit:** `daac428` (perf/refactor: implement active database pre-warming, modular empty states, named feedback toasts, and split view visual refinements)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.

@@ -502,6 +502,9 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
     final searchState = ref.watch(dbSearchProvider);
     final currentContent = widget.contents[_currentTabIndex];
     final bool isDatabaseLanding = currentContent.type == ContentType.database && searchState.showLandingPage;
+    final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    final bool isSearchActive = searchState.showLandingPage || searchState.isSearching;
+    final bool hideCradleFab = isKeyboardVisible && isSearchActive;
     String title = currentContent.name;
     String subtitle = "";
 
@@ -528,6 +531,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
 
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: false,
       appBar: _selectedKeys.isNotEmpty 
         ? AppBar(
             backgroundColor: Colors.orange.shade50,
@@ -754,7 +758,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
         }).toList(),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: hideCradleFab ? null : FloatingActionButton(
         backgroundColor: const Color(0xFF6B1524),
         foregroundColor: Colors.white,
         elevation: 6,
@@ -776,78 +780,128 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           size: 28,
         ),
       ),
-      bottomNavigationBar: BottomAppBar(
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8.0,
-        color: Colors.white,
-        elevation: 8,
-        child: SafeArea(
-          child: Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () {
-                    if (_currentTabIndex != 0) {
-                      _tabController.animateTo(0);
-                    }
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        widget.contents[0].type == ContentType.database ? Icons.storage : Icons.assessment,
-                        color: _currentTabIndex == 0 ? const Color(0xFFE9967A) : Colors.grey,
-                        size: 24,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.contents[0].name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: _currentTabIndex == 0 ? const Color(0xFFE9967A) : Colors.grey,
-                        ),
-                      ),
-                    ],
+      bottomNavigationBar: hideCradleFab
+          ? null
+          : Container(
+              margin: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 20.0),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAF8F5), // Premium Alabaster Cream
+                borderRadius: BorderRadius.circular(24.0),
+                border: Border.all(color: const Color(0xFFEEEEEE), width: 1.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 16.0,
+                    spreadRadius: 2.0,
+                    offset: const Offset(0, -4), // Ambient upward glow
                   ),
-                ),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.02),
+                    blurRadius: 4.0,
+                    offset: const Offset(0, -1),
+                  ),
+                ],
               ),
-              const SizedBox(width: 64),
-              if (widget.contents.length > 1)
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      if (_currentTabIndex != 1) {
-                        _tabController.animateTo(1);
-                      }
-                    },
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          widget.contents[1].type == ContentType.database ? Icons.storage : Icons.assessment,
-                          color: _currentTabIndex == 1 ? const Color(0xFFE9967A) : Colors.grey,
-                          size: 24,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.contents[1].name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: _currentTabIndex == 1 ? const Color(0xFFE9967A) : Colors.grey,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24.0),
+                child: BottomAppBar(
+                  color: Colors.transparent, // Transparent to let Container's color and shadow shine
+                  elevation: 0,
+                  notchMargin: 0.0,
+                  child: SafeArea(
+                    child: SizedBox(
+                      height: 60.0,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                if (_currentTabIndex != 0) {
+                                  _tabController.animateTo(0);
+                                }
+                              },
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // Tab-Active Upper Indicator Pill
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    height: 3.0,
+                                    width: _currentTabIndex == 0 ? 36.0 : 0.0,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF6B1524),
+                                      borderRadius: BorderRadius.circular(1.5),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Icon(
+                                    widget.contents[0].type == ContentType.database ? Icons.storage : Icons.assessment,
+                                    color: _currentTabIndex == 0 ? const Color(0xFF6B1524) : Colors.grey.shade600,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    widget.contents[0].name,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: _currentTabIndex == 0 ? const Color(0xFF6B1524) : Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 64),
+                          if (widget.contents.length > 1)
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  if (_currentTabIndex != 1) {
+                                    _tabController.animateTo(1);
+                                  }
+                                },
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    // Tab-Active Upper Indicator Pill
+                                    AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      height: 3.0,
+                                      width: _currentTabIndex == 1 ? 36.0 : 0.0,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF6B1524),
+                                        borderRadius: BorderRadius.circular(1.5),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Icon(
+                                      widget.contents[1].type == ContentType.database ? Icons.storage : Icons.assessment,
+                                      color: _currentTabIndex == 1 ? const Color(0xFF6B1524) : Colors.grey.shade600,
+                                      size: 24,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      widget.contents[1].name,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: _currentTabIndex == 1 ? const Color(0xFF6B1524) : Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-            ],
-          ),
-        ),
-      ),
+              ),
+            ),
     );
   }
 }
@@ -889,6 +943,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   final List<ElementModel> _drafts = [];
   ElementModel? _selectedElementForDetail;
   bool _isSpeedDialOpen = false;
+  bool _isDbEmpty = false;
   String? _activeBusinessKeyName;
   late TextEditingController _landingSearchController;
   List<ElementModel>? _searchResults;
@@ -952,6 +1007,27 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
       }
       return;
     }
+
+    final bool isEmpty = await widget.db.isEmpty();
+    if (isEmpty) {
+      if (mounted) {
+        FeedbackToast.error(
+          context,
+          "No database found! Please import your database from the top-right menu first."
+        );
+        setState(() {
+          _isDbEmpty = true;
+          _searchResults = [];
+        });
+      }
+      return;
+    } else {
+      if (mounted && _isDbEmpty) {
+        setState(() {
+          _isDbEmpty = false;
+        });
+      }
+    }
     
     final bool showLanding = ref.read(dbSearchProvider).showLandingPage && widget.searchQuery.isEmpty;
     final String activeFilter = showLanding ? 'Active' : _currentFilter;
@@ -969,8 +1045,11 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
     
     // Retrieve business unique key name dynamically for draft labeling
     _activeBusinessKeyName = await SqliteHelper.getBusinessUniqueKey(widget.schemaTitle);
+    
+    final bool empty = await widget.db.isEmpty();
     if (mounted) {
       setState(() {
+        _isDbEmpty = empty;
         _initialized = true;
         if (_selectedElementForDetail != null) {
           final matched = widget.db.elements.where((e) => e.key == _selectedElementForDetail!.key);
@@ -1275,14 +1354,55 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
             );
           }),
           if (matchingRecords.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32.0),
-              child: Center(
-                child: Text(
-                  "No matching records found.",
-                  style: TextStyle(color: Colors.grey, fontSize: 16.0),
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 8.0),
+              child: _isDbEmpty
+                  ? Container(
+                      padding: const EdgeInsets.all(24.0),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B1524).withOpacity(0.04), // Subtle Velvet Crimson tint
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF6B1524).withOpacity(0.15), width: 1.0),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6B1524).withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.cloud_upload_outlined, color: Color(0xFF6B1524), size: 36),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            "Database is Empty",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF6B1524),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "You haven't imported a database backup yet. Please tap the top-right three dots menu and select 'Import' to restore your JSON or Excel files.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.4,
+                              color: Colors.blueGrey.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const Center(
+                      child: Text(
+                        "No matching records found.",
+                        style: TextStyle(color: Colors.grey, fontSize: 16.0),
+                      ),
+                    ),
             ),
         ],
       ),

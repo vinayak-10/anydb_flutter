@@ -581,6 +581,18 @@ class SqliteHelper {
       };
     }).toList();
   }
+
+  static Future<bool> isTableEmpty(String dbName) async {
+    if (kIsWeb) return true;
+    final db = await _database;
+    final tableName = _fileService.sanitizeName(dbName);
+    await initTable(dbName);
+    final result = db.select('SELECT COUNT(*) as count FROM "$tableName"');
+    if (result.isNotEmpty) {
+      return (result.first['count'] as int) == 0;
+    }
+    return true;
+  }
 }
 
 

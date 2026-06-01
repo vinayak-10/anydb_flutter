@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/element_model.dart';
 import 'storage_service.dart';
 import 'meta_service.dart';
@@ -463,6 +464,14 @@ class ElementDb {
       
       return true;
     }).toList();
+  }
+
+  Future<bool> isEmpty() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getKeys().where((k) => k.startsWith('$key:')).isEmpty;
+    }
+    return await SqliteHelper.isTableEmpty(key);
   }
 
   Future<void> close() async {

@@ -92,4 +92,8 @@ class SqliteHelper {
   static Future<List<Map<String, String>>> getRecordsByIds(String dbName, List<String> ids) async {
     return [];
   }
+
+  static Future<bool> isTableEmpty(String dbName) async {
+    return true;
+  }
 }
