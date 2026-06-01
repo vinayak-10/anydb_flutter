@@ -4,7 +4,7 @@ import sys
 import subprocess
 
 def update_all_icons():
-    source_logo = "/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo.png"
+    source_logo = "/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo_centered.png"
     if not os.path.exists(source_logo):
         print(f"Source logo not found at {source_logo}. Please make sure it is generated first!")
         return False

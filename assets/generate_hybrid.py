@@ -3,8 +3,8 @@ import os
 import sys
 import subprocess
 
-def generate_hybrid_png(dest_path):
-    print(f"Generating Yantra-Prism Hybrid PNG at: {dest_path}")
+def generate_hybrid_png(dest_path, exclude_text=False):
+    print(f"Generating Yantra-Prism Hybrid PNG (exclude_text={exclude_text}) at: {dest_path}")
     
     # Ensure Pillow is installed
     try:
@@ -29,34 +29,31 @@ def generate_hybrid_png(dest_path):
         white_trans = (255, 255, 255, 128)
         mint = (72, 207, 203, 255)       # #48CFCB Luminous Mint Green
         
-        # 1. Draw Outer Gate (Bhupura)
-        # Double bordered rect (standard yantra Bhupura uses sharp, clean rectangles)
-        draw.rectangle([80, 70, 432, 422], outline=gold, width=4)
+        # Y-Offset adjustment: Shift elements down by 20px when mathematical center is needed
+        oy = 20 if exclude_text else 0
         
-        # Inner dashed rect (drawn with line segments for custom dash pattern)
-        dashed_outline = [96, 86, 416, 406]
-        # Top line
-        draw.line([96, 86, 416, 86], fill=(229, 193, 88, 150), width=2)
-        # Bottom line
-        draw.line([96, 406, 416, 406], fill=(229, 193, 88, 150), width=2)
-        # Left line
-        draw.line([96, 86, 96, 406], fill=(229, 193, 88, 150), width=2)
-        # Right line
-        draw.line([416, 86, 416, 406], fill=(229, 193, 88, 150), width=2)
+        # 1. Draw Outer Gate (Bhupura)
+        draw.rectangle([80, 70 + oy, 432, 422 + oy], outline=gold, width=4)
+        
+        # Inner dashed rect lines
+        draw.line([96, 86 + oy, 416, 86 + oy], fill=(229, 193, 88, 150), width=2)
+        draw.line([96, 406 + oy, 416, 406 + oy], fill=(229, 193, 88, 150), width=2)
+        draw.line([96, 86 + oy, 96, 406 + oy], fill=(229, 193, 88, 150), width=2)
+        draw.line([416, 86 + oy, 416, 406 + oy], fill=(229, 193, 88, 150), width=2)
         
         # 2. Concentric Circles representing relation tracks
-        draw.ellipse([136, 116, 376, 356], outline=gold, width=3)
-        draw.ellipse([156, 136, 356, 336], outline=(229, 193, 88, 128), width=1)
+        draw.ellipse([136, 116 + oy, 376, 356 + oy], outline=gold, width=3)
+        draw.ellipse([156, 136 + oy, 356, 336 + oy], outline=(229, 193, 88, 128), width=1)
         
         # Outer Yantra Petals (Lotus accents)
         # Top
-        draw.polygon([(256, 116), (266, 126), (256, 136), (246, 126)], fill=gold)
+        draw.polygon([(256, 116 + oy), (266, 126 + oy), (256, 136 + oy), (246, 126 + oy)], fill=gold)
         # Bottom
-        draw.polygon([(256, 356), (266, 346), (256, 336), (246, 346)], fill=gold)
+        draw.polygon([(256, 356 + oy), (266, 346 + oy), (256, 336 + oy), (246, 346 + oy)], fill=gold)
         # Left
-        draw.polygon([(136, 236), (146, 226), (156, 236), (146, 246)], fill=gold)
+        draw.polygon([(136, 236 + oy), (146, 226 + oy), (156, 236 + oy), (146, 246 + oy)], fill=gold)
         # Right
-        draw.polygon([(376, 236), (366, 226), (356, 236), (366, 246)], fill=gold)
+        draw.polygon([(376, 236 + oy), (366, 226 + oy), (356, 236 + oy), (366, 246 + oy)], fill=gold)
         
         def draw_poly(points, fill=None, outline=None, width=1):
             if fill:
@@ -66,77 +63,67 @@ def generate_hybrid_png(dest_path):
 
         # 3. Draw the 3D Isometric Prism / Data Cube Faces
         # Top Facet
-        draw_poly([(256, 156), (326, 196), (256, 236), (186, 196)], fill=gold_trans, outline=gold, width=3)
+        draw_poly([(256, 156 + oy), (326, 196 + oy), (256, 236 + oy), (186, 196 + oy)], fill=gold_trans, outline=gold, width=3)
         # Left Facet
-        draw_poly([(186, 196), (256, 236), (256, 316), (186, 276)], fill=red_trans, outline=gold, width=3)
+        draw_poly([(186, 196 + oy), (256, 236 + oy), (256, 316 + oy), (186, 276 + oy)], fill=red_trans, outline=gold, width=3)
         # Right Facet
-        draw_poly([(256, 236), (326, 196), (326, 276), (256, 316)], fill=orange_trans, outline=gold, width=3)
+        draw_poly([(256, 236 + oy), (326, 196 + oy), (326, 276 + oy), (256, 316 + oy)], fill=orange_trans, outline=gold, width=3)
         
         # 4. Yantra Triangles (Dashed overlay)
         # Ascending
-        draw_poly([(256, 156), (326, 276), (186, 276)], outline=white_trans, width=2)
+        draw_poly([(256, 156 + oy), (326, 276 + oy), (186, 276 + oy)], outline=white_trans, width=2)
         # Descending
-        draw_poly([(256, 316), (326, 196), (186, 196)], outline=white_trans, width=2)
+        draw_poly([(256, 316 + oy), (326, 196 + oy), (186, 196 + oy)], outline=white_trans, width=2)
         
         # 5. Nodes at vertices (Mint nodes with white rings)
         nodes = [
-            (256, 156), # Top
-            (256, 316), # Bottom
-            (186, 196), # Left
-            (326, 196), # Right
-            (186, 276), # Bottom-Left
-            (326, 276)  # Bottom-Right
+            (256, 156 + oy), # Top
+            (256, 316 + oy), # Bottom
+            (186, 196 + oy), # Left
+            (326, 196 + oy), # Right
+            (186, 276 + oy), # Bottom-Left
+            (326, 276 + oy)  # Bottom-Right
         ]
         for nx, ny in nodes:
             draw.ellipse([nx-8, ny-8, nx+8, ny+8], fill=mint, outline=white, width=2)
             
         # Central Bindu
-        draw.ellipse([256-10, 236-10, 256+10, 236+10], fill=white, outline=gold, width=3)
+        draw.ellipse([256-10, 236-10 + oy, 256+10, 236+10 + oy], fill=white, outline=gold, width=3)
         
-        # 6. Typography "anydb" (Hand-drawn Vector Serif for maximum compatibility)
-        # We draw individual characters dynamically to look premium on all machines
-        # This bypasses missing TTF font problems in head-less servers
-        char_color = gold
-        
-        # Helper to draw a Serif 'a'
-        # Position: center around x=175, y=365
-        # Draw elegant serif strokes for "anydb"
-        # We will attempt to load a system serif font first
-        font_loaded = False
-        for font_path in [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
-            "Georgia-Bold",
-            "serif-bold"
-        ]:
-            try:
-                font = ImageFont.truetype(font_path, 34)
-                # Render using TTF
-                text = "anydb"
-                w = draw.textlength(text, font=font)
-                draw.text((256 - w/2, 355), text, fill=gold, font=font)
-                font_loaded = True
-                print(f"Loaded premium font: {font_path}")
-                break
-            except Exception:
-                continue
-                
-        if not font_loaded:
-            # Simple elegant fallback text rendering using default font
-            try:
-                font = ImageFont.load_default(size=30)
-                text = "anydb"
-                w = draw.textlength(text, font=font)
-                draw.text((256 - w/2, 360), text, fill=gold, font=font)
-                print("Using default fallback font")
-            except Exception as e:
-                # Absolute fallback: draw lines for letters
-                print("Using line-drawing fallback")
-                draw.text((220, 360), "anydb", fill=gold)
-                
+        # 6. Typography "anydb" (Only if exclude_text is False)
+        if not exclude_text:
+            font_loaded = False
+            for font_path in [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+                "Georgia-Bold",
+                "serif-bold"
+            ]:
+                try:
+                    font = ImageFont.truetype(font_path, 34)
+                    text = "anydb"
+                    w = draw.textlength(text, font=font)
+                    draw.text((256 - w/2, 355), text, fill=gold, font=font)
+                    font_loaded = True
+                    print(f"Loaded premium font: {font_path}")
+                    break
+                except Exception:
+                    continue
+                    
+            if not font_loaded:
+                try:
+                    font = ImageFont.load_default(size=30)
+                    text = "anydb"
+                    w = draw.textlength(text, font=font)
+                    draw.text((256 - w/2, 360), text, fill=gold, font=font)
+                    print("Using default fallback font")
+                except Exception as e:
+                    print("Using line-drawing fallback")
+                    draw.text((220, 360), "anydb", fill=gold)
+                    
         img.save(dest_path, "PNG")
-        print("Logo generated successfully!")
+        print(f"Image saved successfully -> {dest_path}")
         return True
         
     except Exception as e:
@@ -144,5 +131,8 @@ def generate_hybrid_png(dest_path):
         return False
 
 if __name__ == "__main__":
-    generate_hybrid_png("/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo.png")
-    generate_hybrid_png("/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/logo_concepts/anydb_logo_yantra_prism.png")
+    # Generate original layout logo with text (centered at y=236)
+    generate_hybrid_png("/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo.png", exclude_text=False)
+    generate_hybrid_png("/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/logo_concepts/anydb_logo_yantra_prism.png", exclude_text=False)
+    # Generate launcher layout logo WITHOUT text (perfectly centered at y=256)
+    generate_hybrid_png("/home/ruggedcoder/softwares/fresh/anydb_flutter/assets/anydb_logo_centered.png", exclude_text=True)

@@ -944,6 +944,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   ElementModel? _selectedElementForDetail;
   bool _isSpeedDialOpen = false;
   bool _isDbEmpty = false;
+  bool _hasShownEmptyWarning = false;
   String? _activeBusinessKeyName;
   late TextEditingController _landingSearchController;
   List<ElementModel>? _searchResults;
@@ -1000,9 +1001,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
   Future<void> _triggerSearch(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
-      if (_searchResults != null) {
+      if (mounted) {
         setState(() {
           _searchResults = null;
+          _hasShownEmptyWarning = false;
         });
       }
       return;
@@ -1011,10 +1013,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
     final bool isEmpty = await widget.db.isEmpty();
     if (isEmpty) {
       if (mounted) {
-        FeedbackToast.error(
-          context,
-          "No database found! Please import your database from the top-right menu first."
-        );
+        if (!_hasShownEmptyWarning) {
+          FeedbackToast.error(
+            context,
+            "No database found! Please import your database from the top-right menu first."
+          );
+          _hasShownEmptyWarning = true;
+        }
         setState(() {
           _isDbEmpty = true;
           _searchResults = [];
@@ -1022,9 +1027,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
       }
       return;
     } else {
-      if (mounted && _isDbEmpty) {
+      if (mounted) {
         setState(() {
           _isDbEmpty = false;
+          _hasShownEmptyWarning = false;
         });
       }
     }
