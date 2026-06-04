@@ -1,0 +1,108 @@
+name: 🍎 macOS & iOS Release Builds
+
+on:
+  push:
+    branches: [ main, dev ]
+  workflow_dispatch: # Allows manual run triggering from the GitHub Actions UI
+
+jobs:
+  # =============================================================================
+  # 1. macOS Build Job
+  # =============================================================================
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 🔑 Inject Secrets
+        run: |
+          # Reconstructs compile-time secrets.json from GitHub secrets
+          echo '${{ secrets.SECRETS_JSON }}' > secrets.json
+
+      - name: 📦 Fetch Packages
+        run: flutter pub get
+
+      - name: ⚙️ Build macOS App
+        run: |
+          flutter build macos --release --dart-define-from-file=secrets.json
+
+      - name: 📦 Zip macOS App Bundle
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../../anydb_macos.zip anydb.app
+
+      - name: 📤 Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anydb-macos-release
+          path: anydb_macos.zip
+          retention-days: 5
+
+  # =============================================================================
+  # 2. iOS Build Job (Includes Apple Code-Signing Setup)
+  # =============================================================================
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Setup Apple Certificates & Provisioning Profile
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.IOS_BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          # 1. Reconstruct certificate and profile files from base64 env vars
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+          # 2. Create a temporary keychain to hold the certificate
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # 3. Import the certificate (.p12) into the keychain
+          security import $CERTIFICATE_PATH -k $KEYCHAIN_PATH -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # 4. Copy provisioning profile to Xcode's library folder
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 🔑 Inject Secrets
+        run: |
+          echo '${{ secrets.SECRETS_JSON }}' > secrets.json
+
+      - name: 📦 Fetch Packages
+        run: flutter pub get
+
+      - name: ⚙️ Build iOS IPA Archive
+        run: |
+          # Compiles and builds the signed IPA file
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist --dart-define-from-file=secrets.json
+
+      - name: 📤 Upload iOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anydb-ios-release
+          path: build/ios/ipa/*.ipa
+          retention-days: 5
