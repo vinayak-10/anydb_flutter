@@ -209,10 +209,7 @@ class AggregatorService {
     final DateTime targetDate = date is DateTime ? date : (date is DateTimeRange ? date.start : DateTime.now());
     logger.log("AggregatorService: Generating report '${report.key}' for date ${targetDate.toIso8601String()}");
 
-    final meta = getFileName({
-      "predicate": {"value": targetDate}
-    }, timestamp: timestamp);
-    
+
     final entryName = report.extractor[0].predicatedName(report.extractor[0].extractor?.predicates[0] ?? {}, targetDate.toIso8601String());
     final sheetName = _fileService.sanitizeName(entryName);
 

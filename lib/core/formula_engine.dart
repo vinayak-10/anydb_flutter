@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'formula/lexer.dart';
 import 'formula/parser.dart';
 import 'formula/evaluator.dart';

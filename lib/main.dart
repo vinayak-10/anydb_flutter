@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/schema_service.dart';
 import 'services/collection_service.dart';
+import 'services/element_db.dart';
 import 'services/file_service.dart';
 import 'screens/collection_view.dart';
 import 'package:file_picker/file_picker.dart';
@@ -208,6 +209,16 @@ class HomePage extends ConsumerWidget {
                   if (schemaData != null) {
                       final collectionService = ref.read(collectionServiceProvider);
                       await collectionService.init(schemaData);
+
+                      // Bind database onChanged triggers to Riverpod databaseUpdateProvider state family
+                      for (var content in collectionService.contents) {
+                        if (content.type == ContentType.database) {
+                          final db = content.service as ElementDb;
+                          db.onChanged = () {
+                            ref.read(databaseUpdateProvider.notifier).increment(db.key);
+                          };
+                        }
+                      }
 
                       if (!context.mounted) return;
                       Navigator.push(

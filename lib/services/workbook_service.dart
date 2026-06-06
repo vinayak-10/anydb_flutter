@@ -29,7 +29,6 @@ class WorkbookService {
   }
 
   Future<String> write(Map<String, dynamic> meta, Map<String, dynamic> data, {DateTime? timestamp}) async {
-    final reportName = meta['aggregator'] ?? 'Report';
     final now = timestamp ?? DateTime.now();
     
     final String collectionName = meta['collection'] ?? 'Report';

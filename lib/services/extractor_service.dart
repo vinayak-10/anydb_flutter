@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import 'package:excel/excel.dart';
 import 'storage_service.dart';
 import 'workbook_service.dart';
 import '../core/cell_helper.dart';
@@ -99,7 +98,6 @@ class ExtractorDatabase extends Extractor {
       
       if (trows.isNotEmpty) {
         final refrow = trows[0];
-        final keys = refrow.keys.toList();
         for (var row in trows) {
           Map<String, dynamic> sanitizedRow = {};
           // Fill from refrow (first row of this record) to ensure common fields are present

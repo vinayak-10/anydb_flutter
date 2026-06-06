@@ -164,10 +164,6 @@ class SqliteHelper {
     return fallbackId;
   }
 
-  static Future<String?> _extractBusinessKeyValue(String dbName, Map<String, dynamic> val, String fallbackId) async {
-    final businessKeyName = await getBusinessUniqueKeyRaw(dbName);
-    return _extractBusinessKeyValueSync(businessKeyName, val, fallbackId);
-  }
 
   static Future<void> update(String dbName, String key, dynamic val) async {
     if (kIsWeb) return;

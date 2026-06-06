@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import '../core/formula_engine.dart';
 import '../services/collection_service.dart';
@@ -88,6 +87,60 @@ final dbSearchProvider = NotifierProvider<DbSearchNotifier, DbSearchState>(() {
   return DbSearchNotifier();
 });
 
+class ReportParams {
+  final AggregatorReport report;
+  final AggregatorService agg;
+  final dynamic date;
+  final String dbKey;
+
+  ReportParams({
+    required this.report,
+    required this.agg,
+    required this.date,
+    required this.dbKey,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReportParams &&
+          runtimeType == other.runtimeType &&
+          report.key == other.report.key &&
+          agg.key == other.agg.key &&
+          date == other.date &&
+          dbKey == other.dbKey;
+
+  @override
+  int get hashCode => report.key.hashCode ^ agg.key.hashCode ^ date.hashCode ^ dbKey.hashCode;
+}
+
+final reportDataProvider = FutureProvider.family<Map<String, dynamic>, ReportParams>((ref, params) async {
+  // Watch database mutations for this database key to auto-regenerate report reactively
+  ref.watch(databaseUpdateProvider.select((m) => m[params.dbKey]));
+
+  final result = await params.agg.generate(
+    params.report,
+    date: params.date,
+    force: true,
+  );
+
+  String? path;
+  if (!kIsWeb) {
+    path = await params.agg.generateWorkbook(
+      params.report,
+      date: params.date,
+      force: true,
+    );
+  } else {
+    await params.agg.generateReport(result);
+  }
+
+  return {
+    'data': result,
+    'path': path,
+  };
+});
+
 class CollectionView extends ConsumerStatefulWidget {
   final List<AppContent> contents;
   final String title;
@@ -105,7 +158,6 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
   final TextEditingController _searchController = TextEditingController();
   final List<GlobalKey<_DatabaseViewState>> _dbKeys = [];
   final Set<String> _selectedKeys = {};
-  Map<String, dynamic>? _preloadedReportData;
   DateTime _selectedReportDate = DateTime.now();
   DateTimeRange? _selectedReportRange;
 
@@ -273,7 +325,7 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           (r) => r.key.toLowerCase().contains("daily"), 
           orElse: () => agg.reports.first
         );
-        final dailyPath = await agg.generateWorkbook(dailyReport, date: DateTime.now(), force: true);
+        await agg.generateWorkbook(dailyReport, date: DateTime.now(), force: true);
         
         // Monthly Report (Current Month till date)
         final monthlyReport = agg.reports.firstWhere(
@@ -1730,6 +1782,15 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView> with AutomaticKeep
     super.build(context);
     final searchState = ref.watch(dbSearchProvider);
 
+    ref.listen<Map<String, int>>(databaseUpdateProvider, (previous, next) {
+      final prevVal = previous?[widget.db.key] ?? 0;
+      final nextVal = next[widget.db.key] ?? 0;
+      if (nextVal != prevVal) {
+        _init(forced: true);
+        _triggerSearch(_landingSearchController.text);
+      }
+    });
+
     ref.listen<DbSearchState>(dbSearchProvider, (previous, next) {
       if (next.showLandingPage != previous?.showLandingPage) {
         if (!next.showLandingPage) {
@@ -2668,23 +2729,10 @@ class AggregatorReportView extends ConsumerStatefulWidget {
 }
 
 class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
-  bool _isGenerating = true; // true from the start so spinner shows on first frame
   bool _isSearching = false;
-  List<dynamic> _aoa = [];
-  String? _lastGeneratedPath;
   final ScrollController _verticalScrollController = ScrollController();
   String _reportSearchQuery = '';
   final TextEditingController _reportSearchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    final cols = widget.report.getColumns();
-    if (cols.isNotEmpty) {
-      _aoa = [cols];
-    }
-    _generate();
-  }
 
   @override
   void dispose() {
@@ -2693,20 +2741,12 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     super.dispose();
   }
 
-  void _share() async {
+  void _share(String filePath) async {
     try {
-      final filePath = await widget.agg.generateWorkbook(
-        widget.report,
-        date: widget.selectedRange ?? widget.selectedDate,
-        force: true,
-      );
-      
       if (filePath.isEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to generate report file")));
         return;
       }
-      
-      setState(() => _lastGeneratedPath = filePath);
 
       if (!mounted) return;
       
@@ -2809,72 +2849,11 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     }
   }
 
-  void _generate({bool force = false}) async {
-    setState(() => _isGenerating = true);
-    // Yield to the frame pipeline so the spinner is painted before heavy work.
-    final frameReady = Completer<void>();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!frameReady.isCompleted) frameReady.complete();
-    });
-    await frameReady.future;
-    await Future.delayed(const Duration(milliseconds: 150)); // Yield to paint spinner
-
-    try {
-      final result = await widget.agg.generate(
-        widget.report,
-        date: widget.selectedRange ?? widget.selectedDate,
-        force: force,
-      );
-
-      // result is the standardized Map payload
-      final List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(result['data'] as List);
-
-      if (records.isEmpty) {
-        setState(() {
-          _aoa = [];
-          _isGenerating = false;
-        });
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No records found for selected criteria")));
-        return;
-      }
-
-      final List<String> columnNames = records[0].keys.toList();
-      List<dynamic> aoa = [columnNames];
-      
-      for (var record in records) {
-        aoa.add(columnNames.map((name) => record[name] ?? '').toList());
-      }
-
-      // On Web, do not auto-generate the workbook file to avoid auto-downloads.
-      // It will be generated only when the user clicks 'OPEN'.
-      String? path;
-      if (!kIsWeb) {
-        path = await widget.agg.generateWorkbook(
-          widget.report,
-          date: widget.selectedRange ?? widget.selectedDate,
-          force: force,
-        );
-      } else {
-        await widget.agg.generateReport(result);
-      }
-
-      setState(() {
-        _aoa = aoa;
-        _isGenerating = false;
-        _lastGeneratedPath = path;
-      });
-    } catch (e) {
-      debugPrint("Generation Error: $e");
-      setState(() => _isGenerating = false);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
-  }
-
-  Widget _buildTable() {
-    if (_aoa.isEmpty) return const SizedBox.shrink();
+  Widget _buildTable(List<dynamic> aoa) {
+    if (aoa.isEmpty) return const SizedBox.shrink();
     
-    final headers = _aoa[0] as List<dynamic>;
-    final dataRows = _aoa.skip(1).toList();
+    final headers = aoa[0] as List<dynamic>;
+    final dataRows = aoa.skip(1).toList();
 
     final filteredDataRows = dataRows.where((row) {
       if (_reportSearchQuery.isEmpty) return true;
@@ -2991,14 +2970,14 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     return s;
   }
 
-  Widget _buildSummaryFooter() {
+  Widget _buildSummaryFooter(List<dynamic> aoa) {
     final summarySchema = widget.report.summary;
-    if (summarySchema.isEmpty || _aoa.length < 2) return const SizedBox.shrink();
+    if (summarySchema.isEmpty || aoa.length < 2) return const SizedBox.shrink();
 
-    final headers = _aoa[0] as List<dynamic>;
+    final headers = aoa[0] as List<dynamic>;
     final List<Map<String, dynamic>> dataRows = [];
-    for (int i = 1; i < _aoa.length; i++) {
-      final row = _aoa[i] as List<dynamic>;
+    for (int i = 1; i < aoa.length; i++) {
+      final row = aoa[i] as List<dynamic>;
       final Map<String, dynamic> mapped = {};
       for (int h = 0; h < headers.length; h++) {
         mapped[headers[h].toString()] = row[h];
@@ -3055,183 +3034,208 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    final params = ReportParams(
+      report: widget.report,
+      agg: widget.agg,
+      date: widget.selectedRange ?? widget.selectedDate,
+      dbKey: widget.schemaTitle,
+    );
+    final reportAsync = ref.watch(reportDataProvider(params));
+
+    return reportAsync.when(
+      loading: () => Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        leading: _isSearching
-            ? IconButton(
-                icon: const Icon(Icons.keyboard_backspace, color: Colors.blue),
-                onPressed: () {
-                  setState(() {
-                    _isSearching = false;
-                    _reportSearchQuery = '';
-                    _reportSearchController.clear();
-                  });
-                },
-              )
-            : null,
-        title: _isSearching
-            ? TextField(
-                controller: _reportSearchController,
-                autofocus: true,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  hintText: "Search in report...",
-                  border: InputBorder.none,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Text("Report: ${widget.report.key}"),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                "Generating Excel Report...",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.blueGrey.shade700,
                 ),
-                onChanged: (val) {
-                  setState(() {
-                    _reportSearchQuery = val;
-                  });
-                },
-              )
-            : Text("Report: ${widget.report.key}"),
-        actions: _isSearching
-            ? [
-                if (_reportSearchQuery.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.clear),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Applying formula engine and templates",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blueGrey.shade400,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      error: (err, stack) => Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Text("Report: ${widget.report.key}"),
+        ),
+        body: Center(
+          child: SelectableText("Error: $err", style: const TextStyle(color: Colors.red)),
+        ),
+      ),
+      data: (reportData) {
+        final result = reportData['data'];
+        final String? path = reportData['path'];
+        
+        final List<Map<String, dynamic>> records = List<Map<String, dynamic>>.from(result['data'] as List);
+        List<dynamic> aoa = [];
+        if (records.isNotEmpty) {
+          final List<String> columnNames = records[0].keys.toList();
+          aoa = [columnNames];
+          for (var record in records) {
+            aoa.add(columnNames.map((name) => record[name] ?? '').toList());
+          }
+        }
+        
+        final hasData = aoa.isNotEmpty;
+        
+        return Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: _isSearching
+                ? IconButton(
+                    icon: const Icon(Icons.keyboard_backspace, color: Colors.blue),
                     onPressed: () {
                       setState(() {
+                        _isSearching = false;
                         _reportSearchQuery = '';
                         _reportSearchController.clear();
                       });
                     },
-                  ),
-              ]
-            : [
-                IconButton(
-                  icon: const Icon(Icons.search, color: Colors.blue),
-                  onPressed: () {
-                    setState(() {
-                      _isSearching = true;
-                    });
-                  },
-                  tooltip: "Search in report",
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.blue),
-                  onPressed: _isGenerating ? null : () => _generate(force: true),
-                  tooltip: "Recalculate from Database",
-                ),
-                if (_aoa.isNotEmpty)
-                  TextButton.icon(
-                    icon: const Icon(Icons.open_in_new, color: Colors.blue),
-                    label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      if (_lastGeneratedPath == null) {
-                        setState(() => _isGenerating = true);
-                        await Future.delayed(const Duration(milliseconds: 150));
-                        try {
-                          final path = await widget.agg.generateWorkbook(
-                            widget.report,
-                            date: widget.selectedRange ?? widget.selectedDate,
-                            force: true,
-                          );
-                          setState(() {
-                            _lastGeneratedPath = path;
-                            _isGenerating = false;
-                          });
-                          await widget.agg.openReport(path);
-                        } catch (e) {
-                          setState(() => _isGenerating = false);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Error: $e")),
-                            );
-                          }
-                        }
-                      } else {
-                        await widget.agg.openReport(_lastGeneratedPath);
-                      }
+                  )
+                : null,
+            title: _isSearching
+                ? TextField(
+                    controller: _reportSearchController,
+                    autofocus: true,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      hintText: "Search in report...",
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _reportSearchQuery = val;
+                      });
                     },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.share),
-                  onPressed: _aoa.isEmpty ? null : _share,
-                ),
-              ],
-      ),
-      bottomNavigationBar: _buildSummaryFooter(),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  )
+                : Text("Report: ${widget.report.key}"),
+            actions: _isSearching
+                ? [
+                    if (_reportSearchQuery.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _reportSearchQuery = '';
+                            _reportSearchController.clear();
+                          });
+                        },
+                      ),
+                  ]
+                : [
+                    IconButton(
+                      icon: const Icon(Icons.search, color: Colors.blue),
+                      onPressed: () {
+                        setState(() {
+                          _isSearching = true;
+                        });
+                      },
+                      tooltip: "Search in report",
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, color: Colors.blue),
+                      onPressed: () {
+                        ref.invalidate(reportDataProvider(params));
+                      },
+                      tooltip: "Recalculate from Database",
+                    ),
+                    if (hasData)
+                      TextButton.icon(
+                        icon: const Icon(Icons.open_in_new, color: Colors.blue),
+                        label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          await widget.agg.openReport(path);
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.share),
+                      onPressed: !hasData ? null : () => _share(path ?? ''),
+                    ),
+                  ],
+          ),
+          bottomNavigationBar: _buildSummaryFooter(aoa),
+          body: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                color: Colors.white,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("Date: ${DateFormat.yMMMMd().format(widget.selectedDate)}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                    if (widget.selectedRange != null)
-                      Text("Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)}", style: const TextStyle(fontSize: 12)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Date: ${DateFormat.yMMMMd().format(widget.selectedDate)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                        if (widget.selectedRange != null)
+                          Text("Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)}", style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          if (_aoa.isNotEmpty && !_isGenerating)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_reportSearchQuery.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4.0, left: 4.0),
-                      child: Builder(
-                        builder: (context) {
-                          final dataRows = _aoa.skip(1).toList();
-                          final filteredCount = dataRows.where((row) {
-                            final query = _reportSearchQuery.toLowerCase();
-                            return row.any((cell) => _formatValue(cell).toLowerCase().contains(query));
-                          }).length;
-                          return Text(
-                            "Filtered: $filteredCount of ${dataRows.length} entries",
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
-                          );
-                        }
-                      ),
-                    ),
-                ],
               ),
-            ),
-          const Divider(height: 1, color: Colors.black12),
-          Expanded(
-            child: _isGenerating 
-              ? Center(
+              if (hasData)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Generating Excel Report...",
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.blueGrey.shade700,
+                      if (_reportSearchQuery.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0, left: 4.0),
+                          child: Builder(
+                            builder: (context) {
+                              final dataRows = aoa.skip(1).toList();
+                              final filteredCount = dataRows.where((row) {
+                                final query = _reportSearchQuery.toLowerCase();
+                                return row.any((cell) => _formatValue(cell).toLowerCase().contains(query));
+                              }).length;
+                              return Text(
+                                "Filtered: $filteredCount of ${dataRows.length} entries",
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                              );
+                            }
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Applying formula engine and templates",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blueGrey.shade400,
-                        ),
-                      ),
                     ],
                   ),
-                )
-              : _buildTable(),
+                ),
+              const Divider(height: 1, color: Colors.black12),
+              Expanded(
+                child: !hasData 
+                  ? const Center(child: Text("No records found for selected criteria", style: TextStyle(color: Colors.grey)))
+                  : _buildTable(aoa),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      }
     );
   }
 }
@@ -3339,7 +3343,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                           await batchDialogReady.future;
 
                           try {
-                            final path = await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
+                            await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
 
                             // Load the generated monthly data into UI
                             final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));

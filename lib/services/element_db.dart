@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/element_model.dart';
 import 'storage_service.dart';
@@ -17,8 +18,8 @@ class ElementDb {
   dynamic intf;
   late Meta metaService;
   EventTriggerService? _triggerService;
-
   bool initialized = false;
+  VoidCallback? onChanged;
 
   Future<void> init(dynamic schemaJson, dynamic interface) async {
     if (schemaJson is! Map) {
@@ -201,6 +202,7 @@ class ElementDb {
     
     await storage.add(key, val);
     await initDb(forced: true);
+    onChanged?.call();
   }
 
   Future<void> markDelete(ElementModel element) async {
@@ -214,6 +216,7 @@ class ElementDb {
     
     await storage.add(key, val);
     await initDb(forced: true);
+    onChanged?.call();
   }
 
   Future<void> restore(ElementModel element) async {
@@ -228,6 +231,7 @@ class ElementDb {
     
     await storage.add(key, val);
     await initDb(forced: true);
+    onChanged?.call();
   }
 
   Map<String, dynamic> getStats() {
@@ -335,18 +339,21 @@ class ElementDb {
 
     // Force-reload the local list to perfectly reflect auto-archiving state
     await initDb(forced: true);
+    onChanged?.call();
   }
 
   Future<void> removeRecord(String recordKey) async {
     await storage.remove(recordKey);
     elements.removeWhere((e) => e.key == recordKey);
     metaService.delete(recordKey);
+    onChanged?.call();
   }
 
   Future<void> clear() async {
     await storage.clear();
     elements.clear();
     metaService = Meta(dbKey: key, tsPath: metaService.tsPath);
+    onChanged?.call();
   }
 
   Future<void> importDb(List<dynamic> data, {bool wipeFirst = false}) async {
@@ -355,6 +362,7 @@ class ElementDb {
     }
     await storage.importData(data);
     await initDb(forced: true);
+    onChanged?.call();
   }
 
   Future<List<dynamic>> exportDb() async {
@@ -478,3 +486,17 @@ class ElementDb {
     await _triggerService?.trigger('onDbStop');
   }
 }
+
+class DatabaseUpdateNotifier extends Notifier<Map<String, int>> {
+  @override
+  Map<String, int> build() => {};
+
+  void increment(String dbKey) {
+    state = {
+      ...state,
+      dbKey: (state[dbKey] ?? 0) + 1,
+    };
+  }
+}
+
+final databaseUpdateProvider = NotifierProvider<DatabaseUpdateNotifier, Map<String, int>>(DatabaseUpdateNotifier.new);
