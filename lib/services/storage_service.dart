@@ -9,7 +9,7 @@ import 'package:path/path.dart' as p;
 abstract class StorageInterface {
   String getType();
   Future<void> init(String dbName, Map<String, dynamic> config);
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active'});
+  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false});
   Future<void> add(String key, Map<String, dynamic> val);
   Future<void> remove(String key);
   Future<Map<String, dynamic>?> get(String key);
@@ -30,8 +30,8 @@ class LocalStore extends StorageInterface {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active'}) async {
-    final results = await AsyncStore.getAll(_dbName, filter: filter);
+  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async {
+    final results = await AsyncStore.getAll(_dbName, filter: filter, allRecords: allRecords);
     return results.map((e) {
       final key = e.keys.first.replaceFirst('$_dbName:', '');
       return <String, dynamic>{key: e.values.first};
@@ -208,7 +208,7 @@ class FileStore extends StorageInterface {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active'}) async {
+  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async {
     if (kIsWeb) return [];
     final filePath = p.join(_dbPath, '$_dbName.json');
     final data = await _fileService.readJson(filePath);
@@ -294,7 +294,7 @@ class RestApiStore extends StorageInterface {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active'}) async => []; 
+  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async => []; 
 
   @override
   Future<void> add(String key, Map<String, dynamic> val) async {
@@ -347,10 +347,10 @@ class StorageService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active'}) async {
+  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async {
     if (_storages.isEmpty) return [];
     for (var s in _storages) {
-      final results = await s.fetch(filter: filter);
+      final results = await s.fetch(filter: filter, allRecords: allRecords);
       if (results.isNotEmpty) return results;
     }
     return [];

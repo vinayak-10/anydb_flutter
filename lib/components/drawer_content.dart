@@ -21,8 +21,9 @@ class DrawerContent extends ConsumerWidget {
 
     return Drawer(
       backgroundColor: Colors.white,
-      child: Column(
-        children: [
+      child: SafeArea(
+        child: Column(
+          children: [
           if (isLoggedIn)
             UserAccountsDrawerHeader(
               accountName: Text(user.displayName ?? "User"),
@@ -126,36 +127,42 @@ class DrawerContent extends ConsumerWidget {
                   leading: const Icon(Icons.format_size),
                   title: const Text('Font Size'),
                   subtitle: Text('Current Scale: ${settings.fontScale.toStringAsFixed(1)}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove),
-                        onPressed: () => ref.read(settingsProvider.notifier).decreaseFont(),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add),
-                        onPressed: () => ref.read(settingsProvider.notifier).increaseFont(),
-                      ),
-                    ],
+                  trailing: SizedBox(
+                    width: 96,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove),
+                          onPressed: () => ref.read(settingsProvider.notifier).decreaseFont(),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () => ref.read(settingsProvider.notifier).increaseFont(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.text_fields),
                   title: const Text('Input Font Size'),
                   subtitle: Text('Current: ${settings.inputFontSize.toStringAsFixed(0)}pt (${settings.inputFontScale.toStringAsFixed(1)}x)'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove),
-                        onPressed: () => ref.read(settingsProvider.notifier).decreaseInputFont(),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add),
-                        onPressed: () => ref.read(settingsProvider.notifier).increaseInputFont(),
-                      ),
-                    ],
+                  trailing: SizedBox(
+                    width: 96,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove),
+                          onPressed: () => ref.read(settingsProvider.notifier).decreaseInputFont(),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () => ref.read(settingsProvider.notifier).increaseInputFont(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 SwitchListTile(
@@ -254,11 +261,14 @@ class DrawerContent extends ConsumerWidget {
                                             color: isLikely ? Colors.indigo : Colors.grey,
                                           ),
                                           const SizedBox(width: 8),
-                                          Text(
-                                            field,
-                                            style: TextStyle(
-                                              fontWeight: isLikely ? FontWeight.w600 : FontWeight.normal,
-                                              color: isLikely ? Colors.indigo.shade900 : Colors.black87,
+                                          Expanded(
+                                            child: Text(
+                                              field,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: isLikely ? FontWeight.w600 : FontWeight.normal,
+                                                color: isLikely ? Colors.indigo.shade900 : Colors.black87,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -407,7 +417,7 @@ class DrawerContent extends ConsumerWidget {
           ]
         ],
       ),
-    );
+    ),);
   }
 }
 

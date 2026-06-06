@@ -76,7 +76,7 @@ class ExtractorDatabase extends Extractor {
     _rows.clear();
     _data.clear();
 
-    final elements = await _storage.fetch();
+    final elements = await _storage.fetch(allRecords: true);
     logger.log("ExtractorDatabase: Fetched ${elements.length} raw elements from storage.");
 
     // IMPORTANT: Include Active, Archived, and Deleted for report (Matching RN historical data extraction)
@@ -474,11 +474,11 @@ class ExtractorIntf {
     reinited = false;
   }
 
-  Future<void> reinit(bool focused) async {
+  Future<void> reinit(bool focused, {bool force = false}) async {
     if (extractor != null) {
       bool isInited = reinited;
       reinited = focused;
-      if (focused && !isInited) {
+      if (force || (focused && !isInited)) {
         if (extractor is ExtractorDatabase) {
            await (extractor as ExtractorDatabase).reinit();
         }

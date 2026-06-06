@@ -19,7 +19,8 @@ class SqliteHelper {
     
     _db = sql.sqlite3.open(dbPath);
     _db!.execute('PRAGMA journal_mode=WAL;');
-    _db!.execute('PRAGMA cache_size = -32000;');
+    _db!.execute('PRAGMA synchronous=NORMAL;');
+    _db!.execute('PRAGMA cache_size = -128000;');
     _db!.execute('PRAGMA temp_store = MEMORY;');
 
     // Guaranteed creation of Auxiliary Registry on app start
@@ -95,19 +96,20 @@ class SqliteHelper {
     ''');
   }
 
-  static Future<List<Map<String, dynamic>>> getAll(String dbName, {String filter = 'Active'}) async {
+  static Future<List<Map<String, dynamic>>> getAll(String dbName, {String filter = 'Active', bool allRecords = false}) async {
     if (kIsWeb) return [];
     
-    // Delegate record reading and dynamic 30% recent sorting to the background Database Isolate
+    // Delegate record reading and sorting to the background Database Isolate
     try {
       final List<dynamic> results = await IsolateWorker.instance.execute<List<dynamic>>(
         'dbGetAll',
         {
           'dbName': dbName,
           'filter': filter,
+          'allRecords': allRecords,
         },
       );
-      // Zero-copy port optimization: decode the raw JSON strings for only the top 30% records on the main thread
+      // Zero-copy port optimization: decode the raw JSON strings on the main thread
       return results.map((item) {
         final map = item as Map;
         final key = map['id'] as String;
@@ -169,12 +171,31 @@ class SqliteHelper {
 
   static Future<void> update(String dbName, String key, dynamic val) async {
     if (kIsWeb) return;
+    final businessKeyName = await getBusinessUniqueKey(dbName);
+    try {
+      await IsolateWorker.instance.execute(
+        'dbUpdateSingle',
+        {
+          'dbName': dbName,
+          'id': key,
+          'value': val,
+          'businessKeyName': businessKeyName,
+        },
+      );
+    } catch (e) {
+      debugPrint("SqliteHelper.update Isolate error, falling back to direct update: $e");
+      await updateRaw(dbName, key, val, businessKeyName);
+    }
+  }
+
+  static Future<void> updateRaw(String dbName, String key, dynamic val, [String? businessKeyName]) async {
+    if (kIsWeb) return;
     final db = await _database;
     final tableName = _fileService.sanitizeName(dbName);
     await initTable(dbName);
 
     final Map<String, dynamic> recordVal = val is Map ? Map<String, dynamic>.from(val) : {};
-    final businessKeyVal = await _extractBusinessKeyValue(dbName, recordVal, key);
+    final businessKeyVal = _extractBusinessKeyValueSync(businessKeyName, recordVal, key);
     
     int isActive = 1;
     final meta = recordVal['__meta__'];

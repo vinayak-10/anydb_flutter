@@ -106,6 +106,8 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
   final List<GlobalKey<_DatabaseViewState>> _dbKeys = [];
   final Set<String> _selectedKeys = {};
   Map<String, dynamic>? _preloadedReportData;
+  DateTime _selectedReportDate = DateTime.now();
+  DateTimeRange? _selectedReportRange;
 
   @override
   void initState() {
@@ -271,31 +273,36 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
           (r) => r.key.toLowerCase().contains("daily"), 
           orElse: () => agg.reports.first
         );
-        final dailyPath = await agg.generateWorkbook(dailyReport, date: DateTime.now());
+        final dailyPath = await agg.generateWorkbook(dailyReport, date: DateTime.now(), force: true);
         
         // Monthly Report (Current Month till date)
         final monthlyReport = agg.reports.firstWhere(
           (r) => r.key.toLowerCase().contains("monthly"), 
           orElse: () => agg.reports.last
         );
-        final monthlyPath = await agg.generateWorkbook(monthlyReport, date: DateTime.now());
-
-        // Load the Daily result for UI
-        final dailyResult = await agg.generate(dailyReport, date: DateTime.now());
-        dailyResult['path'] = dailyPath;
+        final monthlyPath = await agg.generateWorkbook(monthlyReport, date: DateTime.now(), force: true);
 
         await db.close();
         
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
           
-          setState(() {
-            _preloadedReportData = dailyResult;
-            final aggIdx = widget.contents.indexWhere((c) => c.type == ContentType.aggregator);
-            if (aggIdx != -1) {
-              _tabController.animateTo(aggIdx);
-            }
-          });
+          final aggIdx = widget.contents.indexWhere((c) => c.type == ContentType.aggregator);
+          if (aggIdx != -1) {
+            _tabController.animateTo(aggIdx);
+          }
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AggregatorReportView(
+                report: dailyReport,
+                agg: agg,
+                selectedDate: DateTime.now(),
+                schemaTitle: widget.title,
+              ),
+            ),
+          );
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -485,7 +492,8 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
         builder: (context) => AggregatorReportView(
           report: dailyReport,
           agg: agg,
-          selectedDate: DateTime.now(),
+          selectedDate: _selectedReportDate,
+          selectedRange: _selectedReportRange,
           schemaTitle: widget.title,
         ),
       ),
@@ -752,7 +760,14 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
             return _AggregatorView(
               agg: c.service as AggregatorService, 
               schemaTitle: widget.title,
-              initialReportData: _preloadedReportData,
+              selectedDate: _selectedReportDate,
+              selectedRange: _selectedReportRange,
+              onDateChanged: (date, range) {
+                setState(() {
+                  _selectedReportDate = date;
+                  _selectedReportRange = range;
+                });
+              },
             );
           }
         }).toList(),
@@ -783,7 +798,11 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
       bottomNavigationBar: hideCradleFab
           ? null
           : Container(
-              margin: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 20.0),
+              margin: EdgeInsets.only(
+                left: 16.0,
+                right: 16.0,
+                bottom: MediaQuery.of(context).padding.bottom > 0 ? 8.0 : 16.0,
+              ),
               decoration: BoxDecoration(
                 color: const Color(0xFFFAF8F5), // Premium Alabaster Cream
                 borderRadius: BorderRadius.circular(24.0),
@@ -804,13 +823,16 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24.0),
-                child: BottomAppBar(
-                  color: Colors.transparent, // Transparent to let Container's color and shadow shine
-                  elevation: 0,
-                  notchMargin: 0.0,
+                child: MediaQuery(
+                  // Clamp text scaling inside the navigation bar to prevent font overflows
+                  data: MediaQuery.of(context).copyWith(
+                    textScaler: const TextScaler.linear(1.0),
+                  ),
                   child: SafeArea(
+                    top: false,
+                    bottom: true,
                     child: SizedBox(
-                      height: 60.0,
+                      height: 64.0,
                       child: Row(
                         children: [
                           Expanded(
@@ -834,15 +856,18 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                                       borderRadius: BorderRadius.circular(1.5),
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 2),
                                   Icon(
                                     widget.contents[0].type == ContentType.database ? Icons.storage : Icons.assessment,
                                     color: _currentTabIndex == 0 ? const Color(0xFF6B1524) : Colors.grey.shade600,
                                     size: 24,
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 2),
                                   Text(
                                     widget.contents[0].name,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -876,15 +901,18 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                                         borderRadius: BorderRadius.circular(1.5),
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
+                                    const SizedBox(height: 2),
                                     Icon(
                                       widget.contents[1].type == ContentType.database ? Icons.storage : Icons.assessment,
                                       color: _currentTabIndex == 1 ? const Color(0xFF6B1524) : Colors.grey.shade600,
                                       size: 24,
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 2),
                                     Text(
                                       widget.contents[1].name,
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -2670,6 +2698,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       final filePath = await widget.agg.generateWorkbook(
         widget.report,
         date: widget.selectedRange ?? widget.selectedDate,
+        force: true,
       );
       
       if (filePath.isEmpty) {
@@ -2823,6 +2852,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         path = await widget.agg.generateWorkbook(
           widget.report,
           date: widget.selectedRange ?? widget.selectedDate,
+          force: force,
         );
       } else {
         await widget.agg.generateReport(result);
@@ -2852,29 +2882,89 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       return row.any((cell) => _formatValue(cell).toLowerCase().contains(query));
     }).toList();
 
-    return Scrollbar(
-      controller: _verticalScrollController,
-      thumbVisibility: true,
-      child: SingleChildScrollView(
-        controller: _verticalScrollController,
-        scrollDirection: Axis.vertical,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(Colors.blueGrey.shade100),
-            dataRowMinHeight: 48,
-            columns: headers.map<DataColumn>((c) => DataColumn(
-              label: Text(c.toString(), style: const TextStyle(fontWeight: FontWeight.bold))
-            )).toList(),
-            rows: filteredDataRows.map<DataRow>((r) => DataRow(
-              cells: (r as List).map<DataCell>((c) {
-                String displayVal = _formatValue(c);
-                return DataCell(Text(displayVal, style: const TextStyle(fontSize: 14)));
-              }).toList(),
-            )).toList(),
+    // Dynamically calculate flex column widths to fit all columns on screen
+    final Map<int, TableColumnWidth> columnWidths = {};
+    for (int i = 0; i < headers.length; i++) {
+      final colName = headers[i].toString().toLowerCase();
+      double weight = 1.5; // default weight
+      if (colName.contains('name') || colName.contains('desc') || colName.contains('detail') || colName.contains('address') || colName.contains('note') || colName.contains('diagnosis') || colName.contains('remark') || colName.contains('reason')) {
+        weight = 3.0;
+      } else if (colName == 'sex' || colName == 'gender' || colName == 'age' || colName == 's.no' || colName == 's.no.' || colName == 'sl') {
+        weight = 0.8;
+      } else if (colName.contains('charge') || colName.contains('paid') || colName.contains('fee') || colName.contains('amount') || colName.contains('amt') || colName.contains('no') || colName.contains('date') || colName.contains('code') || colName.contains('id')) {
+        weight = 1.2;
+      }
+      columnWidths[i] = FlexColumnWidth(weight);
+    }
+
+    return Column(
+      children: [
+        // Pinned Header Section
+        Container(
+          color: Colors.blueGrey.shade100,
+          child: Table(
+            columnWidths: columnWidths,
+            border: TableBorder(
+              bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
+              horizontalInside: BorderSide(color: Colors.grey.shade200, width: 1),
+              verticalInside: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            children: [
+              TableRow(
+                children: headers.map<Widget>((c) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 12.0),
+                    child: Text(
+                      c.toString(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ),
         ),
-      ),
+        // Scrollable Body Section
+        Expanded(
+          child: Scrollbar(
+            controller: _verticalScrollController,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: _verticalScrollController,
+              scrollDirection: Axis.vertical,
+              child: Table(
+                columnWidths: columnWidths,
+                border: TableBorder(
+                  bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+                  horizontalInside: BorderSide(color: Colors.grey.shade200, width: 1),
+                  verticalInside: BorderSide(color: Colors.grey.shade200, width: 1),
+                ),
+                children: filteredDataRows.map<TableRow>((r) {
+                  return TableRow(
+                    children: (r as List).map<Widget>((c) {
+                      String displayVal = _formatValue(c);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 10.0),
+                        child: Text(
+                          displayVal,
+                          style: const TextStyle(fontSize: 16),
+                          softWrap: true,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
+                      );
+                    }).toList(),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -3038,6 +3128,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                           final path = await widget.agg.generateWorkbook(
                             widget.report,
                             date: widget.selectedRange ?? widget.selectedDate,
+                            force: true,
                           );
                           setState(() {
                             _lastGeneratedPath = path;
@@ -3148,475 +3239,182 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
 class _AggregatorView extends ConsumerStatefulWidget {
   final AggregatorService agg;
   final String schemaTitle;
-  final Map<String, dynamic>? initialReportData;
-  const _AggregatorView({required this.agg, required this.schemaTitle, this.initialReportData});
+  final DateTime selectedDate;
+  final DateTimeRange? selectedRange;
+  final Function(DateTime, DateTimeRange?) onDateChanged;
+
+  const _AggregatorView({
+    required this.agg,
+    required this.schemaTitle,
+    required this.selectedDate,
+    required this.selectedRange,
+    required this.onDateChanged,
+  });
 
   @override
   ConsumerState<_AggregatorView> createState() => _AggregatorViewState();
 }
 
 class _AggregatorViewState extends ConsumerState<_AggregatorView> {
-  DateTime _selectedDate = DateTime.now();
-  DateTimeRange? _selectedRange;
-  Map<String, dynamic>? _reportData;
-  bool _isSearching = false;
-  String _reportSearchQuery = '';
-  final TextEditingController _reportSearchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialReportData != null) {
-      _reportData = widget.initialReportData;
-    }
-  }
-
-  @override
-  void didUpdateWidget(_AggregatorView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialReportData != oldWidget.initialReportData && widget.initialReportData != null) {
-      setState(() {
-        _reportData = widget.initialReportData;
-        _reportSearchQuery = '';
-        _reportSearchController.clear();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _reportSearchController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
-      children: [
-        if (_reportData != null)
-           Expanded(
-             child: Padding(
-               padding: const EdgeInsets.all(16.0),
-               child: Column(
-                 crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _isSearching
-                            ? IconButton(
-                                icon: const Icon(Icons.arrow_back, color: Colors.indigo),
-                                onPressed: () {
-                                  setState(() {
-                                    _isSearching = false;
-                                    _reportSearchQuery = '';
-                                    _reportSearchController.clear();
-                                  });
-                                },
-                              )
-                            : Text(_reportData!['name'] ?? "Report", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.indigo)),
-                        Expanded(
-                          child: _isSearching
-                              ? Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                  child: TextField(
-                                    controller: _reportSearchController,
-                                    autofocus: true,
-                                    style: const TextStyle(fontSize: 16),
-                                    decoration: const InputDecoration(
-                                      hintText: "Search in report...",
-                                      border: InputBorder.none,
-                                    ),
-                                    onChanged: (val) {
-                                      setState(() {
-                                        _reportSearchQuery = val;
-                                      });
-                                    },
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        Row(
-                          children: _isSearching
-                              ? [
-                                  if (_reportSearchQuery.isNotEmpty)
-                                    IconButton(
-                                      icon: const Icon(Icons.clear, size: 18),
-                                      onPressed: () {
-                                        setState(() {
-                                          _reportSearchQuery = '';
-                                          _reportSearchController.clear();
-                                        });
-                                      },
-                                    ),
-                                ]
-                              : [
-                                  IconButton(
-                                    icon: const Icon(Icons.search, color: Colors.indigo),
-                                    onPressed: () {
-                                      setState(() {
-                                        _isSearching = true;
-                                      });
-                                    },
-                                    tooltip: "Search",
-                                  ),
-                                  if (_reportData!['path'] != null)
-                                    IconButton(
-                                      icon: const Icon(Icons.share, color: Colors.indigo),
-                                      onPressed: () {
-                                         _showShareDialog(context, _reportData!['path']);
-                                      },
-                                      tooltip: "Share",
-                                    ),
-                                  if (_reportData!['path'] != null)
-                                    IconButton(
-                                      icon: const Icon(Icons.open_in_new, color: Colors.indigo),
-                                      onPressed: () => widget.agg.openReport(_reportData!['path']),
-                                      tooltip: "Open",
-                                    ),
-                                  IconButton(
-                                    onPressed: () => setState(() {
-                                      _reportData = null;
-                                      _reportSearchQuery = '';
-                                      _reportSearchController.clear();
-                                      _isSearching = false;
-                                    }),
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ],
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    Builder(
-                      builder: (context) {
-                        final dataList = (_reportData!['data'] ?? []) as List;
-                        final filteredEntries = dataList.asMap().entries.where((entry) {
-                          if (_reportSearchQuery.isEmpty) return true;
-                          final map = entry.value as Map;
-                          final query = _reportSearchQuery.toLowerCase();
-                          return map.values.any((val) => _formatValue(val).toLowerCase().contains(query));
-                        }).toList();
-
-                        return Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (_reportSearchQuery.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
-                                  child: Text(
-                                    "Filtered: ${filteredEntries.length} of ${dataList.length} entries",
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
-                                  ),
-                                ),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.vertical,
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: DataTable(
-                                      headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                                      columns: [
-                                        const DataColumn(label: Text("S.no.", style: TextStyle(fontWeight: FontWeight.bold))),
-                                        ...(((_reportData!['data'] ?? []) as List).isNotEmpty 
-                                            ? ((_reportData!['data'] as List)[0] as Map).keys.toList() 
-                                            : ["No Data"]).map((k) => DataColumn(label: Text(k.toString(), style: const TextStyle(fontWeight: FontWeight.bold)))),
-                                      ],
-                                      rows: filteredEntries.asMap().entries.map((filteredEntry) {
-                                        final displayedIdx = filteredEntry.key;
-                                        final originalEntry = filteredEntry.value;
-                                        final map = originalEntry.value as Map;
-                                        return DataRow(cells: [
-                                          DataCell(Text((displayedIdx + 1).toString())),
-                                          ...map.values.map((v) => DataCell(Text(_formatValue(v)))),
-                                        ]);
-                                      }).toList(),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade200, width: 1.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 6,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Select Parameters", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  const SizedBox(height: 16),
+                  Card(
+                    elevation: 0,
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Colors.black12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("REPORT SUMMARY", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
-                          const Divider(),
-                          if (_reportData!['summary'] is Map)
-                            Wrap(
-                              spacing: 20,
-                              runSpacing: 10,
-                              children: (_reportData!['summary'] as Map).entries.map((e) => Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(e.key.toString(), style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                                  Text(_formatValue(e.value), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                ],
-                              )).toList(),
-                            )
-                          else
-                            Text(_reportData!['summary']?.toString() ?? "No Summary Available"),
+                          ListTile(
+                            leading: const Icon(Icons.calendar_today),
+                            title: const Text("Report Date"),
+                            subtitle: Text(DateFormat.yMMMMd().format(widget.selectedDate)),
+                            trailing: const Icon(Icons.edit),
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: widget.selectedDate,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
+                              );
+                              if (picked != null) widget.onDateChanged(picked, null);
+                            },
+                          ),
                         ],
                       ),
-                    ),
-                 ],
-               ),
-             ),
-           )
-        else
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Select Parameters", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                const SizedBox(height: 16),
-                Card(
-                  elevation: 0,
-                  color: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Colors.black12)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.calendar_today),
-                          title: const Text("Report Date"),
-                          subtitle: Text(DateFormat.yMMMMd().format(_selectedDate)),
-                          trailing: const Icon(Icons.edit),
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: _selectedDate,
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime(2100),
-                            );
-                            if (picked != null) setState(() => _selectedDate = picked);
-                          },
-                        ),
-                      ],
                     ),
                   ),
-                ),
-                const Text("Available Reports", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
-                const Divider(color: Colors.black12),
-                if (widget.agg.reports.any((r) => r.key.toLowerCase().contains("monthly")))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.indigo,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () async {
-                        final batchDialogReady = Completer<void>();
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (context) => const Center(
-                            child: Card(
-                              child: Padding(
-                                padding: EdgeInsets.all(24.0),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text("Generating Full Monthly Report...", style: TextStyle(fontWeight: FontWeight.bold)),
-                                    SizedBox(height: 8),
-                                    Text("Processing each day and aggregating totals", style: TextStyle(fontSize: 12)),
-                                  ],
+                  const Text("Available Reports", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
+                  const Divider(color: Colors.black12),
+                  if (widget.agg.reports.any((r) => r.key.toLowerCase().contains("monthly")))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.indigo,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          final batchDialogReady = Completer<void>();
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(
+                              child: Card(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CircularProgressIndicator(),
+                                      SizedBox(height: 16),
+                                      Text("Generating Full Monthly Report...", style: TextStyle(fontWeight: FontWeight.bold)),
+                                      SizedBox(height: 8),
+                                      Text("Processing each day and aggregating totals", style: TextStyle(fontSize: 12)),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                        // Wait for dialog to paint before blocking with heavy work.
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!batchDialogReady.isCompleted) batchDialogReady.complete();
-                        });
-                        await batchDialogReady.future;
-
-                        try {
-                          final path = await widget.agg.generateMonthlyBatch(_selectedDate, force: true);
-
-                          
-                          // Load the generated monthly data into UI
-                          final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
-                          final result = await widget.agg.generate(monthlyReport, date: _selectedDate, force: true);
-                          
-                          if (!context.mounted) return;
-                          setState(() {
-                            _reportData = result;
-                            _reportData!['path'] = path; // Save the path for sharing
-                            _reportSearchQuery = '';
-                            _reportSearchController.clear();
-                          });
-
-                          // Ensure table is rendered before closing progress indicator
+                          );
+                          // Wait for dialog to paint before blocking with heavy work.
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                             if (context.mounted) {
-                                Navigator.pop(context); // Close loading dialog
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                  content: Text("Monthly Report & All Daily Sheets generated successfully!"),
-                                  backgroundColor: Colors.green,
-                                ));
-                             }
+                            if (!batchDialogReady.isCompleted) batchDialogReady.complete();
                           });
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text("Batch Error: $e"),
-                            backgroundColor: Colors.red,
-                          ));
-                        }
-                      },
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text("GENERATE FULL MONTHLY", style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: widget.agg.reports.length,
-                    itemBuilder: (context, index) {
-                      final r = widget.agg.reports[index];
-                      return ListTile(
-                        leading: const Icon(Icons.summarize, color: Colors.blue),
-                        title: Text(r.key, style: const TextStyle(fontWeight: FontWeight.w500)),
-                        subtitle: Text("${r.rows.length} data sources"),
-                        trailing: ElevatedButton(
-                          onPressed: () {
+                          await batchDialogReady.future;
+
+                          try {
+                            final path = await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
+
+                            // Load the generated monthly data into UI
+                            final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
+                            
+                            if (!context.mounted) return;
+                            Navigator.pop(context); // Close loading dialog
+                            
+                            // Directly push full-screen Monthly report!
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => AggregatorReportView(
-                                report: r, 
-                                agg: widget.agg,
-                                selectedDate: _selectedDate,
-                                selectedRange: _selectedRange,
-                                schemaTitle: widget.schemaTitle,
-                              ))
+                              MaterialPageRoute(
+                                builder: (context) => AggregatorReportView(
+                                  report: monthlyReport,
+                                  agg: widget.agg,
+                                  selectedDate: widget.selectedDate,
+                                  selectedRange: widget.selectedRange,
+                                  schemaTitle: widget.schemaTitle,
+                                ),
+                              ),
                             );
-                          },
-                          child: const Text("GENERATE"),
-                        ),
-                      );
-                    },
+
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text("Monthly Report & All Daily Sheets generated successfully!"),
+                              backgroundColor: Colors.green,
+                            ));
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text("Batch Error: $e"),
+                              backgroundColor: Colors.red,
+                            ));
+                          }
+                        },
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text("GENERATE FULL MONTHLY", style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: widget.agg.reports.length,
+                      itemBuilder: (context, index) {
+                        final r = widget.agg.reports[index];
+                        return ListTile(
+                          leading: const Icon(Icons.summarize, color: Colors.blue),
+                          title: Text(r.key, style: const TextStyle(fontWeight: FontWeight.w500)),
+                          subtitle: Text("${r.rows.length} data sources"),
+                          trailing: ElevatedButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => AggregatorReportView(
+                                  report: r, 
+                                  agg: widget.agg,
+                                  selectedDate: widget.selectedDate,
+                                  selectedRange: widget.selectedRange,
+                                  schemaTitle: widget.schemaTitle,
+                                ))
+                              );
+                            },
+                            child: const Text("GENERATE"),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ],
-    ),
-    );
-  }
-
-  String _formatValue(dynamic c) {
-    if (c == null) return "";
-    if (c is List) {
-      if (c.isEmpty) return "";
-      return _formatValue(c.first);
-    }
-    if (c is DateTime) return DateFormat.yMd().format(c);
-    if (c is int && c > 1000000000000) {
-       return DateFormat.yMd().format(DateTime.fromMillisecondsSinceEpoch(c));
-    }
-    if (c is num) {
-      if (c % 1 == 0) return c.toInt().toString();
-      return c.toStringAsFixed(2);
-    }
-    final s = c.toString();
-    final n = double.tryParse(s.replaceAll(',', ''));
-    if (n != null) {
-      if (n % 1 == 0) return n.toInt().toString();
-      return n.toStringAsFixed(2);
-    }
-    return s;
-  }
-
-  void _showShareDialog(BuildContext context, String filePath) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Export Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.share, color: Colors.indigo),
-                title: const Text("Share File"),
-                onTap: () async {
-                  Navigator.pop(context);
-                  try {
-                    // Standard share dialog for all platforms
-                    // ignore: deprecated_member_use
-                    await Share.shareXFiles([XFile(filePath)], text: 'Monthly Report');
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.cloud_upload, color: Colors.blue),
-                title: const Text("Upload to Google Drive"),
-                onTap: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  Navigator.pop(context);
-                  final googleDriveService = ref.read(googleDriveServiceProvider);
-                  try {
-                    await googleDriveService.uploadFile(
-                      filePath,
-                      p.basename(filePath),
-                      path: ['xyz.maya', 'anydb', widget.schemaTitle, 'Aggregators']
-                    );
-                    messenger.showSnackBar(const SnackBar(content: Text("Uploaded to Google Drive successfully")));
-                  } catch (e) {
-                    messenger.showSnackBar(SnackBar(content: Text("Upload failed: $e"), backgroundColor: Colors.red));
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
 }
-
-
 
 class _RichHeader extends StatefulWidget {
   final String title;

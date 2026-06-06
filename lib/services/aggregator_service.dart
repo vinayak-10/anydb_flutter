@@ -226,7 +226,7 @@ class AggregatorService {
     logger.log("AggregatorService: Target Sheet Name: $finalSheetName (Original: $sheetName)");
     
     logger.log("AggregatorService: Fetching data from source (force: $force)...");
-    await report.extractor[0].reinit(true);
+    await report.extractor[0].reinit(true, force: force);
     final s = await report.extractor[0].extractor!.applyPredicate(
       report.extractor[0].extractor!.predicates[0], 
       data: targetDate,
@@ -242,8 +242,8 @@ class AggregatorService {
     return report.generateData(s);
   }
 
-  Future<String> generateWorkbook(AggregatorReport report, {dynamic date, DateTime? timestamp}) async {
-    final reportData = await generate(report, date: date, timestamp: timestamp);
+  Future<String> generateWorkbook(AggregatorReport report, {dynamic date, DateTime? timestamp, bool force = false}) async {
+    final reportData = await generate(report, date: date, timestamp: timestamp, force: force);
     final result = await generateReport(reportData, timestamp: timestamp);
     return result['path'];
   }

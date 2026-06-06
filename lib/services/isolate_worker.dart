@@ -305,9 +305,24 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       await SqliteHelper.setBusinessUniqueKeyRaw(schemaName, keyName);
       return null;
 
+    case 'dbUpdateSingle':
+      final String dbName = params['dbName'];
+      final String id = params['id'];
+      final dynamic value = params['value'];
+      final String? businessKeyName = params['businessKeyName'];
+      
+      // Perform database update
+      await SqliteHelper.updateRaw(dbName, id, value, businessKeyName);
+      
+      // Update isolate memory cache
+      final tableCache = bgCache[dbName] ??= {};
+      tableCache[id] = jsonEncode(value);
+      return null;
+
     case 'dbGetAll':
       final String dbName = params['dbName'];
       final String filter = params['filter']?.toString() ?? 'Active';
+      final bool allRecords = params['allRecords'] == true;
 
       // 1. Ensure timestamps table is initialized and backfilled
       await SqliteHelper.backfillTimestamps(dbName);
@@ -334,9 +349,9 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
         tableCache['__inactive_loaded__'] = 'true';
       }
 
-      // 4. Determine 30% boundary limit based on the filtered records
+      // 4. Determine boundary limit based on the filtered records
       final int totalCount = rawRecords.length;
-      final int limit = (totalCount * 0.30).round().clamp(100, totalCount);
+      final int limit = allRecords ? totalCount : (totalCount * 0.30).round().clamp(100, totalCount);
 
       // 5. Query top recent IDs from timestamps table using status filter
       final List<String> recentIds = await SqliteHelper.getTopRecentIds(dbName, limit, filter: filter);

@@ -94,6 +94,27 @@
 - **Empty Database Alert Trigger:** Implemented a low-level, high-performance static check `SqliteHelper.isTableEmpty(dbName)` to check for empty database states, triggering a premium warning SnackBar and displaying a gorgeous visual Velvet Crimson warning card in search results when no backup has been imported altogether.
 - **One-Shot Empty Warning:** Prevented Toast spamming on every keystroke by integrating a state-retained `_hasShownEmptyWarning` flag inside the search controller typing listener. This triggers the error SnackBar only once at the beginning of the typing sequence and resets cleanly when the query is cleared or when database records are successfully imported.
 
+### 16. Private GitHub Remote Setup & Apple Actions Pipeline
+- **Multi-Remote Architecture:** Successfully split local remote configs to support a dual-remote model: `local-server` (local Git server) and `origin` (private GitHub remote at `git@github.com:vinayak-10/anydb_flutter.git`). Pushed both `dev` and `master` branches.
+- **Apple Actions Automation:** Drafted a macOS and iOS compile automation pipeline (`.github/workflows/build_apple.yml`) using Apple Silicon macOS runners to handle Flutter desktop packaging.
+- **iOS Packaging Assembly:** Created `ios/ExportOptions.plist` mapped to the bundle identifier `com.example.anydbFlutter` for manual signing assembly exports.
+
+### 17. Sticky Header & Fit-to-Width Report View
+- **Fit-to-Width Columns:** Refactored the Excel-generation report preview table from `DataTable` to a custom `Table` component. Implemented dynamic flex-width columns to fit 100% of the screen width with zero horizontal scrolling.
+- **Sticky Header & Scrollable Body:** Added a sticky/static top-pinned header and a vertically scrollable body table aligned with the header. Enforced a default font size of `16` for elderly readability with single-line ellipsis clipping.
+
+### 18. Force-Reload on Report preview & Done Sequence
+- **Force workbook generation:** Added the `force` reload parameter to `generateWorkbook()` inside `AggregatorService` and passed it down to `ExtractorDatabase.reinit`.
+- **Done Flow Real-time Sync:** Forced report regeneration inside the "Done" (Finalize Day) sequence, "Share" flow, and report "OPEN" action to ensure the latest added transactions are correctly queried and reflected in the preview sheet.
+
+### 19. Optimized SQLite RAM Cache & Android largeHeap
+- **128MB RAM Page Cache:** Increased SQLite's page cache size limit to 128MB (`-128000`) and set `PRAGMA synchronous = NORMAL` inside the connection initializer of `SqliteHelper` to accelerate high-volume database reads and writes.
+- **Large Heap Allocation:** Verified that `android:largeHeap="true"` is enabled inside the application manifest to request maximum heap allocation from the OS.
+
+### 20. Adaptive Floating Dock & Font Scale Clamp
+- **Platform-Agnostic Option B Dock:** Upgraded the custom bottom navigation dock to run globally on all platforms and screens. Removed redundant `BottomAppBar` to bypass native Material 3 vertical padding overrides and minimum height constraints.
+- **Adaptive Spacing & Font Clamp:** Implemented dynamic bottom margin based on `MediaQuery` system safe area insets to prevent double-padding on tablets. Wrapped contents in a `MediaQuery` clamping `textScaler` to `1.0` and set single-line ellipsis text wrapping to avoid font overflows on small screens.
+
 ---
 
 ## Development Standards & Walkthroughs
@@ -124,13 +145,30 @@
 - **Core Error Interception:** Bound `FlutterError.onError` and `PlatformDispatcher.instance.onError` to automatically capture all UI rendering exceptions, widget tree crashes, and unhandled asynchronous/isolate thread zone errors.
 - **Persistent Storage:** Appends formatted failure reports to daily log files on disk.
 
+### 7. Apple Developer Account Constraints & Sideloading Options
+- **Paid vs. Free Account Portal Block:** Apple's developer portal restricts "Certificates, IDs, & Profiles" to paid accounts ($99/year). Free accounts cannot generate `.p12` certificates or manual `.mobileprovision` profiles for cloud Actions runners.
+- **Sideloading Alternatives:** If cloud signing is bypassed, developers can compile the iOS package unsigned (`--no-codesign`) on GitHub Actions, then sideload it locally using free utilities like **AltStore** or third-party UDID registration services.
+
+### 8. GitHub Private Repo Telemetry & Copilot Opt-Out
+- **At-Rest Protection:** GitHub terms guarantee that code in private repositories is not used to train AI models.
+- **Copilot Interactions:** To stop Copilot IDE extensions from transmitting telemetry context for product improvement, opt out globally via **GitHub Settings > Copilot > Privacy > Allow GitHub to use my data for AI model training** and set to **Disabled**.
+
+---
+
 ## Planned Optimizations for Next Session
 
 ### 1. Single-Query Hoisted Configuration for Batch Imports
 - **The Bottleneck:** Currently, the batch-write loop in `SqliteHelper.updateAllRaw` executes `getBusinessUniqueKeyRaw(dbName)` inside the loop, forcing SQLite to run **15,000 SQL SELECT queries** one-by-one during database wipes or reloads.
 - **The Plan:** Hoist `getBusinessUniqueKeyRaw(dbName)` outside the loop so it runs **exactly once**. Extract the business key value in RAM using recursion in CPU time, dropping import and reload time from minutes to **under 300 milliseconds**!
 
+### 2. High-Capacity Web Database Storage (SQLite WASM + OPFS)
+- **The Bottleneck:** The current web `localStorage` adapter is synchronous, blocks execution, and throws quota exceptions at 5MB, falling back to a volatile in-memory cache.
+- **The Plan:** Compile the database core to **SQLite WebAssembly (WASM)** and mount files to the browser's **Origin Private File System (OPFS)**. This allows the web app to execute the exact same transactional queries, B-tree indexes, and metadata checks as mobile targets with multi-gigabyte local storage limits.
+
+---
+
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `426080f` (feat/style: center launcher icons, fix web favicon, and resolve search toast keystroke spam)
+- **Last Stable Commit:** `8752c87` (feat/style: implement premium floating dock, high-performance caching, and real-time report force-reloading)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
+
