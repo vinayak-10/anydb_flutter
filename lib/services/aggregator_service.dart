@@ -164,6 +164,7 @@ class AggregatorService {
   final FileService _fileService = FileService();
   late Map<String, dynamic> share;
   String? reportPath;
+  late Map<String, dynamic> schemaJson;
 
   String? get lastReportPath => workbook.lastReportPath;
 
@@ -172,6 +173,7 @@ class AggregatorService {
     if (jo == null) return;
     
     if (jo is Map) {
+      schemaJson = Map<String, dynamic>.from(jo);
       key = jo['name'] ?? '';
       share = jo['share'] is Map ? Map<String, dynamic>.from(jo['share']) : {};
       

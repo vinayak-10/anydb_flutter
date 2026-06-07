@@ -71,6 +71,51 @@ class ExtractorDatabase extends Extractor {
     return await populateRecords();
   }
 
+  void populateWithData(List<Map<String, dynamic>> elements) {
+    _rows.clear();
+    _data.clear();
+
+    final allElements = _segregate(elements, types: ["Active", "Archived", "Deleted"]);
+    logger.log("ExtractorDatabase Isolate: Segregated ${allElements.length} Total elements.");
+
+    for (var element in allElements) {
+      if (element.isEmpty) continue;
+      final recordValue = element.values.first;
+      if (recordValue is! Map) continue;
+
+      List<Map<String, dynamic>> trows = [];
+      _flatten(recordValue, 0, trows);
+      
+      if (trows.isNotEmpty) {
+        final refrow = trows[0];
+        for (var row in trows) {
+          Map<String, dynamic> sanitizedRow = {};
+          refrow.forEach((k, v) => sanitizedRow[k] = v);
+          row.forEach((k, v) => sanitizedRow[k] = v);
+          _data.add(sanitizedRow);
+        }
+      }
+    }
+    
+    logger.log("ExtractorDatabase Isolate: Flattened into ${_data.length} total rows.");
+
+    _rows.clear();
+    _rows.addAll(_filter(_data, columns));
+
+    final List<Map<String, dynamic>> workingRows = [];
+    for (var r in _rows) {
+      final dateVal = r['Date'] ?? _findValueInsensitive(r, 'Date');
+      if (dateVal != null && dateVal.toString().isNotEmpty) {
+        workingRows.add(r);
+      }
+    }
+
+    if (workingRows.isNotEmpty && workingRows.length < _rows.length) {
+       _rows.clear();
+       _rows.addAll(workingRows);
+    }
+  }
+
   Future<void> populateRecords() async {
     _rows.clear();
     _data.clear();
@@ -481,6 +526,13 @@ class ExtractorIntf {
            await (extractor as ExtractorDatabase).reinit();
         }
       }
+    }
+  }
+
+  void populateWithData(List<Map<String, dynamic>> elements) {
+    if (extractor is ExtractorDatabase) {
+      (extractor as ExtractorDatabase).populateWithData(elements);
+      reinited = true;
     }
   }
 

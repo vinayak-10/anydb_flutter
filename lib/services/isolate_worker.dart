@@ -6,6 +6,9 @@ import 'workbook_service.dart';
 import 'schema_service.dart';
 import 'sqlite_helper.dart'; // Direct warm database access
 import 'file_service.dart';
+import 'aggregator_service.dart';
+import 'io_helper.dart' as io;
+import 'package:intl/intl.dart';
 
 
 class IsolateWorker {
@@ -157,6 +160,22 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final tableCache = bgCache[dbName] ?? {};
         
         final list = tableCache.entries.map((e) => {e.key: jsonDecode(e.value)}).toList();
+        replyPort.send(list);
+        return;
+      }
+
+      if (message['type'] == 'ipcGetAllRecords') {
+        final SendPort replyPort = message['replyPort'];
+        final Map<String, dynamic> params = message['params'] ?? {};
+        final String dbName = params['dbName'] ?? "";
+        
+        final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+        final list = rawRecords.map((rec) {
+          final key = rec['id']!;
+          final decoded = jsonDecode(rec['value']!);
+          return {key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded};
+        }).toList();
+        
         replyPort.send(list);
         return;
       }
@@ -528,6 +547,82 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       final dynamic content = params['content'];
       await FileService().writeJson(path, fileName, content);
       return null;
+    case 'runReportGenerationPipeline':
+      final String dbName = params['dbName'];
+      final String reportKey = params['reportKey'];
+      final dynamic date = params['date'];
+      final String targetPath = params['targetPath'];
+      final Map<String, dynamic> aggregatorJson = params['aggregatorJson'];
+      
+      // A. Fetch raw database records from Database Isolate via IPC
+      final ReceivePort replyPort = ReceivePort();
+      dbSendPort!.send({
+        'type': 'ipcGetAllRecords',
+        'replyPort': replyPort.sendPort,
+        'params': {'dbName': dbName},
+      });
+      final List<dynamic> rawElements = await replyPort.first;
+      replyPort.close();
+      
+      final List<Map<String, dynamic>> elements = rawElements.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      
+      // B. Initialize Aggregator Service and AggregatorReport in Isolate
+      final agg = AggregatorService();
+      agg.init(aggregatorJson);
+      
+      final report = agg.reports.firstWhere((r) => r.key == reportKey);
+      
+      // C. Populate Extractor Database with raw elements directly (decoding, flattening, filtering in Isolate)
+      final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
+      
+      // Run the predicate calculations
+      final extIntf = report.extractor[0];
+      extIntf.populateWithData(elements);
+      
+      final s = await extIntf.extractor!.applyPredicate(
+        extIntf.extractor!.predicates[0],
+        data: targetDate,
+        getFileName: (meta, {DateTime? timestamp}) => agg.getFileName(meta, timestamp: timestamp),
+        timestamp: null,
+        force: true,
+      );
+      
+      // Inject final sheetName
+      final String entryName = extIntf.predicatedName(extIntf.extractor!.predicates[0] ?? {}, targetDate.toIso8601String());
+      final sheetName = FileService().sanitizeName(entryName);
+      String finalSheetName = sheetName;
+      if (report.key.toLowerCase().contains('monthly')) {
+        finalSheetName = DateFormat('MMM_yyyy').format(targetDate);
+      }
+      s['extra'] ??= {};
+      s['extra']['name'] = finalSheetName;
+      
+      // D. Generate report data rows and evaluate formulas
+      final reportData = report.generateData(s);
+      
+      // E. Compile Excel Workbook and write to file
+      final writeParams = {
+        'existingBytes': null,
+        'data': reportData,
+        'sheetName': finalSheetName,
+      };
+      
+      // Check if target file exists to load existingBytes (supporting sheets appending)
+      List<int>? existingBytes;
+      if (await io.fileExists(targetPath)) {
+        existingBytes = await io.readBytes(targetPath);
+        writeParams['existingBytes'] = existingBytes;
+      }
+      
+      final List<int>? fileBytes = WorkbookService.writeExcelInIsolate(writeParams);
+      if (fileBytes != null) {
+        await io.writeBytes(targetPath, Uint8List.fromList(fileBytes));
+      }
+      
+      return {
+        'data': reportData,
+        'path': targetPath,
+      };
     default:
       throw "Process Isolate: Unknown task type '$type'";
   }

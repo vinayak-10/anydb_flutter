@@ -17,6 +17,7 @@ import '../services/io_helper.dart' as io;
 import '../services/web_downloader.dart';
 import '../services/google_drive_service.dart';
 import '../services/sqlite_helper.dart';
+import '../services/isolate_worker.dart';
 import '../models/element_model.dart';
 import '../core/gen_interface.dart';
 import '../components/list_header.dart';
@@ -118,27 +119,51 @@ final reportDataProvider = FutureProvider.family<Map<String, dynamic>, ReportPar
   // Watch database mutations for this database key to auto-regenerate report reactively
   ref.watch(databaseUpdateProvider.select((m) => m[params.dbKey]));
 
-  final result = await params.agg.generate(
-    params.report,
-    date: params.date,
-    force: true,
-  );
+  // Yield to event loop to allow route transition to paint the circular loader
+  await Future.delayed(const Duration(milliseconds: 100));
 
-  String? path;
-  if (!kIsWeb) {
-    path = await params.agg.generateWorkbook(
+  if (kIsWeb) {
+    final result = await params.agg.generate(
       params.report,
       date: params.date,
       force: true,
     );
-  } else {
     await params.agg.generateReport(result);
-  }
+    return {
+      'data': result,
+      'path': null,
+    };
+  } else {
+    // Generate Target File Path
+    final DateTime targetDate = params.date is DateTime 
+        ? params.date 
+        : (params.date is DateTimeRange 
+            ? (params.date as DateTimeRange).start 
+            : DateTime.now());
+    
+    final ts = DateTime.now();
+    final meta = params.agg.getFileName({
+      "predicate": {"value": targetDate}
+    }, timestamp: ts);
+    
+    final String fileName = meta['fileName'] ?? "Report.xlsx";
+    final aggregatorDir = await FileService().getAggregatorPath(params.dbKey, external: true);
+    final String targetPath = "$aggregatorDir/$fileName";
 
-  return {
-    'data': result,
-    'path': path,
-  };
+    // Offload the entire pipeline (fetching, flattening, filtering, formula evaluation, Excel writing) to background Isolate
+    final result = await IsolateWorker.instance.execute<Map<String, dynamic>>(
+      'runReportGenerationPipeline',
+      {
+        'dbName': params.dbKey,
+        'reportKey': params.report.key,
+        'date': targetDate.toIso8601String(),
+        'targetPath': targetPath,
+        'aggregatorJson': params.agg.schemaJson,
+      },
+    );
+
+    return result;
+  }
 });
 
 class CollectionView extends ConsumerStatefulWidget {
@@ -2730,13 +2755,17 @@ class AggregatorReportView extends ConsumerStatefulWidget {
 
 class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
   bool _isSearching = false;
+  bool _isAppBarCollapsed = false;
+  bool _isHeaderCollapsed = false;
   final ScrollController _verticalScrollController = ScrollController();
+  final ScrollController _horizontalScrollController = ScrollController();
   String _reportSearchQuery = '';
   final TextEditingController _reportSearchController = TextEditingController();
 
   @override
   void dispose() {
     _verticalScrollController.dispose();
+    _horizontalScrollController.dispose();
     _reportSearchController.dispose();
     super.dispose();
   }
@@ -2861,32 +2890,57 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       return row.any((cell) => _formatValue(cell).toLowerCase().contains(query));
     }).toList();
 
-    // Dynamically calculate flex column widths to fit all columns on screen
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isSmallScreen = screenWidth < 600;
+
     final Map<int, TableColumnWidth> columnWidths = {};
+    double totalTableWidth = 0.0;
+
     for (int i = 0; i < headers.length; i++) {
       final colName = headers[i].toString().toLowerCase();
-      double weight = 1.5; // default weight
-      if (colName.contains('name') || colName.contains('desc') || colName.contains('detail') || colName.contains('address') || colName.contains('note') || colName.contains('diagnosis') || colName.contains('remark') || colName.contains('reason')) {
-        weight = 3.0;
-      } else if (colName == 'sex' || colName == 'gender' || colName == 'age' || colName == 's.no' || colName == 's.no.' || colName == 'sl') {
-        weight = 0.8;
-      } else if (colName.contains('charge') || colName.contains('paid') || colName.contains('fee') || colName.contains('amount') || colName.contains('amt') || colName.contains('no') || colName.contains('date') || colName.contains('code') || colName.contains('id')) {
-        weight = 1.2;
+      if (isSmallScreen) {
+        double width = 120.0;
+        if (colName == 's.no' || colName == 'sex' || colName == 'age' || colName == 'sl' || colName == 's.no.') {
+          width = 60.0;
+        } else if (colName.contains('date') || colName.contains('amount') || colName.contains('paid') || colName.contains('charge') || colName.contains('fee')) {
+          width = 100.0;
+        } else if (colName.contains('name')) {
+          width = 160.0;
+        }
+        columnWidths[i] = FixedColumnWidth(width);
+        totalTableWidth += width;
+      } else {
+        double weight = 1.5;
+        if (colName.contains('name') || colName.contains('desc') || colName.contains('detail') || colName.contains('address') || colName.contains('note') || colName.contains('diagnosis') || colName.contains('remark') || colName.contains('reason')) {
+          weight = 3.0;
+        } else if (colName == 'sex' || colName == 'gender' || colName == 'age' || colName == 's.no' || colName == 's.no.' || colName == 'sl') {
+          weight = 0.8;
+        } else if (colName.contains('charge') || colName.contains('paid') || colName.contains('fee') || colName.contains('amount') || colName.contains('amt') || colName.contains('no') || colName.contains('date') || colName.contains('code') || colName.contains('id')) {
+          weight = 1.2;
+        }
+        columnWidths[i] = FlexColumnWidth(weight);
       }
-      columnWidths[i] = FlexColumnWidth(weight);
     }
 
-    return Column(
+    final TableBorder borderStyle = TableBorder(
+      horizontalInside: BorderSide(color: Colors.grey.shade100, width: 1),
+      verticalInside: BorderSide.none,
+      top: BorderSide.none,
+      bottom: BorderSide.none,
+      left: BorderSide.none,
+      right: BorderSide.none,
+    );
+
+    // Helper widget to build the actual table elements
+    Widget tableContent = Column(
       children: [
         // Pinned Header Section
         Container(
-          color: Colors.blueGrey.shade100,
+          color: Colors.blueGrey.shade50,
           child: Table(
             columnWidths: columnWidths,
             border: TableBorder(
-              bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
-              horizontalInside: BorderSide(color: Colors.grey.shade200, width: 1),
-              verticalInside: BorderSide(color: Colors.grey.shade200, width: 1),
+              bottom: BorderSide(color: Colors.grey.shade300, width: 1.5),
             ),
             children: [
               TableRow(
@@ -2917,11 +2971,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               scrollDirection: Axis.vertical,
               child: Table(
                 columnWidths: columnWidths,
-                border: TableBorder(
-                  bottom: BorderSide(color: Colors.grey.shade200, width: 1),
-                  horizontalInside: BorderSide(color: Colors.grey.shade200, width: 1),
-                  verticalInside: BorderSide(color: Colors.grey.shade200, width: 1),
-                ),
+                border: borderStyle,
                 children: filteredDataRows.map<TableRow>((r) {
                   return TableRow(
                     children: (r as List).map<Widget>((c) {
@@ -2945,6 +2995,23 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         ),
       ],
     );
+
+    if (isSmallScreen) {
+      return Scrollbar(
+        controller: _horizontalScrollController,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _horizontalScrollController,
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: totalTableWidth,
+            child: tableContent,
+          ),
+        ),
+      );
+    } else {
+      return tableContent;
+    }
   }
 
   String _formatValue(dynamic c) {
@@ -2953,9 +3020,9 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       if (c.isEmpty) return "";
       return _formatValue(c.first);
     }
-    if (c is DateTime) return DateFormat.yMd().format(c);
+    if (c is DateTime) return DateFormat('dd/MM/yy').format(c);
     if (c is int && c > 1000000000000) {
-       return DateFormat.yMd().format(DateTime.fromMillisecondsSinceEpoch(c));
+       return DateFormat('dd/MM/yy').format(DateTime.fromMillisecondsSinceEpoch(c));
     }
     if (c is num) {
       if (c % 1 == 0) return c.toInt().toString();
@@ -3105,101 +3172,180 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         
         return Scaffold(
           backgroundColor: Colors.white,
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            leading: _isSearching
-                ? IconButton(
-                    icon: const Icon(Icons.keyboard_backspace, color: Colors.blue),
-                    onPressed: () {
-                      setState(() {
-                        _isSearching = false;
-                        _reportSearchQuery = '';
-                        _reportSearchController.clear();
-                      });
-                    },
-                  )
-                : null,
-            title: _isSearching
-                ? TextField(
-                    controller: _reportSearchController,
-                    autofocus: true,
-                    style: const TextStyle(fontSize: 18),
-                    decoration: const InputDecoration(
-                      hintText: "Search in report...",
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (val) {
-                      setState(() {
-                        _reportSearchQuery = val;
-                      });
-                    },
-                  )
-                : Text("Report: ${widget.report.key}"),
-            actions: _isSearching
-                ? [
-                    if (_reportSearchQuery.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
+          appBar: _isAppBarCollapsed
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(32),
+                  child: SafeArea(
+                    child: Container(
+                      height: 32,
+                      color: Colors.grey.shade50,
+                      alignment: Alignment.center,
+                      child: InkWell(
+                        onTap: () {
                           setState(() {
-                            _reportSearchQuery = '';
-                            _reportSearchController.clear();
+                            _isAppBarCollapsed = false;
                           });
                         },
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "Expand Header Actions",
+                              style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.w500),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(
+                              Icons.expand_more,
+                              color: Colors.blue,
+                              size: 16,
+                            ),
+                          ],
+                        ),
                       ),
-                  ]
-                : [
-                    IconButton(
-                      icon: const Icon(Icons.search, color: Colors.blue),
-                      onPressed: () {
-                        setState(() {
-                          _isSearching = true;
-                        });
-                      },
-                      tooltip: "Search in report",
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: Colors.blue),
-                      onPressed: () {
-                        ref.invalidate(reportDataProvider(params));
-                      },
-                      tooltip: "Recalculate from Database",
-                    ),
-                    if (hasData)
-                      TextButton.icon(
-                        icon: const Icon(Icons.open_in_new, color: Colors.blue),
-                        label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                        onPressed: () async {
-                          await widget.agg.openReport(path);
-                        },
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.share),
-                      onPressed: !hasData ? null : () => _share(path ?? ''),
-                    ),
-                  ],
-          ),
+                  ),
+                )
+              : AppBar(
+                  backgroundColor: Colors.white,
+                  elevation: 0,
+                  leading: _isSearching
+                      ? IconButton(
+                          icon: const Icon(Icons.keyboard_backspace, color: Colors.blue),
+                          onPressed: () {
+                            setState(() {
+                              _isSearching = false;
+                              _reportSearchQuery = '';
+                              _reportSearchController.clear();
+                            });
+                          },
+                        )
+                      : null,
+                  title: _isSearching
+                      ? TextField(
+                          controller: _reportSearchController,
+                          autofocus: true,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            hintText: "Search in report...",
+                            border: InputBorder.none,
+                          ),
+                          onChanged: (val) {
+                            setState(() {
+                              _reportSearchQuery = val;
+                            });
+                          },
+                        )
+                      : Text("Report: ${widget.report.key}"),
+                  actions: _isSearching
+                      ? [
+                          if (_reportSearchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                setState(() {
+                                  _reportSearchQuery = '';
+                                  _reportSearchController.clear();
+                                });
+                              },
+                            ),
+                        ]
+                      : [
+                          IconButton(
+                            icon: const Icon(Icons.search, color: Colors.blue),
+                            onPressed: () {
+                              setState(() {
+                                _isSearching = true;
+                              });
+                            },
+                            tooltip: "Search in report",
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh, color: Colors.blue),
+                            onPressed: () {
+                              ref.invalidate(reportDataProvider(params));
+                            },
+                            tooltip: "Recalculate from Database",
+                          ),
+                          if (hasData)
+                            TextButton.icon(
+                              icon: const Icon(Icons.open_in_new, color: Colors.blue),
+                              label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                await widget.agg.openReport(path);
+                              },
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.share),
+                            onPressed: !hasData ? null : () => _share(path ?? ''),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.expand_less, color: Colors.blue),
+                            onPressed: () {
+                              setState(() {
+                                _isAppBarCollapsed = true;
+                              });
+                            },
+                            tooltip: "Collapse Header Actions",
+                          ),
+                        ],
+                ),
           bottomNavigationBar: _buildSummaryFooter(aoa),
           body: Column(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                color: Colors.white,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Date: ${DateFormat.yMMMMd().format(widget.selectedDate)}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                        if (widget.selectedRange != null)
-                          Text("Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)}", style: const TextStyle(fontSize: 12)),
-                      ],
+              _isHeaderCollapsed
+                  ? InkWell(
+                      onTap: () {
+                        setState(() {
+                          _isHeaderCollapsed = false;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        color: Colors.grey.shade50,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Date: ${DateFormat.yMd().format(widget.selectedDate)}${widget.selectedRange != null ? ' (Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)})' : ''}",
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                            ),
+                            const Row(
+                              children: [
+                                Text("Expand Date Filter", style: TextStyle(fontSize: 11, color: Colors.blue)),
+                                SizedBox(width: 4),
+                                Icon(Icons.expand_more, size: 16, color: Colors.blue),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.all(12),
+                      color: Colors.white,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Date: ${DateFormat.yMMMMd().format(widget.selectedDate)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                              if (widget.selectedRange != null)
+                                Text("Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)}", style: const TextStyle(fontSize: 12)),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.expand_less, color: Colors.blue),
+                            onPressed: () {
+                              setState(() {
+                                _isHeaderCollapsed = true;
+                              });
+                            },
+                            tooltip: "Collapse Date Filter",
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
               if (hasData)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
