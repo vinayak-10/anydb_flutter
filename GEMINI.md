@@ -115,6 +115,11 @@
 - **Platform-Agnostic Option B Dock:** Upgraded the custom bottom navigation dock to run globally on all platforms and screens. Removed redundant `BottomAppBar` to bypass native Material 3 vertical padding overrides and minimum height constraints.
 - **Adaptive Spacing & Font Clamp:** Implemented dynamic bottom margin based on `MediaQuery` system safe area insets to prevent double-padding on tablets. Wrapped contents in a `MediaQuery` clamping `textScaler` to `1.0` and set single-line ellipsis text wrapping to avoid font overflows on small screens.
 
+### 21. Compact Reports Tab UI Redesign & Cradle FAB Home Alignment
+- **Edge-Aligned Layout**: Replaced the report list view and loose bottom buttons with exactly two action buttons (`GENERATE DAILY` on the left, `GENERATE MONTHLY` on the right) directly below the Date Picker card.
+- **Consolidation Checkbox**: Integrated an optional checkbox ("Consolidate all daily reports") under the `GENERATE MONTHLY` button that defaults to unchecked (fast compilation from disk cache) and can be toggled to perform a full month rebuild and consolidation.
+- **Home FAB Navigation**: Configured the reports tab's cradle FAB to show a home icon and navigate back to the Database Tab's landing page while clearing search query states.
+
 ---
 
 ## Development Standards & Walkthroughs
@@ -169,6 +174,6 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `8752c87` (feat/style: implement premium floating dock, high-performance caching, and real-time report force-reloading)
+- **Last Stable Commit:** `4ce2b40` (feat/style: implement new reports tab layout with side-by-side buttons, consolidation checkbox, and home cradle FAB navigation)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
 
