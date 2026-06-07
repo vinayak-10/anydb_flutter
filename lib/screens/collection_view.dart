@@ -735,35 +735,38 @@ class _CollectionViewState extends ConsumerState<CollectionView> with SingleTick
                               constraints: const BoxConstraints(),
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                             ),
-                          if (currentContent.type == ContentType.aggregator)
-                            TextButton.icon(
-                              onPressed: () {
-                                final agg = currentContent.service as AggregatorService;
-                                agg.openReport();
+                          if (currentContent.type == ContentType.database)
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, size: 26, color: Colors.brown),
+                              onSelected: (value) {
+                                final db = currentContent.service as ElementDb;
+                                if (value == 'import') {
+                                  _importDb(db);
+                                } else if (value == 'export') {
+                                  _exportDb(db);
+                                } else if (value == 'done') {
+                                  _handleDone(db);
+                                }
                               },
-                              icon: const Icon(Icons.open_in_new, color: Colors.blue),
-                              label: const Text("OPEN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(value: 'import', child: Text("Import")),
+                                const PopupMenuItem(value: 'export', child: Text("Export")),
+                                const PopupMenuItem(value: 'done', child: Text("Done")),
+                              ],
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                             ),
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert, size: 26, color: Colors.brown),
-                            onSelected: (value) {
-                              final db = currentContent.service as ElementDb;
-                              if (value == 'import') {
-                                _importDb(db);
-                              } else if (value == 'export') {
-                                _exportDb(db);
-                              } else if (value == 'done') {
+                          if (currentContent.type == ContentType.aggregator)
+                            IconButton(
+                              icon: const Icon(Icons.cancel, size: 26, color: Colors.brown),
+                              onPressed: () {
+                                final db = widget.contents[0].service as ElementDb;
                                 _handleDone(db);
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(value: 'import', child: Text("Import")),
-                              const PopupMenuItem(value: 'export', child: Text("Export")),
-                              const PopupMenuItem(value: 'done', child: Text("Done")),
-                            ],
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                              },
+                              tooltip: "Done",
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
                         ],
                       ),
                     ),
@@ -3449,85 +3452,6 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                   ),
                   const Text("Available Reports", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
                   const Divider(color: Colors.black12),
-                  if (widget.agg.reports.any((r) => r.key.toLowerCase().contains("monthly")))
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.indigo,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size.fromHeight(50),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: () async {
-                          final batchDialogReady = Completer<void>();
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (context) => const Center(
-                              child: Card(
-                                child: Padding(
-                                  padding: EdgeInsets.all(24.0),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      CircularProgressIndicator(),
-                                      SizedBox(height: 16),
-                                      Text("Generating Full Monthly Report...", style: TextStyle(fontWeight: FontWeight.bold)),
-                                      SizedBox(height: 8),
-                                      Text("Processing each day and aggregating totals", style: TextStyle(fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                          // Wait for dialog to paint before blocking with heavy work.
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!batchDialogReady.isCompleted) batchDialogReady.complete();
-                          });
-                          await batchDialogReady.future;
-
-                          try {
-                            await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
-
-                            // Load the generated monthly data into UI
-                            final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
-                            
-                            if (!context.mounted) return;
-                            Navigator.pop(context); // Close loading dialog
-                            
-                            // Directly push full-screen Monthly report!
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => AggregatorReportView(
-                                  report: monthlyReport,
-                                  agg: widget.agg,
-                                  selectedDate: widget.selectedDate,
-                                  selectedRange: widget.selectedRange,
-                                  schemaTitle: widget.schemaTitle,
-                                ),
-                              ),
-                            );
-
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text("Monthly Report & All Daily Sheets generated successfully!"),
-                              backgroundColor: Colors.green,
-                            ));
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text("Batch Error: $e"),
-                              backgroundColor: Colors.red,
-                            ));
-                          }
-                        },
-                        icon: const Icon(Icons.auto_awesome),
-                        label: const Text("GENERATE FULL MONTHLY", style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    ),
                   Expanded(
                     child: ListView.builder(
                       itemCount: widget.agg.reports.length,
@@ -3538,6 +3462,13 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                           title: Text(r.key, style: const TextStyle(fontWeight: FontWeight.w500)),
                           subtitle: Text("${r.rows.length} data sources"),
                           trailing: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6B1524),
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Color(0xFFE5C158), width: 1.2),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            ),
                             onPressed: () {
                               Navigator.push(
                                 context,
@@ -3550,12 +3481,94 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                                 ))
                               );
                             },
-                            child: const Text("GENERATE"),
+                            child: const Text("GENERATE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                           ),
                         );
                       },
                     ),
                   ),
+                  if (widget.agg.reports.any((r) => r.key.toLowerCase().contains("monthly")))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12.0),
+                      child: Center(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF6B1524),
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Color(0xFFE5C158), width: 1.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                          ),
+                          onPressed: () async {
+                            final batchDialogReady = Completer<void>();
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (context) => const Center(
+                                child: Card(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CircularProgressIndicator(),
+                                        SizedBox(height: 16),
+                                        Text("Generating Full Monthly Report...", style: TextStyle(fontWeight: FontWeight.bold)),
+                                        SizedBox(height: 8),
+                                        Text("Processing each day and aggregating totals", style: TextStyle(fontSize: 12)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                            // Wait for dialog to paint before blocking with heavy work.
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!batchDialogReady.isCompleted) batchDialogReady.complete();
+                            });
+                            await batchDialogReady.future;
+
+                            try {
+                              await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
+
+                              // Load the generated monthly data into UI
+                              final monthlyReport = widget.agg.reports.firstWhere((r) => r.key.toLowerCase().contains("monthly"));
+                              
+                              if (!context.mounted) return;
+                              Navigator.pop(context); // Close loading dialog
+                              
+                              // Directly push full-screen Monthly report!
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AggregatorReportView(
+                                    report: monthlyReport,
+                                    agg: widget.agg,
+                                    selectedDate: widget.selectedDate,
+                                    selectedRange: widget.selectedRange,
+                                    schemaTitle: widget.schemaTitle,
+                                  ),
+                                ),
+                              );
+
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                content: Text("Monthly Report & All Daily Sheets generated successfully!"),
+                                backgroundColor: Colors.green,
+                              ));
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text("Batch Error: $e"),
+                                backgroundColor: Colors.red,
+                              ));
+                            }
+                          },
+                          icon: const Icon(Icons.auto_awesome, size: 18),
+                          label: const Text("GENERATE FULL MONTHLY", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
