@@ -588,7 +588,7 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       
       // Run the predicate calculations
       final extIntf = report.extractor[0];
-      extIntf.populateWithData(elements);
+      await extIntf.populateWithData(elements);
       
       final s = await extIntf.extractor!.applyPredicate(
         extIntf.extractor!.predicates[0],

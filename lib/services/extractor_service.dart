@@ -71,7 +71,7 @@ class ExtractorDatabase extends Extractor {
     return await populateRecords();
   }
 
-  void populateWithData(List<Map<String, dynamic>> elements) {
+  Future<void> populateWithData(List<Map<String, dynamic>> elements) async {
     _rows.clear();
     _data.clear();
 
@@ -113,6 +113,14 @@ class ExtractorDatabase extends Extractor {
     if (workingRows.isNotEmpty && workingRows.length < _rows.length) {
        _rows.clear();
        _rows.addAll(workingRows);
+    }
+
+    // APPLY ALL SCHEMA PREDICATES SEQUENTIALLY (Match RN logic)
+    for (var p in predicates) {
+      if (p is Map) {
+        logger.log("ExtractorDatabase Isolate: Applying sequential predicate: ${p['operation']} (${p['name']})");
+        await applyPredicate(Map<String, dynamic>.from(p));
+      }
     }
   }
 
@@ -529,9 +537,9 @@ class ExtractorIntf {
     }
   }
 
-  void populateWithData(List<Map<String, dynamic>> elements) {
+  Future<void> populateWithData(List<Map<String, dynamic>> elements) async {
     if (extractor is ExtractorDatabase) {
-      (extractor as ExtractorDatabase).populateWithData(elements);
+      await (extractor as ExtractorDatabase).populateWithData(elements);
       reinited = true;
     }
   }
