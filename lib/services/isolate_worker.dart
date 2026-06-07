@@ -87,12 +87,17 @@ class IsolateWorker {
         'dbSendPort': _dbSendPort,
       });
 
-      // 4. Resolve raw internal path on main thread and establish SQLite folder mapping
-      final rootPath = await FileService().getInternalRoot();
-      _dbSendPort!.send({
-        'type': 'initPath',
-        'path': rootPath,
-      });
+      // 4. Resolve raw internal and external paths on main thread and establish SQLite folder mapping
+      final internalRoot = await FileService().getInternalRoot();
+      final externalRoot = await FileService().getExternalRoot();
+      final initPathsMsg = {
+        'type': 'initPaths',
+        'internalRoot': internalRoot,
+        'externalRoot': externalRoot,
+      };
+      
+      _dbSendPort!.send(initPathsMsg);
+      _processSendPort!.send(initPathsMsg);
 
       _initialized = true;
       debugPrint("IsolateWorker: Dual persistent worker pool successfully established.");
@@ -149,6 +154,14 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
   workerReceivePort.listen((message) async {
     if (message is Map) {
       // Warm SQLite path handshake check
+      if (message['type'] == 'initPaths') {
+        final internalRoot = message['internalRoot'] as String?;
+        final externalRoot = message['externalRoot'] as String?;
+        FileService.internalRootOverride = internalRoot;
+        FileService.externalRootOverride = externalRoot;
+        SqliteHelper.databasePathOverride = internalRoot;
+        return;
+      }
       if (message['type'] == 'initPath') {
         SqliteHelper.databasePathOverride = message['path'] as String?;
         return;
@@ -224,6 +237,14 @@ void _processWorkerEntryPoint(SendPort mainSendPort) {
       // IPC Link initialization
       if (message['type'] == 'initIpc') {
         dbSendPort = message['dbSendPort'] as SendPort?;
+        return;
+      }
+
+      if (message['type'] == 'initPaths') {
+        final internalRoot = message['internalRoot'] as String?;
+        final externalRoot = message['externalRoot'] as String?;
+        FileService.internalRootOverride = internalRoot;
+        FileService.externalRootOverride = externalRoot;
         return;
       }
 

@@ -11,11 +11,15 @@ class FileService {
   static const String appName = 'anydb';
   static const String parentDir = 'xyz.maya';
 
+  static String? internalRootOverride;
+  static String? externalRootOverride;
+
   final Map<String, String> _webCache = {};
 
   Future<String> _getWebInternalRoot() async => p.join(parentDir, appName);
 
   Future<String> getInternalRoot() async {
+    if (internalRootOverride != null) return internalRootOverride!;
     if (kIsWeb) return await _getWebInternalRoot();
     if (isLinux()) {
       final home = pp.getHomeDir();
@@ -26,6 +30,7 @@ class FileService {
   }
 
   Future<String> getExternalRoot() async {
+    if (externalRootOverride != null) return externalRootOverride!;
     if (kIsWeb) return p.join('web_external', parentDir, appName);
     if (isLinux()) {
       final home = pp.getHomeDir();
