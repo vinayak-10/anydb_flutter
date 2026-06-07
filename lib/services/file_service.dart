@@ -43,7 +43,7 @@ class FileService {
   }
 
   String sanitizeName(String name) {
-    return name.replaceAll(' ', '_');
+    return name.replaceAll(' ', '_').replaceAll('/', '_');
   }
 
   Future<String> getSchemaDir(String schemaName, {bool external = false}) async {

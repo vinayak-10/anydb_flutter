@@ -40,7 +40,7 @@ abstract class Extractor {
         if (type == 'month') {
           name = DateFormat('MMM yyyy').format(d);
         } else if (type == 'day') {
-          name = DateFormat('d_MMM yyyy').format(d);
+          name = DateFormat('dd/MM/yyyy').format(d);
         } else {
           // Default formatting if type is missing
           name = DateFormat('yyyy-MM-dd').format(d);
@@ -298,8 +298,8 @@ class ExtractorDatabase extends Extractor {
         }
         
         final DateTime d = data is DateTime ? data : (DateTime.tryParse(data.toString()) ?? DateTime.now());
-        // Force correct Daily sheet naming pattern: "1_Mar 2026"
-        final String formattedDate = DateFormat('d_MMM yyyy').format(d);
+        // Force correct Daily sheet naming pattern: "dd/MM/yyyy"
+        final String formattedDate = DateFormat('dd/MM/yyyy').format(d);
         
         final predicated = _rows.where((row) {
           final val = row[searchKey] ?? _findValueInsensitive(row, searchKey);
@@ -437,6 +437,37 @@ class ExtractorReport extends Extractor {
     
     final sheetNames = await _workbookService.getSheetNames(fileMeta, sourceReportName);
     logger.log("ExtractorReport: Found ${sheetNames.length} source sheets: $sheetNames");
+    
+    // Sort sheetNames in reverse chronological order (latest date first)
+    sheetNames.sort((a, b) {
+      DateTime? parseSheetDate(String name) {
+        final parts = name.split('_');
+        if (parts.length >= 3) {
+          final day = int.tryParse(parts[0]);
+          final year = int.tryParse(parts[2]);
+          final monthPart = parts[1];
+          int? month = int.tryParse(monthPart);
+          if (month == null) {
+            const months = {
+              'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+              'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+            };
+            month = months[monthPart.toLowerCase().substring(0, 3.clamp(0, monthPart.length))];
+          }
+          if (day != null && month != null && year != null) {
+            return DateTime(year, month, day);
+          }
+        }
+        return null;
+      }
+
+      final dateA = parseSheetDate(a);
+      final dateB = parseSheetDate(b);
+      if (dateA != null && dateB != null) {
+        return dateB.compareTo(dateA);
+      }
+      return b.compareTo(a);
+    });
     
     for (var sheetName in sheetNames) {
       logger.log("ExtractorReport: Reading source sheet '$sheetName'...");
