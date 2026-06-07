@@ -27,6 +27,7 @@ class IsolateWorker {
   final Map<int, Completer<dynamic>> _pendingTasks = {};
   int _taskIdCounter = 0;
   bool _initialized = false;
+  static bool isInsideWorkerIsolate = false;
 
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
@@ -137,6 +138,7 @@ class IsolateWorker {
 // 1. Isolate 1: Database & Schema Worker Entrypoint
 // ==========================================
 void _dbWorkerEntryPoint(SendPort mainSendPort) {
+  IsolateWorker.isInsideWorkerIsolate = true;
   final ReceivePort workerReceivePort = ReceivePort();
   mainSendPort.send(workerReceivePort.sendPort);
 
@@ -211,6 +213,7 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
 // 2. Isolate 2: Report & Process Worker Entrypoint
 // ==========================================
 void _processWorkerEntryPoint(SendPort mainSendPort) {
+  IsolateWorker.isInsideWorkerIsolate = true;
   final ReceivePort workerReceivePort = ReceivePort();
   mainSendPort.send(workerReceivePort.sendPort);
 

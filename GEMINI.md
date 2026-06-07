@@ -174,6 +174,6 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `4ce2b40` (feat/style: implement new reports tab layout with side-by-side buttons, consolidation checkbox, and home cradle FAB navigation)
+- **Last Stable Commit:** `9aae61b` (fix/perf: prevent nested isolate worker execution when reading sheets inside isolate and update cleanup script with Linux system cleanup commands)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
 

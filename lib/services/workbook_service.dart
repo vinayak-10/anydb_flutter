@@ -83,14 +83,23 @@ class WorkbookService {
         existingBytes = await io.readBytes(targetPath);
       }
       
-      fileBytes = await IsolateWorker.instance.execute<List<int>?>(
-        'writeExcel',
-        {
+      if (IsolateWorker.isInsideWorkerIsolate) {
+        final fileBytesList = WorkbookService.writeExcelInIsolate({
           'existingBytes': existingBytes,
           'data': data,
           'sheetName': sheetName,
-        },
-      );
+        });
+        fileBytes = fileBytesList;
+      } else {
+        fileBytes = await IsolateWorker.instance.execute<List<int>?>(
+          'writeExcel',
+          {
+            'existingBytes': existingBytes,
+            'data': data,
+            'sheetName': sheetName,
+          },
+        );
+      }
       
       if (fileBytes != null) {
         _cachedExcel = Excel.decodeBytes(fileBytes);
@@ -392,6 +401,9 @@ class WorkbookService {
         debugPrint("WorkbookService: Could not read workbook for discovery at $targetPath");
         return [];
       }
+      if (IsolateWorker.isInsideWorkerIsolate) {
+        return getMatchedSheetsInIsolate({'bytes': bytes, 'type': type});
+      }
       return await IsolateWorker.instance.execute<List<String>>(
         'getMatchedSheets',
         {'bytes': bytes, 'type': type},
@@ -495,6 +507,9 @@ class WorkbookService {
       final bytes = await io.readBytes(targetPath);
       if (bytes == null) return [];
       
+      if (IsolateWorker.isInsideWorkerIsolate) {
+        return readSheetInIsolate({'bytes': bytes, 'sheetName': sheetName});
+      }
       final dynamic rawRows = await IsolateWorker.instance.execute(
         'readSheet',
         {'bytes': bytes, 'sheetName': sheetName},
