@@ -169,7 +169,10 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final Map<String, dynamic> params = message['params'] ?? {};
         final String dbName = params['dbName'] ?? "";
         
+        final String root = SqliteHelper.databasePathOverride ?? "NULL";
         final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+        debugPrint("Isolate DB Worker: ipcGetAllRecords for '$dbName' using path root '$root'. Found ${rawRecords.length} records.");
+        
         final list = rawRecords.map((rec) {
           final key = rec['id']!;
           final decoded = jsonDecode(rec['value']!);
@@ -554,23 +557,31 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       final String targetPath = params['targetPath'];
       final Map<String, dynamic> aggregatorJson = params['aggregatorJson'];
       
+      // B. Initialize Aggregator Service and AggregatorReport in Isolate first to resolve source schema name
+      final agg = AggregatorService();
+      agg.init(aggregatorJson);
+      
+      final report = agg.reports.firstWhere((r) => r.key == reportKey);
+      final String sourceDbName = report.extractor.isNotEmpty 
+          ? (report.extractor[0].extractor?.source['name'] ?? dbName) 
+          : dbName;
+      
       // A. Fetch raw database records from Database Isolate via IPC
       final ReceivePort replyPort = ReceivePort();
       dbSendPort!.send({
         'type': 'ipcGetAllRecords',
         'replyPort': replyPort.sendPort,
-        'params': {'dbName': dbName},
+        'params': {'dbName': sourceDbName},
       });
       final List<dynamic> rawElements = await replyPort.first;
       replyPort.close();
       
+      debugPrint("Isolate Process Worker: ipcGetAllRecords returned ${rawElements.length} elements for sourceDbName='$sourceDbName' (passed dbName='$dbName').");
+      if (rawElements.isNotEmpty) {
+        debugPrint("Isolate Process Worker: First element map: ${rawElements.first}");
+      }
+      
       final List<Map<String, dynamic>> elements = rawElements.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      
-      // B. Initialize Aggregator Service and AggregatorReport in Isolate
-      final agg = AggregatorService();
-      agg.init(aggregatorJson);
-      
-      final report = agg.reports.firstWhere((r) => r.key == reportKey);
       
       // C. Populate Extractor Database with raw elements directly (decoding, flattening, filtering in Isolate)
       final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
