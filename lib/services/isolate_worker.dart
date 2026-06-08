@@ -147,9 +147,9 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
   final ReceivePort workerReceivePort = ReceivePort();
   mainSendPort.send(workerReceivePort.sendPort);
 
-  // Background warm record memory cache
-  // Structure: { dbName: { recordId: StringValue } }
-  final Map<String, Map<String, String>> bgCache = {};
+  // Background warm record memory cache (Pre-decoded Map format to optimize RAM usage & CPU time)
+  // Structure: { dbName: { recordId: DecodedValue } }
+  final Map<String, Map<String, dynamic>> bgCache = {};
 
   workerReceivePort.listen((message) async {
     if (message is Map) {
@@ -174,7 +174,10 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final String dbName = params['dbName'] ?? "";
         final tableCache = bgCache[dbName] ?? {};
         
-        final list = tableCache.entries.map((e) => {e.key: jsonDecode(e.value)}).toList();
+        final list = tableCache.entries
+            .where((e) => !e.key.startsWith('__'))
+            .map((e) => {e.key: e.value})
+            .toList();
         replyPort.send(list);
         return;
       }
@@ -184,17 +187,72 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final Map<String, dynamic> params = message['params'] ?? {};
         final String dbName = params['dbName'] ?? "";
         
-        final String root = SqliteHelper.databasePathOverride ?? "NULL";
-        final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
-        debugPrint("Isolate DB Worker: ipcGetAllRecords for '$dbName' using path root '$root'. Found ${rawRecords.length} records.");
+        var tableCache = bgCache[dbName];
+        final bool hasInactiveLoaded = tableCache != null && tableCache['__inactive_loaded__'] == 'true';
         
-        final list = rawRecords.map((rec) {
-          final key = rec['id']!;
-          final decoded = jsonDecode(rec['value']!);
-          return {key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded};
-        }).toList();
+        if (tableCache == null || !hasInactiveLoaded) {
+          final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+          tableCache = bgCache[dbName] = {};
+          for (var rec in rawRecords) {
+            tableCache[rec['id']!] = jsonDecode(rec['value']!);
+          }
+          tableCache['__inactive_loaded__'] = 'true';
+        }
+        
+        final list = tableCache.entries
+            .where((e) => !e.key.startsWith('__'))
+            .map((e) => {e.key: e.value})
+            .toList();
         
         replyPort.send(list);
+        return;
+      }
+
+      if (message['type'] == 'ipcGetFilteredReportData') {
+        final SendPort replyPort = message['replyPort'];
+        final Map<String, dynamic> params = message['params'] ?? {};
+        final String dbName = params['dbName'] ?? "";
+        final String reportKey = params['reportKey'] ?? "";
+        final dynamic date = params['date'];
+        final Map<String, dynamic> aggregatorJson = params['aggregatorJson'] ?? {};
+        
+        // 1. Ensure cache is fully warmed
+        var tableCache = bgCache[dbName];
+        final bool hasInactiveLoaded = tableCache != null && tableCache['__inactive_loaded__'] == 'true';
+        
+        if (tableCache == null || !hasInactiveLoaded) {
+          final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+          tableCache = bgCache[dbName] = {};
+          for (var rec in rawRecords) {
+            tableCache[rec['id']!] = jsonDecode(rec['value']!);
+          }
+          tableCache['__inactive_loaded__'] = 'true';
+        }
+        
+        // 2. Prepare elements from pre-decoded cache
+        final elements = tableCache.entries
+            .where((e) => !e.key.startsWith('__'))
+            .map((e) => Map<String, dynamic>.from(e.value as Map))
+            .toList();
+            
+        // 3. Initialize aggregator service and run daily filtering logic inside database isolate
+        final agg = AggregatorService();
+        agg.init(aggregatorJson);
+        final report = agg.reports.firstWhere((r) => r.key == reportKey);
+        final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
+        
+        final extIntf = report.extractor[0];
+        await extIntf.populateWithData(elements);
+        
+        final s = await extIntf.extractor!.applyPredicate(
+          extIntf.extractor!.predicates[0],
+          data: targetDate,
+          getFileName: (meta, {DateTime? timestamp}) => agg.getFileName(meta, timestamp: timestamp),
+          timestamp: null,
+          force: true,
+        );
+        
+        replyPort.send(s);
         return;
       }
 
@@ -339,7 +397,7 @@ bool _recordMatchesFilter(Map<String, dynamic> record, String filter) {
 // ==========================================
 // 3. Database Tasks execution logic
 // ==========================================
-Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<String, Map<String, String>> bgCache) async {
+Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<String, Map<String, dynamic>> bgCache) async {
   switch (type) {
     case 'dbGetBusinessUniqueKey':
       final String schemaName = params['schemaName'];
@@ -362,7 +420,7 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       
       // Update isolate memory cache
       final tableCache = bgCache[dbName] ??= {};
-      tableCache[id] = jsonEncode(value);
+      tableCache[id] = value;
       return null;
 
     case 'dbGetAll':
@@ -384,12 +442,12 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       }
 
       // 3. Populate background warm memory cache
-      final Map<String, String> tableCache = bgCache[dbName] ??= {};
+      final Map<String, dynamic> tableCache = bgCache[dbName] ??= {};
       if (filter == 'Active') {
         tableCache.clear();
       }
       for (var rec in rawRecords) {
-        tableCache[rec['id']!] = rec['value']!;
+        tableCache[rec['id']!] = jsonDecode(rec['value']!);
       }
       if (filter == 'Archived' || filter == 'Deleted' || filter == 'All') {
         tableCache['__inactive_loaded__'] = 'true';
@@ -407,7 +465,7 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       for (var id in recentIds) {
         final val = tableCache[id];
         if (val != null) {
-          results.add({'id': id, 'value': val});
+          results.add({'id': id, 'value': jsonEncode(val)});
         }
       }
       return results;
@@ -425,7 +483,7 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
         final List<Map<String, String>> activeRecords = await SqliteHelper.getActiveRecordsRawString(dbName);
         tableCache = bgCache[dbName] = {};
         for (var rec in activeRecords) {
-          tableCache[rec['id']!] = rec['value']!;
+          tableCache[rec['id']!] = jsonDecode(rec['value']!);
         }
       }
       
@@ -435,7 +493,7 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
         if (!hasInactiveLoaded) {
           final List<Map<String, String>> inactiveRecords = await SqliteHelper.getInactiveRecordsRawString(dbName);
           for (var rec in inactiveRecords) {
-            tableCache[rec['id']!] = rec['value']!;
+            tableCache[rec['id']!] = jsonDecode(rec['value']!);
           }
           tableCache['__inactive_loaded__'] = 'true';
         }
@@ -446,8 +504,7 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
         final key = entry.key;
         if (key.startsWith('__')) continue; // Ignore cache metadata like __inactive_loaded__
         
-        final valueStr = entry.value;
-        final decoded = jsonDecode(valueStr);
+        final decoded = entry.value;
         if (decoded is Map) {
           final decodedMap = Map<String, dynamic>.from(decoded);
           
@@ -468,11 +525,11 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       // Synchronous batch transaction on warm SQLite connection
       await SqliteHelper.updateAllRaw(dbName, items, businessKeyName);
       
-      // Sync cache as raw strings
+      // Sync cache as decoded maps
       final tableCache = bgCache[dbName] ??= {};
       for (var entry in items.entries) {
         final id = entry.key.replaceFirst('$dbName:', '');
-        tableCache[id] = jsonEncode(entry.value);
+        tableCache[id] = entry.value;
       }
       return null;
 
@@ -544,7 +601,7 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
         final tableCache = bgCache[dbName] ??= {};
         for (var entry in itemsToUpdate.entries) {
           final id = entry.key.replaceFirst('$dbName:', '');
-          tableCache[id] = jsonEncode(entry.value);
+          tableCache[id] = entry.value;
         }
       }
 
@@ -589,40 +646,46 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       final String sourceDbName = report.extractor.isNotEmpty 
           ? (report.extractor[0].extractor?.source['name'] ?? dbName) 
           : dbName;
-      
-      // A. Fetch raw database records from Database Isolate via IPC
-      final ReceivePort replyPort = ReceivePort();
-      dbSendPort!.send({
-        'type': 'ipcGetAllRecords',
-        'replyPort': replyPort.sendPort,
-        'params': {'dbName': sourceDbName},
-      });
-      final List<dynamic> rawElements = await replyPort.first;
-      replyPort.close();
-      
-      debugPrint("Isolate Process Worker: ipcGetAllRecords returned ${rawElements.length} elements for sourceDbName='$sourceDbName' (passed dbName='$dbName').");
-      if (rawElements.isNotEmpty) {
-        debugPrint("Isolate Process Worker: First element map: ${rawElements.first}");
+          
+      final String sourceType = report.extractor.isNotEmpty 
+          ? (report.extractor[0].extractor?.source['type'] ?? 'database') 
+          : 'database';
+
+      Map<String, dynamic> s;
+
+      if (sourceType == 'database') {
+        // A. Fetch filtered report data from Database Isolate via IPC (Pre-filtered in DB Isolate!)
+        final ReceivePort replyPort = ReceivePort();
+        dbSendPort!.send({
+          'type': 'ipcGetFilteredReportData',
+          'replyPort': replyPort.sendPort,
+          'params': {
+            'dbName': sourceDbName,
+            'reportKey': reportKey,
+            'date': date,
+            'aggregatorJson': aggregatorJson,
+          },
+        });
+        final dynamic sRaw = await replyPort.first;
+        replyPort.close();
+        s = Map<String, dynamic>.from(sRaw as Map);
+      } else {
+        // For report-sourced extractors (like unconsolidated Monthly), read directly from files on disk
+        final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
+        final extIntf = report.extractor[0];
+        
+        s = await extIntf.extractor!.applyPredicate(
+          extIntf.extractor!.predicates[0],
+          data: targetDate,
+          getFileName: (meta, {DateTime? timestamp}) => agg.getFileName(meta, timestamp: timestamp),
+          timestamp: null,
+          force: true,
+        );
       }
       
-      final List<Map<String, dynamic>> elements = rawElements.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      
-      // C. Populate Extractor Database with raw elements directly (decoding, flattening, filtering in Isolate)
-      final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
-      
-      // Run the predicate calculations
-      final extIntf = report.extractor[0];
-      await extIntf.populateWithData(elements);
-      
-      final s = await extIntf.extractor!.applyPredicate(
-        extIntf.extractor!.predicates[0],
-        data: targetDate,
-        getFileName: (meta, {DateTime? timestamp}) => agg.getFileName(meta, timestamp: timestamp),
-        timestamp: null,
-        force: true,
-      );
-      
       // Inject final sheetName
+      final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
+      final extIntf = report.extractor[0];
       final String entryName = extIntf.predicatedName(extIntf.extractor!.predicates[0] ?? {}, targetDate.toIso8601String());
       final sheetName = FileService().sanitizeName(entryName);
       String finalSheetName = sheetName;
