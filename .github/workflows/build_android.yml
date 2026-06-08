@@ -1,0 +1,80 @@
+name: 🤖 Android Release Build
+
+on:
+  push:
+    branches: [ main, dev ]
+  workflow_dispatch: # Allows manual run triggering from the GitHub Actions UI
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 🔑 Inject Secrets
+        run: |
+          # Reconstructs compile-time secrets.json from GitHub secrets
+          echo '${{ secrets.SECRETS_JSON }}' > secrets.json
+
+      - name: 📝 Configure Android Signing Key
+        run: |
+          # If keystore base64 secret exists, decode it to android/app/upload-keystore.jks
+          # and create the android/key.properties file.
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding signing keystore..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" > android/key.properties
+            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
+            echo "storeFile=upload-keystore.jks" >> android/key.properties
+          else
+            echo "No custom keystore secret found. Generating temporary keystore for building..."
+            # Create a dummy keystore so release configuration doesn't crash Gradle
+            keytool -genkey -v -keystore android/app/upload-keystore.jks \
+              -alias anydb-alias -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass and_any -keypass and_any \
+              -dname "CN=AnyDb, OU=Development, O=AnyDb, L=Unknown, S=Unknown, C=US"
+            
+            echo "storePassword=and_any" > android/key.properties
+            echo "keyPassword=and_any" >> android/key.properties
+            echo "keyAlias=anydb-alias" >> android/key.properties
+            echo "storeFile=upload-keystore.jks" >> android/key.properties
+          fi
+
+      - name: 📦 Fetch Packages
+        run: flutter pub get
+
+      - name: ⚙️ Build Android APK
+        run: |
+          flutter build apk --release --dart-define-from-file=secrets.json
+
+      - name: ⚙️ Build Android App Bundle (AAB)
+        run: |
+          flutter build appbundle --release --dart-define-from-file=secrets.json
+
+      - name: 📤 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anydb-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 5
+
+      - name: 📤 Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anydb-android-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 5
