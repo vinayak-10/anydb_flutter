@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -112,11 +113,116 @@ class AnyDbApp extends ConsumerWidget {
   }
 }
 
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  Timer? _autoSelectTimer;
+  int _secondsRemaining = 5;
+  String? _autoSelectSchemaName;
+  bool _isAutoSelectActive = false;
+  bool _hasInitializedAutoSelect = false;
+
+  @override
+  void dispose() {
+    _autoSelectTimer?.cancel();
+    super.dispose();
+  }
+
+  void _cancelAutoSelect() {
+    if (_autoSelectTimer != null) {
+      _autoSelectTimer!.cancel();
+      _autoSelectTimer = null;
+    }
+    setState(() {
+      _isAutoSelectActive = false;
+    });
+    ref.read(settingsProvider.notifier).setLastLoadedSchema(null);
+  }
+
+  Future<void> _loadSchema(SchemaInfo schema) async {
+    final fileService = ref.read(fileServiceProvider);
+    debugPrint("HomePage: Loading schema from ${schema.path}");
+    final schemaData = await fileService.readJson(schema.path);
+    
+    if (schemaData != null) {
+      final collectionService = ref.read(collectionServiceProvider);
+      await collectionService.init(schemaData);
+
+      // Bind database onChanged triggers to Riverpod databaseUpdateProvider state family
+      for (var content in collectionService.contents) {
+        if (content.type == ContentType.database) {
+          final db = content.service as ElementDb;
+          db.onChanged = () {
+            ref.read(databaseUpdateProvider.notifier).increment(db.key);
+          };
+        }
+      }
+
+      if (!mounted) return;
+      
+      // Save last loaded schema path
+      await ref.read(settingsProvider.notifier).setLastLoadedSchema(schema.path);
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => CollectionView(
+          contents: collectionService.contents,
+          title: schema.name,
+        )),
+      );
+    }
+  }
+
+  void _startTimer(SchemaInfo schema) {
+    _autoSelectTimer?.cancel();
+    _secondsRemaining = 5;
+    _autoSelectSchemaName = schema.name;
+    _isAutoSelectActive = true;
+
+    _autoSelectTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_secondsRemaining > 1) {
+        setState(() {
+          _secondsRemaining--;
+        });
+      } else {
+        timer.cancel();
+        _autoSelectTimer = null;
+        setState(() {
+          _isAutoSelectActive = false;
+        });
+        _loadSchema(schema);
+      }
+    });
+  }
+
+  void _checkAndStartAutoSelect(List<SchemaInfo> schemas) {
+    if (_hasInitializedAutoSelect) return;
+    _hasInitializedAutoSelect = true;
+
+    final settings = ref.read(settingsProvider);
+    final cachedPath = settings.lastLoadedSchemaPath;
+    if (cachedPath != null && cachedPath.isNotEmpty) {
+      final matchedSchema = schemas.firstWhere(
+        (s) => s.path == cachedPath,
+        orElse: () => SchemaInfo(name: '', path: ''),
+      );
+      if (matchedSchema.path.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _startTimer(matchedSchema);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     debugPrint("HomePage: building");
     final schemasAsync = ref.watch(schemasProvider);
 
@@ -159,78 +265,128 @@ class HomePage extends ConsumerWidget {
                 ),
               );
           }
-          return ListView.builder(
-            itemCount: schemas.length,
-            itemBuilder: (context, index) {
-              final schema = schemas[index];
-              return ListTile(
-                leading: const Icon(Icons.schema, color: Colors.deepPurple),
-                title: Text(schema.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text(schema.path, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.output, color: Colors.blue),
-                      tooltip: "Export Schema",
-                      onPressed: () async {
-                        await ref.read(schemaServiceProvider).exportSchema(schema);
-                        ref.invalidate(schemasProvider);
-                      },
+
+          // Trigger auto-select evaluation once schema list is populated
+          _checkAndStartAutoSelect(schemas);
+
+          return Column(
+            children: [
+              if (_isAutoSelectActive)
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Card(
+                    color: const Color(0xFF6B1524), // Velvet Crimson
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFFE5C158), width: 1.5), // Gold Accent
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      tooltip: "Delete Schema",
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text("Delete Schema?"),
-                            content: Text("Are you sure you want to delete ${schema.name}?"),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-                              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
-                            ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE5C158)),
+                            ),
                           ),
-                        );
-                        if (confirmed == true) {
-                          await ref.read(schemaServiceProvider).deleteSchema(schema);
-                          ref.invalidate(schemasProvider);
-                        }
-                      },
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Auto-selecting: $_autoSelectSchemaName",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "Redirecting in $_secondsRemaining seconds...",
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _cancelAutoSelect,
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFFE5C158),
+                            ),
+                            child: const Text(
+                              "CANCEL",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
-                onTap: () async {
-                  final fileService = ref.read(fileServiceProvider);
-                  debugPrint("HomePage: Loading schema from ${schema.path}");
-                  final schemaData = await fileService.readJson(schema.path);
-                  
-                  if (schemaData != null) {
-                      final collectionService = ref.read(collectionServiceProvider);
-                      await collectionService.init(schemaData);
-
-                      // Bind database onChanged triggers to Riverpod databaseUpdateProvider state family
-                      for (var content in collectionService.contents) {
-                        if (content.type == ContentType.database) {
-                          final db = content.service as ElementDb;
-                          db.onChanged = () {
-                            ref.read(databaseUpdateProvider.notifier).increment(db.key);
-                          };
-                        }
-                      }
-
-                      if (!context.mounted) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => CollectionView(
-                          contents: collectionService.contents,
-                          title: schema.name,
-                        )),
-                      );
-                    }                },
-              );
-            },
+              Expanded(
+                child: ListView.builder(
+                  itemCount: schemas.length,
+                  itemBuilder: (context, index) {
+                    final schema = schemas[index];
+                    return ListTile(
+                      leading: const Icon(Icons.schema, color: Colors.deepPurple),
+                      title: Text(schema.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(schema.path, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.output, color: Colors.blue),
+                            tooltip: "Export Schema",
+                            onPressed: () async {
+                              await ref.read(schemaServiceProvider).exportSchema(schema);
+                              ref.invalidate(schemasProvider);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: "Delete Schema",
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text("Delete Schema?"),
+                                  content: Text("Are you sure you want to delete ${schema.name}?"),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
+                                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true) {
+                                await ref.read(schemaServiceProvider).deleteSchema(schema);
+                                ref.invalidate(schemasProvider);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      onTap: () async {
+                        _autoSelectTimer?.cancel();
+                        setState(() {
+                          _isAutoSelectActive = false;
+                        });
+                        await _loadSchema(schema);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
         loading: () {

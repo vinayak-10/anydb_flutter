@@ -5,22 +5,26 @@ class SettingsState {
   final double fontScale;
   final double inputFontScale;
   final bool enableTabletSplitView;
+  final String? lastLoadedSchemaPath;
 
   SettingsState({
     this.fontScale = 1.0, 
     this.inputFontScale = 1.0,
     this.enableTabletSplitView = false,
+    this.lastLoadedSchemaPath,
   });
 
   SettingsState copyWith({
     double? fontScale, 
     double? inputFontScale,
     bool? enableTabletSplitView,
+    String? lastLoadedSchemaPath,
   }) {
     return SettingsState(
       fontScale: fontScale ?? this.fontScale,
       inputFontScale: inputFontScale ?? this.inputFontScale,
       enableTabletSplitView: enableTabletSplitView ?? this.enableTabletSplitView,
+      lastLoadedSchemaPath: lastLoadedSchemaPath ?? this.lastLoadedSchemaPath,
     );
   }
 
@@ -40,10 +44,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final scale = prefs.getDouble('fontScale') ?? 1.0;
     final inputScale = prefs.getDouble('inputFontScale') ?? 1.0;
     final tabletSplit = prefs.getBool('enableTabletSplitView') ?? false;
+    final lastSchema = prefs.getString('lastLoadedSchemaPath');
     state = state.copyWith(
       fontScale: scale, 
       inputFontScale: inputScale,
       enableTabletSplitView: tabletSplit,
+      lastLoadedSchemaPath: lastSchema,
     );
   }
 
@@ -83,6 +89,16 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('enableTabletSplitView', enabled);
     state = state.copyWith(enableTabletSplitView: enabled);
+  }
+
+  Future<void> setLastLoadedSchema(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (path == null) {
+      await prefs.remove('lastLoadedSchemaPath');
+    } else {
+      await prefs.setString('lastLoadedSchemaPath', path);
+    }
+    state = state.copyWith(lastLoadedSchemaPath: path);
   }
 }
 
