@@ -242,7 +242,29 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
         
         final extIntf = report.extractor[0];
-        await extIntf.populateWithData(elements);
+        
+        // 4. Pre-filter elements using the date predicate before running the flattening/extraction engine.
+        // This avoids running recursive flattening on thousands of unrelated records.
+        final predicate = extIntf.extractor?.predicates.firstWhere(
+          (p) => p is Map && p['operation'] == 'date',
+          orElse: () => null,
+        );
+
+        List<Map<String, dynamic>> filteredElements;
+        if (predicate != null && predicate is Map) {
+          final String searchKey = predicate['column']?.toString() ?? "Date";
+          final String matchType = predicate['parameter']?['type']?.toString() ?? "day";
+          filteredElements = elements.where((e) {
+            if (e.isEmpty) return false;
+            final recordVal = e.values.first;
+            return _recordMatchesDatePredicate(recordVal, targetDate, searchKey, matchType);
+          }).toList();
+          debugPrint("Isolate DB Worker: Pre-filtered elements from ${elements.length} down to ${filteredElements.length} using key='$searchKey', matchType='$matchType', date='$targetDate'.");
+        } else {
+          filteredElements = elements;
+        }
+
+        await extIntf.populateWithData(filteredElements);
         
         final s = await extIntf.extractor!.applyPredicate(
           extIntf.extractor!.predicates[0],
@@ -787,5 +809,71 @@ int _getLatestDateStaticForImport(Map<String, dynamic> record) {
   } catch (_) {}
   return maxDate;
 }
+
+DateTime? _parseDateStatic(dynamic val) {
+  if (val == null) return null;
+  if (val is DateTime) return val;
+  if (val is num) {
+     if (val.isNaN || val.isInfinite) return null;
+     return DateTime.fromMillisecondsSinceEpoch(val.toInt());
+  }
+  
+  final s = val.toString().trim();
+  if (s.isEmpty || s.toLowerCase() == "nan") return null;
+
+  final dt = DateTime.tryParse(s);
+  if (dt != null) return dt;
+
+  final ms = int.tryParse(s);
+  if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+
+  return null;
+}
+
+dynamic _findValueInsensitiveStatic(Map<dynamic, dynamic> row, String key) {
+  if (key.isEmpty) return null;
+  for (var k in row.keys) {
+    if (k.toString().toLowerCase() == key.toLowerCase()) return row[k];
+  }
+  return null;
+}
+
+bool _recordMatchesDatePredicate(Map<dynamic, dynamic> record, DateTime targetDate, String searchKey, String matchType) {
+  // Check root level fields (like "Date" if it exists at root, or "Registered On")
+  final rootVal = record[searchKey] ?? _findValueInsensitiveStatic(record, searchKey);
+  if (rootVal != null) {
+    final rd = _parseDateStatic(rootVal);
+    if (rd != null) {
+      if (matchType == 'month') {
+        if (rd.month == targetDate.month && rd.year == targetDate.year) return true;
+      } else {
+        if (rd.day == targetDate.day && rd.month == targetDate.month && rd.year == targetDate.year) return true;
+      }
+    }
+  }
+
+  // Check simple account transactions
+  final account = record['Account'];
+  if (account is Map && account.isNotEmpty) {
+    final history = account.values.first;
+    if (history is List) {
+      for (var tx in history) {
+        if (tx is Map) {
+          final val = tx[searchKey] ?? _findValueInsensitiveStatic(tx, searchKey);
+          final rd = _parseDateStatic(val);
+          if (rd != null) {
+            if (matchType == 'month') {
+              if (rd.month == targetDate.month && rd.year == targetDate.year) return true;
+            } else {
+              if (rd.day == targetDate.day && rd.month == targetDate.month && rd.year == targetDate.year) return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 
 
