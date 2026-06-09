@@ -83,3 +83,6 @@ test_sign_in.dart
 
 # Generated visual previews (Primary vector SVGs remain tracked)
 assets/*.jpg
+
+# iOS packaging configuration template
+ios/ExportOptions.plist

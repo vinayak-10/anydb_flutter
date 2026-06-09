@@ -95,6 +95,33 @@ jobs:
       - name: 📦 Fetch Packages
         run: flutter pub get
 
+      - name: 📝 Configure iOS ExportOptions
+        run: |
+          if [ ! -f ios/ExportOptions.plist ]; then
+            echo "Creating default ExportOptions.plist..."
+            cat <<'EOF' > ios/ExportOptions.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>app-store</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>stripSwiftSymbols</key>
+    <true/>
+    <key>teamID</key>
+    <string>YOUR_APPLE_TEAM_ID</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.example.anydbFlutter</key>
+        <string>YOUR_PROVISIONING_PROFILE_NAME_OR_UUID</string>
+    </dict>
+</dict>
+</plist>
+EOF
+          fi
+
       - name: ⚙️ Build iOS IPA Archive
         run: |
           # Compiles and builds the signed IPA file

@@ -30,29 +30,38 @@ jobs:
           echo '${{ secrets.SECRETS_JSON }}' > secrets.json
 
       - name: 📝 Configure Android Signing Key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          # If keystore base64 secret exists, decode it to android/app/upload-keystore.jks
-          # and create the android/key.properties file.
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "Decoding signing keystore..."
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
-            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" > android/key.properties
-            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
-            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
-            echo "storeFile=upload-keystore.jks" >> android/key.properties
+          # Define defaults matching the standard setup
+          DEFAULT_PASS="and_any"
+          DEFAULT_ALIAS="anydb-alias"
+
+          STORE_PASS="${STORE_PASS_SECRET:-$DEFAULT_PASS}"
+          KEY_PASS="${KEY_PASS_SECRET:-$DEFAULT_PASS}"
+          KEY_ALIAS="${KEY_ALIAS_SECRET:-$DEFAULT_ALIAS}"
+
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Signing Key: Custom keystore secret detected. Decoding..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
           else
-            echo "No custom keystore secret found. Generating temporary keystore for building..."
-            # Create a dummy keystore so release configuration doesn't crash Gradle
+            echo "Signing Key: No custom keystore secret found. Generating temporary dummy keystore..."
             keytool -genkey -v -keystore android/app/upload-keystore.jks \
-              -alias anydb-alias -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass and_any -keypass and_any \
+              -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$STORE_PASS" -keypass "$KEY_PASS" \
               -dname "CN=AnyDb, OU=Development, O=AnyDb, L=Unknown, S=Unknown, C=US"
-            
-            echo "storePassword=and_any" > android/key.properties
-            echo "keyPassword=and_any" >> android/key.properties
-            echo "keyAlias=anydb-alias" >> android/key.properties
-            echo "storeFile=upload-keystore.jks" >> android/key.properties
           fi
+
+          # Write key.properties
+          echo "storePassword=$STORE_PASS" > android/key.properties
+          echo "keyPassword=$KEY_PASS" >> android/key.properties
+          echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
+
+          echo "Signing Key: Configuration successfully generated in android/key.properties"
 
       - name: 📦 Fetch Packages
         run: flutter pub get
