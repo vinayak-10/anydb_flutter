@@ -229,10 +229,10 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
           tableCache['__inactive_loaded__'] = 'true';
         }
         
-        // 2. Prepare elements from pre-decoded cache
+        // 2. Prepare elements from pre-decoded cache wrapped in {key: value} format
         final elements = tableCache.entries
             .where((e) => !e.key.startsWith('__'))
-            .map((e) => Map<String, dynamic>.from(e.value as Map))
+            .map((e) => {e.key: Map<String, dynamic>.from(e.value as Map)})
             .toList();
             
         // 3. Initialize aggregator service and run daily filtering logic inside database isolate
