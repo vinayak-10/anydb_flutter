@@ -1,8 +1,8 @@
 name: 🍎 macOS & iOS Release Builds
 
 on:
-  push:
-    branches: [ main, dev ]
+  # push:
+  #   branches: [ main, dev ]
   workflow_dispatch: # Allows manual run triggering from the GitHub Actions UI
 
 jobs:
