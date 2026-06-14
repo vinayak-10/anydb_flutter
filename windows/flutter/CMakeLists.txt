@@ -95,12 +95,10 @@ if(WIN32)
       ${CPP_WRAPPER_SOURCES_CORE} ${CPP_WRAPPER_SOURCES_PLUGIN}
       ${CPP_WRAPPER_SOURCES_APP}
       ${PHONY_OUTPUT}
-    COMMAND "${CMAKE_COMMAND}" -E env
-      "FLUTTER_ROOT=${FLUTTER_ROOT}"
-      "PROJECT_DIR=${PROJECT_DIR}"
-      "TRACK_WIDGET_CREATION=${TRACK_WIDGET_CREATION}"
-      "MULTIPROJECT_ROOT=${MULTIPROJECT_ROOT}"
-      "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.bat" windows-x64 ${CMAKE_BUILD_TYPE}
+    COMMAND ${CMAKE_COMMAND} -E env
+      ${FLUTTER_TOOL_ENVIRONMENT}
+      "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.bat"
+        ${FLUTTER_TARGET_PLATFORM} $<CONFIG>
     VERBATIM
   )
 else()
