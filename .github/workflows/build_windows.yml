@@ -2,7 +2,7 @@ name: 💻 Windows Release Build
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ master ]
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
