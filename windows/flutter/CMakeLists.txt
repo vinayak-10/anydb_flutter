@@ -89,14 +89,30 @@ add_dependencies(flutter_wrapper_app flutter_assemble)
 # flutter tool.
 set(PHONY_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/_phony_")
 set_source_files_properties("${PHONY_OUTPUT}" PROPERTIES SYMBOLIC TRUE)
-add_custom_command(
-  OUTPUT ${FLUTTER_LIBRARY} ${FLUTTER_LIBRARY_HEADERS}
-    ${CPP_WRAPPER_SOURCES_CORE} ${CPP_WRAPPER_SOURCES_PLUGIN}
-    ${CPP_WRAPPER_SOURCES_APP}
-    ${PHONY_OUTPUT}
-  COMMAND ${CMAKE_COMMAND} -E echo "Bypassing tool_backend.bat on Linux host..."
-  VERBATIM
-)
+if(WIN32)
+  add_custom_command(
+    OUTPUT ${FLUTTER_LIBRARY} ${FLUTTER_LIBRARY_HEADERS}
+      ${CPP_WRAPPER_SOURCES_CORE} ${CPP_WRAPPER_SOURCES_PLUGIN}
+      ${CPP_WRAPPER_SOURCES_APP}
+      ${PHONY_OUTPUT}
+    COMMAND "${CMAKE_COMMAND}" -E env
+      "FLUTTER_ROOT=${FLUTTER_ROOT}"
+      "PROJECT_DIR=${PROJECT_DIR}"
+      "TRACK_WIDGET_CREATION=${TRACK_WIDGET_CREATION}"
+      "MULTIPROJECT_ROOT=${MULTIPROJECT_ROOT}"
+      "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.bat" windows-x64 ${CMAKE_BUILD_TYPE}
+    VERBATIM
+  )
+else()
+  add_custom_command(
+    OUTPUT ${FLUTTER_LIBRARY} ${FLUTTER_LIBRARY_HEADERS}
+      ${CPP_WRAPPER_SOURCES_CORE} ${CPP_WRAPPER_SOURCES_PLUGIN}
+      ${CPP_WRAPPER_SOURCES_APP}
+      ${PHONY_OUTPUT}
+    COMMAND ${CMAKE_COMMAND} -E echo "Bypassing tool_backend.bat on Linux host..."
+    VERBATIM
+  )
+endif()
 add_custom_target(flutter_assemble DEPENDS
   "${FLUTTER_LIBRARY}"
   ${FLUTTER_LIBRARY_HEADERS}

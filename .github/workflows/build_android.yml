@@ -1,8 +1,8 @@
 name: 🤖 Android Release Build
 
 on:
-  push:
-    branches: [ master ]
+  # push:
+  #   branches: [ master ]
   workflow_dispatch: # Allows manual run triggering from the GitHub Actions UI
 
 jobs:
