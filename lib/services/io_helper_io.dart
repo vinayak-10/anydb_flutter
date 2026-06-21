@@ -60,6 +60,13 @@ Future<void> deleteFile(String path) async {
   }
 }
 
+Future<void> deleteDir(String path) async {
+  final dir = io.Directory(path);
+  if (await dir.exists()) {
+    await dir.delete(recursive: true);
+  }
+}
+
 Future<void> renameFile(String source, String dest) async {
   await io.File(source).rename(dest);
 }

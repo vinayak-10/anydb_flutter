@@ -138,7 +138,12 @@ class WorkbookService {
 
     if (fileBytes != null) {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
-      await _fileService.copyToPublicDocuments(_lastReportPath!, fileName);
+      final relativePath = "xyz.maya/anydb/schema/$schemaName/reports";
+      await _fileService.copyToPublicDocuments(
+        _lastReportPath!,
+        fileName,
+        relativePath: relativePath,
+      );
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 

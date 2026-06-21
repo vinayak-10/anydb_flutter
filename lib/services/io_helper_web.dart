@@ -20,3 +20,4 @@ Future<void> renameFile(String source, String dest) async {}
 WebFileStat getFileStatSync(String path) => WebFileStat();
 List<dynamic> listDir(String path) => [];
 bool isDirectory(dynamic entity) => false;
+Future<void> deleteDir(String path) async {}

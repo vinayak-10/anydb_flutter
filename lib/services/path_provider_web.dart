@@ -1,3 +1,7 @@
+Future<String?> getTempDir() async {
+  return null;
+}
+
 Future<String?> getAppDocsDir() async {
   return null;
 }

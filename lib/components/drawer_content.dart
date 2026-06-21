@@ -12,6 +12,7 @@ import '../main.dart';
 import '../services/schema_service.dart';
 import '../screens/schema_field_editor.dart';
 import '../screens/collection_view.dart';
+import '../services/file_service.dart';
 
 class DrawerContent extends ConsumerWidget {
   final String? currentSchemaName;
@@ -838,6 +839,95 @@ void _showAdvancedModal(
                     );
                   },
                 ),
+              if (resolvedSchemaName != null) ...[
+                const Divider(height: 24.0),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4.0),
+                  child: Text(
+                    'Maintenance',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6B1524),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.cached,
+                    color: Color(0xFF6B1524),
+                  ),
+                  title: const Text('Clear Report Cache'),
+                  subtitle: const Text(
+                    'Deletes cached .xlsx files for the current schema',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    final fileService = ref.read(fileServiceProvider);
+                    try {
+                      await fileService.purgeWorkspaceCache(resolvedSchemaName);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Report cache cleared successfully'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Cache clear failed: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.delete_sweep_outlined,
+                    color: Color(0xFF6B1524),
+                  ),
+                  title: const Text('Prune Old Exported Files'),
+                  subtitle: const Text(
+                    'Removes exported files older than 30 days from Documents',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    final fileService = ref.read(fileServiceProvider);
+                    try {
+                      final count = await fileService.pruneExportedFiles(30);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              count > 0
+                                  ? 'Pruned $count old file(s) from Documents'
+                                  : 'No old files found to prune',
+                            ),
+                            backgroundColor: Colors.indigo,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Prune failed: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
             ],
           ),
         ),

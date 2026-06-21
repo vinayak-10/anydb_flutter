@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'platform_check.dart';
 import 'io_helper.dart' as io;
 import 'path_provider_helper.dart' as pp;
+import 'package:permission_handler/permission_handler.dart';
 
 class FileService {
   static const String appName = 'anydb';
@@ -252,14 +253,21 @@ class FileService {
 
   static const MethodChannel _fileSaverChannel = MethodChannel('com.example.anydb_flutter/file_saver');
 
-  Future<void> copyToPublicDocuments(String sourcePath, String displayName) async {
+  Future<void> copyToPublicDocuments(
+    String sourcePath,
+    String displayName, {
+    required String relativePath,
+  }) async {
     if (kIsWeb) return;
     if (isAndroid()) {
       try {
         await _fileSaverChannel.invokeMethod('saveFileToDocuments', {
           'sourcePath': sourcePath,
           'displayName': displayName,
-          'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'relativePath': relativePath,
+          'mimeType': displayName.endsWith('.json')
+              ? 'application/json'
+              : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
       } catch (e) {
         debugPrint("FileService: Failed to copy to public Documents via MediaStore: $e");
@@ -268,7 +276,7 @@ class FileService {
       try {
         final home = pp.getHomeDir();
         if (home != null) {
-          final targetDir = p.join(home, 'Documents', 'xyz.maya', 'anydb');
+          final targetDir = p.join(home, 'Documents', relativePath);
           await ensureDir(targetDir);
           final targetPath = p.join(targetDir, displayName);
           final bytes = await io.readBytes(sourcePath);
@@ -280,5 +288,75 @@ class FileService {
         debugPrint("FileService: Failed to copy to public Documents on Linux: $e");
       }
     }
+  }
+
+  Future<bool> requestStoragePermission() async {
+    if (kIsWeb || !isAndroid()) return true;
+    try {
+      if (await Permission.manageExternalStorage.isGranted) {
+        return true;
+      }
+      if (await Permission.manageExternalStorage.request().isGranted) {
+        return true;
+      }
+      final status = await Permission.storage.request();
+      return status.isGranted;
+    } catch (e) {
+      debugPrint("FileService: requestStoragePermission failed: $e");
+      return false;
+    }
+  }
+
+  Future<void> purgeWorkspaceCache(String schemaName) async {
+    final tempDir = await pp.getTempDir();
+    if (tempDir != null && await io.dirExists(tempDir)) {
+      await io.deleteDir(tempDir);
+    }
+    final aggregatorDir = await getAggregatorPath(schemaName, external: true);
+    if (await io.dirExists(aggregatorDir)) {
+      final files = io.listDir(aggregatorDir);
+      for (var file in files) {
+        await io.deleteFile(file.path);
+      }
+    }
+  }
+
+  Future<int> pruneExportedFiles(int retentionDays) async {
+    if (kIsWeb) return 0;
+    final home = pp.getHomeDir() ?? "";
+    final documentsPath = isLinux()
+        ? p.join(home, 'Documents', 'xyz.maya', 'anydb')
+        : p.join(await pp.getExtStorageDir() ?? "", 'Documents', 'xyz.maya', 'anydb');
+
+    if (!await io.dirExists(documentsPath)) return 0;
+
+    int deletedCount = 0;
+    final now = DateTime.now();
+    final threshold = now.subtract(Duration(days: retentionDays));
+
+    Future<void> pruneDirectory(String dirPath) async {
+      final entities = io.listDir(dirPath);
+      for (var entity in entities) {
+        final path = entity.path as String;
+        if (io.isDirectory(entity)) {
+          await pruneDirectory(path);
+          // If directory is now empty, delete it
+          if (io.listDir(path).isEmpty) {
+            try {
+              await io.deleteDir(path);
+            } catch (_) {}
+          }
+        } else {
+          final fileStat = io.getFileStatSync(path);
+          if (retentionDays == 0 || fileStat.modified.isBefore(threshold)) {
+            await io.deleteFile(path);
+            deletedCount++;
+          }
+        }
+      }
+    }
+
+    await pruneDirectory(documentsPath);
+    return deletedCount;
   }
 }

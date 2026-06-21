@@ -95,12 +95,14 @@ class ReportParams {
   final AggregatorService agg;
   final dynamic date;
   final String dbKey;
+  final bool forceRebuild;
 
   ReportParams({
     required this.report,
     required this.agg,
     required this.date,
     required this.dbKey,
+    this.forceRebuild = false,
   });
 
   @override
@@ -111,11 +113,16 @@ class ReportParams {
           report.key == other.report.key &&
           agg.key == other.agg.key &&
           date == other.date &&
-          dbKey == other.dbKey;
+          dbKey == other.dbKey &&
+          forceRebuild == other.forceRebuild;
 
   @override
   int get hashCode =>
-      report.key.hashCode ^ agg.key.hashCode ^ date.hashCode ^ dbKey.hashCode;
+      report.key.hashCode ^
+      agg.key.hashCode ^
+      date.hashCode ^
+      dbKey.hashCode ^
+      forceRebuild.hashCode;
 }
 
 final reportDataProvider = FutureProvider.family<Map<String, dynamic>, ReportParams>((
@@ -177,6 +184,7 @@ final reportDataProvider = FutureProvider.family<Map<String, dynamic>, ReportPar
           'date': targetDate.toIso8601String(),
           'targetPath': targetPath,
           'aggregatorJson': params.agg.schemaJson,
+          'forceRebuild': params.forceRebuild,
         });
 
     return result;
@@ -3597,6 +3605,7 @@ class AggregatorReportView extends ConsumerStatefulWidget {
   final DateTime selectedDate;
   final DateTimeRange? selectedRange;
   final String schemaTitle;
+  final bool forceRebuild;
 
   const AggregatorReportView({
     super.key,
@@ -3605,6 +3614,7 @@ class AggregatorReportView extends ConsumerStatefulWidget {
     required this.selectedDate,
     required this.schemaTitle,
     this.selectedRange,
+    this.forceRebuild = false,
   });
 
   @override
@@ -4063,6 +4073,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       agg: widget.agg,
       date: widget.selectedRange ?? widget.selectedDate,
       dbKey: widget.schemaTitle,
+      forceRebuild: widget.forceRebuild,
     );
     final reportAsync = ref.watch(reportDataProvider(params));
 
@@ -4419,6 +4430,7 @@ class _AggregatorView extends ConsumerStatefulWidget {
 
 class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   bool _consolidateAllDays = false;
+  bool _forceRebuild = false;
 
   Future<void> _runMonthlyBatch(AggregatorReport monthlyReport) async {
     final batchDialogReady = Completer<void>();
@@ -4589,6 +4601,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                                 selectedDate: widget.selectedDate,
                                 selectedRange: widget.selectedRange,
                                 schemaTitle: widget.schemaTitle,
+                                forceRebuild: _forceRebuild,
                               ),
                             ),
                           );
@@ -4636,6 +4649,7 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                                       selectedDate: widget.selectedDate,
                                       selectedRange: widget.selectedRange,
                                       schemaTitle: widget.schemaTitle,
+                                      forceRebuild: _forceRebuild,
                                     ),
                                   ),
                                 );
@@ -4666,6 +4680,30 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                             ],
                           ),
                         ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // ── Force Rebuild row (shared by daily & monthly) ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Checkbox(
+                        value: _forceRebuild,
+                        activeColor: const Color(0xFF6B1524),
+                        onChanged: (val) {
+                          setState(() {
+                            _forceRebuild = val ?? false;
+                          });
+                        },
+                      ),
+                      const Text(
+                        "Force rebuild (ignore cache)",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),

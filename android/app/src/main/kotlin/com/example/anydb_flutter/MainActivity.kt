@@ -19,6 +19,7 @@ class MainActivity : FlutterActivity() {
             if (call.method == "saveFileToDocuments") {
                 val sourcePath = call.argument<String>("sourcePath")
                 val displayName = call.argument<String>("displayName")
+                val relativePath = call.argument<String>("relativePath") ?: "xyz.maya/anydb"
                 val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
 
                 if (sourcePath == null || displayName == null) {
@@ -38,7 +39,7 @@ class MainActivity : FlutterActivity() {
                         val values = ContentValues().apply {
                             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
                             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/xyz.maya/anydb")
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/" + relativePath)
                             put(MediaStore.Files.FileColumns.IS_PENDING, 1)
                         }
 
@@ -67,7 +68,7 @@ class MainActivity : FlutterActivity() {
                         result.success(uri.toString())
                     } else {
                         val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-                        val targetDir = File(documentsDir, "xyz.maya/anydb")
+                        val targetDir = File(documentsDir, relativePath)
                         if (!targetDir.exists()) {
                             targetDir.mkdirs()
                         }

@@ -1,6 +1,15 @@
 import 'dart:io' show Platform;
 import 'package:path_provider/path_provider.dart';
 
+Future<String?> getTempDir() async {
+  try {
+    final directory = await getTemporaryDirectory();
+    return directory.path;
+  } catch (e) {
+    return null;
+  }
+}
+
 Future<String?> getAppDocsDir() async {
   try {
     final directory = await getApplicationDocumentsDirectory();

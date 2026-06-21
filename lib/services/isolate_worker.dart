@@ -736,6 +736,7 @@ Future<dynamic> _executeProcessTask(
       final dynamic date = params['date'];
       final String targetPath = params['targetPath'];
       final Map<String, dynamic> aggregatorJson = params['aggregatorJson'];
+      final bool forceRebuild = params['forceRebuild'] ?? false;
 
       final DateTime targetDate = date is DateTime
           ? date
@@ -795,7 +796,7 @@ Future<dynamic> _executeProcessTask(
       }
 
       // 3. Validate existing cached report on disk if database has no new changes since its modification
-      if (latestFile != null) {
+      if (latestFile != null && !forceRebuild) {
         final fileStat = io.getFileStatSync(latestFile.path);
         final fileModifiedMs = fileStat.modified.millisecondsSinceEpoch;
 
