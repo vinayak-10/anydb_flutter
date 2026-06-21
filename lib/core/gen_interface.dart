@@ -54,22 +54,30 @@ abstract class GenInterface {
   }
 
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return const SizedBox.shrink();
   }
 
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     return const SizedBox.shrink();
   }
 
-  Widget? invoke({required String method, required Map<String, dynamic> parameters, VoidCallback? onChanged}) {
+  Widget? invoke({
+    required String method,
+    required Map<String, dynamic> parameters,
+    VoidCallback? onChanged,
+  }) {
     return null;
   }
 
@@ -85,6 +93,5 @@ abstract class GenInterface {
     return [];
   }
 
-  void set(Map<String, dynamic> jo) {
-  }
+  void set(Map<String, dynamic> jo) {}
 }

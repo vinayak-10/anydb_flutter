@@ -8,6 +8,7 @@ import 'services/collection_service.dart';
 import 'services/element_db.dart';
 import 'services/file_service.dart';
 import 'screens/collection_view.dart';
+import 'screens/schema_field_editor.dart';
 import 'package:file_picker/file_picker.dart';
 import 'core/settings_provider.dart';
 import 'components/drawer_content.dart';
@@ -24,7 +25,9 @@ final appInitProvider = FutureProvider<void>((ref) async {
   final googleDriveService = ref.read(googleDriveServiceProvider);
   await googleDriveService.restoreSession();
   if (googleDriveService.currentUser != null) {
-    ref.read(googleUserProvider.notifier).setUser(googleDriveService.currentUser);
+    ref
+        .read(googleUserProvider.notifier)
+        .setUser(googleDriveService.currentUser);
   }
 });
 
@@ -47,7 +50,9 @@ void main() {
   // 1. Capture all unhandled Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    logger.log("UNHANDLED FLUTTER ERROR: ${details.exceptionAsString()}\nStack: ${details.stack}");
+    logger.log(
+      "UNHANDLED FLUTTER ERROR: ${details.exceptionAsString()}\nStack: ${details.stack}",
+    );
   };
 
   // 2. Capture all unhandled asynchronous / engine errors
@@ -63,11 +68,7 @@ void main() {
     });
   }
 
-  runApp(
-    const ProviderScope(
-      child: AnyDbApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: AnyDbApp()));
 }
 
 class AnyDbApp extends ConsumerWidget {
@@ -91,9 +92,7 @@ class AnyDbApp extends ConsumerWidget {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
         ),
-        drawerTheme: const DrawerThemeData(
-          backgroundColor: Colors.white,
-        ),
+        drawerTheme: const DrawerThemeData(backgroundColor: Colors.white),
         cardTheme: const CardThemeData(
           color: Colors.white,
           surfaceTintColor: Colors.white,
@@ -103,9 +102,9 @@ class AnyDbApp extends ConsumerWidget {
       home: const HomePage(),
       builder: (context, child) {
         return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(settings.fontScale),
-          ),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(settings.fontScale)),
           child: child ?? const SizedBox.shrink(),
         );
       },
@@ -148,7 +147,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final fileService = ref.read(fileServiceProvider);
     debugPrint("HomePage: Loading schema from ${schema.path}");
     final schemaData = await fileService.readJson(schema.path);
-    
+
     if (schemaData != null) {
       final collectionService = ref.read(collectionServiceProvider);
       await collectionService.init(schemaData);
@@ -164,18 +163,22 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
 
       if (!mounted) return;
-      
+
       // Save last loaded schema path
-      await ref.read(settingsProvider.notifier).setLastLoadedSchema(schema.path);
+      await ref
+          .read(settingsProvider.notifier)
+          .setLastLoadedSchema(schema.path);
 
       if (!mounted) return;
 
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => CollectionView(
-          contents: collectionService.contents,
-          title: schema.name,
-        )),
+        MaterialPageRoute(
+          builder: (context) => CollectionView(
+            contents: collectionService.contents,
+            title: schema.name,
+          ),
+        ),
       );
     }
   }
@@ -236,34 +239,41 @@ class _HomePageState extends ConsumerState<HomePage> {
         data: (schemas) {
           debugPrint("HomePage: data state, schemas count = ${schemas.length}");
           if (schemas.isEmpty) {
-             return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.schema_outlined, size: 80, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text("No schemas found at runtime.", style: TextStyle(fontSize: 18, color: Colors.grey)),
-                    const SizedBox(height: 8),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 40),
-                      child: Text(
-                        "Please put a schema .json file in your device's storage (xyz.maya/anydb/schema/) or click the '+' button to import one.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey),
-                      ),
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.schema_outlined,
+                    size: 80,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "No schemas found at runtime.",
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 40),
+                    child: Text(
+                      "Please put a schema .json file in your device's storage (xyz.maya/anydb/schema/) or click the '+' button to import one.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
                     ),
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        await ref.read(schemaServiceProvider).loadDefaultSchema();
-                        ref.invalidate(schemasProvider);
-                      },
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text("Seed from Built-in Default"),
-                    ),
-                  ],
-                ),
-              );
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await ref.read(schemaServiceProvider).loadDefaultSchema();
+                      ref.invalidate(schemasProvider);
+                    },
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text("Seed from Built-in Default"),
+                  ),
+                ],
+              ),
+            );
           }
 
           // Trigger auto-select evaluation once schema list is populated
@@ -271,18 +281,121 @@ class _HomePageState extends ConsumerState<HomePage> {
 
           return Column(
             children: [
+              Expanded(
+                child: ListView.builder(
+                  itemCount: schemas.length,
+                  itemBuilder: (context, index) {
+                    final schema = schemas[index];
+                    return ListTile(
+                      leading: const Icon(
+                        Icons.schema,
+                        color: Colors.deepPurple,
+                      ),
+                      title: Text(
+                        schema.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        schema.path,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.upload, color: Colors.blue),
+                            tooltip: "Export/Backup Schema",
+                            onPressed: () => ref
+                                .read(schemaServiceProvider)
+                                .exportSchema(schema),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.amber),
+                            tooltip: "Edit Schema",
+                            onPressed: () async {
+                              _cancelAutoSelect();
+                              final updated = await Navigator.push<bool>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      SchemaFieldEditor(schema: schema),
+                                ),
+                              );
+                              if (updated == true) {
+                                ref.invalidate(schemasProvider);
+                              }
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: "Delete Schema",
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text("Delete Schema"),
+                                  content: Text(
+                                    "Are you sure you want to delete '${schema.name}'? This will not delete database records.",
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text("CANCEL"),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text("DELETE"),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                await ref
+                                    .read(schemaServiceProvider)
+                                    .deleteSchema(schema);
+                                ref.invalidate(schemasProvider);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      onTap: () async {
+                        _cancelAutoSelect();
+                        await _loadSchema(schema);
+                      },
+                    );
+                  },
+                ),
+              ),
               if (_isAutoSelectActive)
                 Padding(
-                  padding: const EdgeInsets.all(12.0),
+                  padding: const EdgeInsets.only(
+                    left: 12.0,
+                    top: 12.0,
+                    bottom: 12.0,
+                    right:
+                        88.0, // Constrain card to stop before the bottom-right FAB
+                  ),
                   child: Card(
                     color: const Color(0xFF6B1524), // Velvet Crimson
                     elevation: 4,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: Color(0xFFE5C158), width: 1.5), // Gold Accent
+                      side: const BorderSide(
+                        color: Color(0xFFE5C158),
+                        width: 1.5,
+                      ), // Gold Accent
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 12.0,
+                      ),
                       child: Row(
                         children: [
                           const SizedBox(
@@ -290,7 +403,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE5C158)),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFFE5C158),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -332,60 +447,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                   ),
                 ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: schemas.length,
-                  itemBuilder: (context, index) {
-                    final schema = schemas[index];
-                    return ListTile(
-                      leading: const Icon(Icons.schema, color: Colors.deepPurple),
-                      title: Text(schema.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(schema.path, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.output, color: Colors.blue),
-                            tooltip: "Export Schema",
-                            onPressed: () async {
-                              await ref.read(schemaServiceProvider).exportSchema(schema);
-                              ref.invalidate(schemasProvider);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            tooltip: "Delete Schema",
-                            onPressed: () async {
-                              final confirmed = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text("Delete Schema?"),
-                                  content: Text("Are you sure you want to delete ${schema.name}?"),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-                                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("DELETE", style: TextStyle(color: Colors.red))),
-                                  ],
-                                ),
-                              );
-                              if (confirmed == true) {
-                                await ref.read(schemaServiceProvider).deleteSchema(schema);
-                                ref.invalidate(schemasProvider);
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      onTap: () async {
-                        _autoSelectTimer?.cancel();
-                        setState(() {
-                          _isAutoSelectActive = false;
-                        });
-                        await _loadSchema(schema);
-                      },
-                    );
-                  },
-                ),
-              ),
             ],
           );
         },
@@ -411,7 +472,9 @@ class _HomePageState extends ConsumerState<HomePage> {
               final bytes = result.files.single.bytes;
               if (bytes != null) {
                 final decoded = jsonDecode(utf8.decode(bytes));
-                final Map<String, dynamic> content = decoded is Map ? decoded.cast<String, dynamic>() : decoded;
+                final Map<String, dynamic> content = decoded is Map
+                    ? decoded.cast<String, dynamic>()
+                    : decoded;
                 await ref.read(schemaServiceProvider).addSchema(content);
               }
             } else {

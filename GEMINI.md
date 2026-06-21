@@ -177,6 +177,13 @@
 - **At-Rest Protection:** GitHub terms guarantee that code in private repositories is not used to train AI models.
 - **Copilot Interactions:** To stop Copilot IDE extensions from transmitting telemetry context for product improvement, opt out globally via **GitHub Settings > Copilot > Privacy > Allow GitHub to use my data for AI model training** and set to **Disabled**.
 
+### 9. Android Database Backup Directory & Storage Architecture
+- **Active WAL SQLite Database**: Stored in internal app documents under `/data/user/0/com.example.anydbFlutter/app_flutter/xyz.maya/anydb/anydb_storage.db`. This folder is private and locked (non-navigable).
+- **Local Exports & Backups**: Written to the external documents path `/storage/emulated/0/Android/data/com.example.anydbFlutter/files/xyz.maya/anydb/` (with nested folders for `Database` and `Aggregators`).
+- **Navigability on Android 11+**: Scoped Storage blocks on-device navigation to `/Android/data/`. Access must be performed using a USB-connected computer or SAF-compatible advanced File Managers (Solid Explorer, FV File Manager) with explicit folder access granted.
+- **Cloud Backups**: Stored inside the user's personal Google Drive folder at `/xyz.maya/anydb/Database/`.
+- **References**: See full guide in [.chat_context/android_backup_location_context.md](file:///.chat_context/android_backup_location_context.md).
+
 ---
 
 ## Planned Optimizations for Next Session

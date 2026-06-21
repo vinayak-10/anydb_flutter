@@ -28,18 +28,28 @@ class MultiSelect extends GenInterface {
     oSchema = Map<String, dynamic>.from(jsonObj);
     this.repoIntf = repoIntf;
     final Map<String, dynamic> jo = Map<String, dynamic>.from(jsonObj);
-    
+
     name = jo['name']?.toString() ?? "";
     id = jo['id']?.toString() ?? "";
-    values = List<String>.from(jo['defaultValues'] ?? []);
     allowed = List<String>.from(jo['allowedValues'] ?? []);
-    
+
+    final rawDefault = jo['defaultValue'];
+    if (rawDefault is List) {
+      values = List<String>.from(rawDefault);
+    } else if (rawDefault is String && rawDefault.isNotEmpty) {
+      values = rawDefault.split(',').map((e) => e.trim()).toList();
+    } else {
+      values = List<String>.from(jo['defaultValues'] ?? []);
+    }
+
     final l = jo['limit'];
-    limit = l is int ? l : (int.tryParse(l?.toString() ?? "") ?? allowed.length);
-    
+    limit = l is int
+        ? l
+        : (int.tryParse(l?.toString() ?? "") ?? allowed.length);
+
     final m = jo['min'];
     min = m is int ? m : (int.tryParse(m?.toString() ?? "") ?? 0);
-    
+
     searchable = jo['searchable'] ?? false;
     observers = jo['observers'] is List ? jo['observers'] : [];
   }
@@ -84,7 +94,7 @@ class MultiSelect extends GenInterface {
       return {
         'name': name,
         'valid': false,
-        'constraint': "Please select at least $min $name(s)."
+        'constraint': "Please select at least $min $name(s).",
       };
     }
     return {'name': name, 'valid': true, 'constraint': ''};
@@ -92,13 +102,13 @@ class MultiSelect extends GenInterface {
 
   @override
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return _MultiSelectEditor(
       key: key,
@@ -117,13 +127,24 @@ class MultiSelect extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
-    final chips = values.map((v) => Chip(
-      label: Text(v, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
-      backgroundColor: Colors.blue[50],
-      padding: EdgeInsets.zero,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    )).toList();
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
+    final chips = values
+        .map(
+          (v) => Chip(
+            label: Text(
+              v,
+              style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+            ),
+            backgroundColor: Colors.blue[50],
+            padding: EdgeInsets.zero,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        )
+        .toList();
 
     if (onlyValue) {
       return Wrap(spacing: 4, runSpacing: 4, children: chips);

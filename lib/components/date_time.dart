@@ -26,10 +26,10 @@ class DateTimeComponent extends GenInterface {
     oSchema = jsonObj;
     this.repoIntf = repoIntf;
     final Map<String, dynamic> jo = jsonObj;
-    
+
     name = jo['name']?.toString() ?? "";
     id = jo['id']?.toString() ?? "";
-    
+
     final rawDefault = jo['defaultValue'];
     if (rawDefault is int) {
       value = DateTime.fromMillisecondsSinceEpoch(rawDefault);
@@ -38,14 +38,14 @@ class DateTimeComponent extends GenInterface {
       if (parsed != null) {
         value = DateTime.fromMillisecondsSinceEpoch(parsed);
       } else {
-        // Try parsing as ISO string? 
+        // Try parsing as ISO string?
         final date = DateTime.tryParse(rawDefault);
         if (date != null) value = date;
       }
     } else {
       value = DateTime.now();
     }
-    
+
     observers = jo['observers'] is List ? jo['observers'] : [];
     searchable = jo['searchable'] ?? false;
     mode = jo['mode']?.toString() ?? "date";
@@ -81,13 +81,13 @@ class DateTimeComponent extends GenInterface {
 
   @override
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return _DateTimeEditor(
       key: key,
@@ -114,7 +114,11 @@ class DateTimeComponent extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     final displayValue = getFormattedValue();
     if (onlyValue) return Text(displayValue);
     return Padding(
@@ -178,7 +182,7 @@ class _DateTimeEditorState extends State<_DateTimeEditor> {
         widget.onChanged(_selectedDate);
       }
     }
-    
+
     if (!localContext.mounted) return;
     if (widget.mode == "time" || widget.mode == "datetime") {
       final TimeOfDay? pickedTime = await showTimePicker(
@@ -202,10 +206,10 @@ class _DateTimeEditorState extends State<_DateTimeEditor> {
 
   @override
   Widget build(BuildContext context) {
-    String formatted = widget.mode == "time" 
+    String formatted = widget.mode == "time"
         ? DateFormat.jm().format(_selectedDate)
         : DateFormat.yMMMMEEEEd().format(_selectedDate);
-    
+
     if (widget.mode == "datetime") {
       formatted += " ${DateFormat.jm().format(_selectedDate)}";
     }

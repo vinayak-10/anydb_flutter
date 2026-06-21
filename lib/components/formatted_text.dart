@@ -66,7 +66,15 @@ class FormattedText extends GenInterface {
   }
 
   @override
-  Widget editor({required Key key, required Function(dynamic) onChanged, Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent, dynamic frefs, int? index, bool? autoFocus, bool? refresh}) {
+  Widget editor({
+    required Key key,
+    required Function(dynamic) onChanged,
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
+  }) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: TextFormField(
@@ -86,7 +94,11 @@ class FormattedText extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     if (onlyValue) return Text(extractedValue);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),

@@ -76,12 +76,24 @@ class MetaDisplay extends GenInterface {
   }
 
   @override
-  Widget editor({required Key key, required Function(dynamic) onChanged, Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent, dynamic frefs, int? index, bool? autoFocus, bool? refresh}) {
+  Widget editor({
+    required Key key,
+    required Function(dynamic) onChanged,
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
+  }) {
     return display(onlyValue: false);
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     final valStr = _getValueString();
     if (onlyValue) {
       return Text(valStr);

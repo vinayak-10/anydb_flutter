@@ -62,7 +62,6 @@ class TextNumber extends GenInterface {
     return c;
   }
 
-
   @override
   void populate(Map<String, dynamic> jsonDb) {
     if (jsonDb.containsKey(name)) {
@@ -88,44 +87,44 @@ class TextNumber extends GenInterface {
     return [false, false];
   }
 
-    @override
-    Map<String, dynamic> validate() {
-      bool valid = true;
-      List<String> failedConstraints = [];
+  @override
+  Map<String, dynamic> validate() {
+    bool valid = true;
+    List<String> failedConstraints = [];
 
-      if (constraint is Map) {
-        final Map<String, dynamic> cMap = Map<String, dynamic>.from(constraint);
-        cMap.forEach((c, cVal) {
-          bool pass = true;
-          switch (c) {
-            case "non-null":
-              pass = (cVal == true && value.isNotEmpty);
-              break;
-            case "maxsize":
-              pass = value.length <= (cVal as int);
-              break;
-            case "maxvalue":
-              final intVal = int.tryParse(value);
-              pass = intVal != null && intVal <= (cVal as int);
-              break;
-            case "+":
-              final intVal = int.tryParse(value);
-              pass = intVal != null && intVal >= 0;
-              break;
-            case "-":
-              final intVal = int.tryParse(value);
-              pass = intVal != null && intVal < 0;
-              break;
-          }
-          if (!pass) {
-            valid = false;
-            failedConstraints.add(c);
-          }
-        });
-      }
-
-      return {'name': name, 'valid': valid, 'constraint': failedConstraints};
+    if (constraint is Map) {
+      final Map<String, dynamic> cMap = Map<String, dynamic>.from(constraint);
+      cMap.forEach((c, cVal) {
+        bool pass = true;
+        switch (c) {
+          case "non-null":
+            pass = (cVal == true && value.isNotEmpty);
+            break;
+          case "maxsize":
+            pass = value.length <= (cVal as int);
+            break;
+          case "maxvalue":
+            final intVal = int.tryParse(value);
+            pass = intVal != null && intVal <= (cVal as int);
+            break;
+          case "+":
+            final intVal = int.tryParse(value);
+            pass = intVal != null && intVal >= 0;
+            break;
+          case "-":
+            final intVal = int.tryParse(value);
+            pass = intVal != null && intVal < 0;
+            break;
+        }
+        if (!pass) {
+          valid = false;
+          failedConstraints.add(c);
+        }
+      });
     }
+
+    return {'name': name, 'valid': valid, 'constraint': failedConstraints};
+  }
 
   @override
   String getValue() => value;
@@ -135,13 +134,13 @@ class TextNumber extends GenInterface {
 
   @override
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return _TextNumberEditor(
       key: key,
@@ -163,7 +162,11 @@ class TextNumber extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     final displayValue = "${format['prefix']}$value${format['suffix']}";
     if (onlyValue) return Text(displayValue);
     return Padding(
@@ -237,7 +240,9 @@ class _TextNumberEditorState extends State<_TextNumberEditor> {
     if (widget.readOnly) {
       return ListTile(
         title: Text(widget.label),
-        subtitle: Text("${widget.prefix}${widget.initialValue}${widget.suffix}"),
+        subtitle: Text(
+          "${widget.prefix}${widget.initialValue}${widget.suffix}",
+        ),
       );
     }
 

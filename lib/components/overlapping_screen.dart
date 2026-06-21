@@ -23,7 +23,13 @@ class OverlappingScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: onSave,
-            child: const Text("SAVE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              "SAVE",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
         backgroundColor: Theme.of(context).colorScheme.primary,
@@ -36,11 +42,10 @@ class OverlappingScreen extends StatelessWidget {
           child: Card(
             color: Colors.white,
             elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: child,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
+            child: Padding(padding: const EdgeInsets.all(20), child: child),
           ),
         ),
       ),

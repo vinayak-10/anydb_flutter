@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../core/gen_interface.dart';
 import '../core/widget_factory.dart';
+import '../utils/feedback_toast.dart';
 
 class SimpleAccount extends GenInterface {
   String name = '';
@@ -199,13 +200,13 @@ class SimpleAccount extends GenInterface {
     if (notifierId == "Debit") {
       double charges = double.tryParse(value) ?? 0;
       if (charges < 0) charges = 0;
-      
+
       // Auto-update Paid to equal Charges (Credit = Debit) for seamless full payment interactive behavior
       final pc = _findIn(cs, 'Credit');
       if (pc != null) {
         pc.populate({pc.getName(): charges.toStringAsFixed(0)});
       }
-      
+
       // Auto-update Discount to 0
       final pd = _findIn(cs, 'Discount');
       if (pd != null) {
@@ -214,7 +215,8 @@ class SimpleAccount extends GenInterface {
 
       final pb = _findIn(cs, 'Balance');
       if (pb != null) {
-        double balance = getLastBalance(); // Charges and Paid are equal, so (charges - paid) is 0
+        double balance =
+            getLastBalance(); // Charges and Paid are equal, so (charges - paid) is 0
         pb.populate({pb.getName(): balance.toStringAsFixed(0)});
       }
     } else if (notifierId == "Credit") {
@@ -222,7 +224,7 @@ class SimpleAccount extends GenInterface {
       if (paid < 0) paid = 0;
       final cc = _findIn(cs, 'Debit');
       double charges = double.tryParse(cc?.getValue() ?? "0") ?? 0;
-      
+
       double discount = 0;
       if (paid >= charges) {
         discount = 0;
@@ -230,7 +232,7 @@ class SimpleAccount extends GenInterface {
         // Auto-calculate discount as the difference (Charges - Paid) clamped to >= 0
         discount = charges - paid;
       }
-      
+
       final pd = _findIn(cs, 'Discount');
       if (pd != null) {
         pd.populate({pd.getName(): discount.toStringAsFixed(0)});
@@ -364,7 +366,7 @@ class SimpleAccount extends GenInterface {
         return {
           'valid': false,
           'name': 'Required Field',
-          'constraint': 'Please select a Payment Mode.',
+          'constraint': 'Field Required: Transaction Mode must be specified.',
         };
       }
     }
@@ -509,6 +511,37 @@ class SimpleAccount extends GenInterface {
                                 setModalState(() {
                                   errorMessage = v['constraint'];
                                 });
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: Color(0xFFE9967A),
+                                          size: 28,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text("Missing Information"),
+                                      ],
+                                    ),
+                                    content: Text(
+                                      "${v['constraint']}\n\nPlease complete the required fields.",
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx),
+                                        child: const Text(
+                                          "OK",
+                                          style: TextStyle(
+                                            color: Color(0xFF6B1524),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
                               }
                             },
                             child: const Text(
@@ -527,6 +560,10 @@ class SimpleAccount extends GenInterface {
                   if (result == true) {
                     componentsArray.insert(0, newComp);
                     if (onChanged != null) onChanged();
+                    FeedbackToast.success(
+                      context,
+                      "Transaction added successfully",
+                    );
                   }
                 }
               },
@@ -651,9 +688,16 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                     widget.account.fetch(); // Refresh internal values
                   });
                   if (widget.onChanged != null) widget.onChanged!();
+                  FeedbackToast.success(
+                    context,
+                    "Transaction deleted successfully",
+                  );
                 },
                 child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                  margin: const EdgeInsets.symmetric(
+                    vertical: 6,
+                    horizontal: 8,
+                  ),
                   padding: const EdgeInsets.all(12.0),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -711,6 +755,10 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                                 });
                                 if (widget.onChanged != null)
                                   widget.onChanged!();
+                                FeedbackToast.success(
+                                  context,
+                                  "Transaction deleted successfully",
+                                );
                               }
                             },
                           ),
@@ -744,6 +792,11 @@ class _SimpleAccountSummary extends StatelessWidget {
           spacing: 12.0,
           runSpacing: 8.0,
           children: [
+            _stat(
+              "Entries",
+              account.componentsArray.length.toDouble(),
+              Colors.blueGrey,
+            ),
             _stat("Charges", account._sumById('Debit'), Colors.green),
             _stat("Paid", account._sumById('Credit'), Colors.green),
             _stat("Disc", account._sumById('Discount'), Colors.orange),
@@ -784,7 +837,9 @@ class _SimpleAccountSummary extends StatelessWidget {
   }
 
   Widget _stat(String label, double val, Color color) {
-    if (val == 0 && label != "Balance") return const SizedBox.shrink();
+    if (val == 0 && label != "Balance" && label != "Entries")
+      return const SizedBox.shrink();
+    final prefix = label == "Entries" ? "" : "₹";
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -800,7 +855,7 @@ class _SimpleAccountSummary extends StatelessWidget {
         ],
       ),
       child: Text(
-        "$label: ₹${val.abs().toStringAsFixed(0)}",
+        "$label: $prefix${val.abs().toStringAsFixed(0)}",
         style: TextStyle(
           color: color,
           fontSize: 16,
@@ -896,6 +951,10 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                         widget.account.fetch();
                       });
                       widget.onChanged(widget.account.fetch());
+                      FeedbackToast.success(
+                        context,
+                        "Transaction deleted successfully",
+                      );
                     },
                     child: Card(
                       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -969,6 +1028,10 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                                         widget.account.fetch();
                                       });
                                       widget.onChanged(widget.account.fetch());
+                                      FeedbackToast.success(
+                                        context,
+                                        "Transaction deleted successfully",
+                                      );
                                     }
                                   },
                                 ),
@@ -1089,6 +1152,37 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                           setModalState(() {
                             errorMessage = v['constraint'];
                           });
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Color(0xFFE9967A),
+                                    size: 28,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text("Missing Information"),
+                                ],
+                              ),
+                              content: Text(
+                                "${v['constraint']}\n\nPlease complete the required fields.",
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text(
+                                    "OK",
+                                    style: TextStyle(
+                                      color: Color(0xFF6B1524),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
                         }
                       },
                       child: const Text(
@@ -1110,6 +1204,7 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                 widget.account.fetch();
               });
               widget.onChanged(widget.account.fetch());
+              FeedbackToast.success(context, "Transaction added successfully");
             }
           }
         },

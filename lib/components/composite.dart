@@ -274,7 +274,10 @@ class _CompositeEditorState extends State<_CompositeEditor> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0),
-          child: Text(widget.label, style: Theme.of(context).textTheme.titleMedium),
+          child: Text(
+            widget.label,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         ),
         ...widget.groups.map((group) {
           final isAmount = _isAmountGroup(group);
@@ -288,7 +291,9 @@ class _CompositeEditorState extends State<_CompositeEditor> {
                       .map(
                         (c) => Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4.0,
+                            ),
                             child: c.editor(
                               key: ValueKey(c.getName()),
                               onChanged: (val) => widget.onChanged(),

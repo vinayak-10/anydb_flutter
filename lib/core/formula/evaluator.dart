@@ -19,17 +19,28 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     final right = node.right.accept(this);
 
     switch (node.operator) {
-      case '+': return _toNum(left) + _toNum(right);
-      case '-': return _toNum(left) - _toNum(right);
-      case '*': return _toNum(left) * _toNum(right);
-      case '/': return _toNum(left) / _toNum(right);
-      case '=': return _compare(left, right) == 0;
-      case '<>': return _compare(left, right) != 0;
-      case '>': return _compare(left, right) > 0;
-      case '>=': return _compare(left, right) >= 0;
-      case '<': return _compare(left, right) < 0;
-      case '<=': return _compare(left, right) <= 0;
-      default: throw Exception("Unknown operator ${node.operator}");
+      case '+':
+        return _toNum(left) + _toNum(right);
+      case '-':
+        return _toNum(left) - _toNum(right);
+      case '*':
+        return _toNum(left) * _toNum(right);
+      case '/':
+        return _toNum(left) / _toNum(right);
+      case '=':
+        return _compare(left, right) == 0;
+      case '<>':
+        return _compare(left, right) != 0;
+      case '>':
+        return _compare(left, right) > 0;
+      case '>=':
+        return _compare(left, right) >= 0;
+      case '<':
+        return _compare(left, right) < 0;
+      case '<=':
+        return _compare(left, right) <= 0;
+      default:
+        throw Exception("Unknown operator ${node.operator}");
     }
   }
 
@@ -37,9 +48,12 @@ class Evaluator implements ExpressionVisitor<dynamic> {
   dynamic visitUnary(UnaryExpression node) {
     final right = node.right.accept(this);
     switch (node.operator) {
-      case '-': return -_toNum(right);
-      case '+': return _toNum(right);
-      default: throw Exception("Unknown unary operator ${node.operator}");
+      case '-':
+        return -_toNum(right);
+      case '+':
+        return _toNum(right);
+      default:
+        throw Exception("Unknown unary operator ${node.operator}");
     }
   }
 
@@ -72,17 +86,28 @@ class Evaluator implements ExpressionVisitor<dynamic> {
   @override
   dynamic visitFunctionCall(FunctionCallExpression node) {
     switch (node.name) {
-      case 'SUM': return _sum(node.arguments);
-      case 'SUMIF': return _sumif(node.arguments);
-      case 'COUNT': return _count(node.arguments);
-      case 'COUNTIF': return _countif(node.arguments);
-      case 'COUNTA': return _counta(node.arguments);
-      case 'ROUND': return _round(node.arguments);
-      case 'IFERROR': return _iferror(node.arguments);
-      case 'FILTER': return _filter(node.arguments);
-      case 'UNIQUE': return _unique(node.arguments);
-      case 'ROWS': return _rows(node.arguments);
-      default: throw Exception("Unknown function ${node.name}");
+      case 'SUM':
+        return _sum(node.arguments);
+      case 'SUMIF':
+        return _sumif(node.arguments);
+      case 'COUNT':
+        return _count(node.arguments);
+      case 'COUNTIF':
+        return _countif(node.arguments);
+      case 'COUNTA':
+        return _counta(node.arguments);
+      case 'ROUND':
+        return _round(node.arguments);
+      case 'IFERROR':
+        return _iferror(node.arguments);
+      case 'FILTER':
+        return _filter(node.arguments);
+      case 'UNIQUE':
+        return _unique(node.arguments);
+      case 'ROWS':
+        return _rows(node.arguments);
+      default:
+        throw Exception("Unknown function ${node.name}");
     }
   }
 
@@ -95,7 +120,8 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     }
     if (val == null) return 0.0;
     String s = val.toString().replaceAll(',', '').trim();
-    if (s.isEmpty || s.toLowerCase() == "nan" || s.toLowerCase() == "infinity") return 0.0;
+    if (s.isEmpty || s.toLowerCase() == "nan" || s.toLowerCase() == "infinity")
+      return 0.0;
     try {
       return double.tryParse(s) ?? 0.0;
     } catch (e) {
@@ -123,12 +149,15 @@ class Evaluator implements ExpressionVisitor<dynamic> {
 
   String _getActualKey(String colName) {
     // Remove .START or .END suffix if present for key lookup
-    String cleanName = colName.replaceAll(".START", "").replaceAll(".END", "").trim();
+    String cleanName = colName
+        .replaceAll(".START", "")
+        .replaceAll(".END", "")
+        .trim();
     if (data.isEmpty) return cleanName;
-    
+
     final firstRow = data.first;
     if (firstRow.containsKey(cleanName)) return cleanName;
-    
+
     final normalizedSearch = cleanName.toLowerCase();
     for (var k in firstRow.keys) {
       if (k.trim().toLowerCase() == normalizedSearch) return k;
@@ -138,7 +167,8 @@ class Evaluator implements ExpressionVisitor<dynamic> {
       for (var h in headers!) {
         if (h.toString().trim().toLowerCase() == normalizedSearch) {
           int idx = headers!.indexOf(h);
-          if (idx >= 0 && idx < firstRow.keys.length) return firstRow.keys.elementAt(idx);
+          if (idx >= 0 && idx < firstRow.keys.length)
+            return firstRow.keys.elementAt(idx);
         }
       }
     }
@@ -164,12 +194,16 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     final sumRangeExpr = args.length > 2 ? args[2] : rangeExpr;
 
     String rangeKey = "";
-    if (rangeExpr is RangeExpression) rangeKey = _getActualKey(rangeExpr.start.name);
-    else if (rangeExpr is ReferenceExpression) rangeKey = _getActualKey(rangeExpr.name);
+    if (rangeExpr is RangeExpression)
+      rangeKey = _getActualKey(rangeExpr.start.name);
+    else if (rangeExpr is ReferenceExpression)
+      rangeKey = _getActualKey(rangeExpr.name);
 
     String sumKey = "";
-    if (sumRangeExpr is RangeExpression) sumKey = _getActualKey(sumRangeExpr.start.name);
-    else if (sumRangeExpr is ReferenceExpression) sumKey = _getActualKey(sumRangeExpr.name);
+    if (sumRangeExpr is RangeExpression)
+      sumKey = _getActualKey(sumRangeExpr.start.name);
+    else if (sumRangeExpr is ReferenceExpression)
+      sumKey = _getActualKey(sumRangeExpr.name);
 
     if (rangeKey.isEmpty) return 0;
 
@@ -203,8 +237,10 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     final criteria = args[1].accept(this);
 
     String rangeKey = "";
-    if (rangeExpr is RangeExpression) rangeKey = _getActualKey(rangeExpr.start.name);
-    else if (rangeExpr is ReferenceExpression) rangeKey = _getActualKey(rangeExpr.name);
+    if (rangeExpr is RangeExpression)
+      rangeKey = _getActualKey(rangeExpr.start.name);
+    else if (rangeExpr is ReferenceExpression)
+      rangeKey = _getActualKey(rangeExpr.name);
 
     if (rangeKey.isEmpty) return 0;
 
@@ -225,7 +261,9 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     if (args.isEmpty) return 0;
     final val = args[0].accept(this);
     if (val is List) {
-      return val.where((v) => v != null && v.toString().trim().isNotEmpty).length;
+      return val
+          .where((v) => v != null && v.toString().trim().isNotEmpty)
+          .length;
     }
     return (val != null && val.toString().trim().isNotEmpty) ? 1 : 0;
   }
@@ -258,8 +296,10 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     final conditionExpr = args[1];
 
     String targetKey = "";
-    if (targetExpr is RangeExpression) targetKey = _getActualKey(targetExpr.start.name);
-    else if (targetExpr is ReferenceExpression) targetKey = _getActualKey(targetExpr.name);
+    if (targetExpr is RangeExpression)
+      targetKey = _getActualKey(targetExpr.start.name);
+    else if (targetExpr is ReferenceExpression)
+      targetKey = _getActualKey(targetExpr.name);
 
     if (targetKey.isEmpty) return [];
 

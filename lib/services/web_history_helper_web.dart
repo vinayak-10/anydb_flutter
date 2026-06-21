@@ -68,4 +68,3 @@ void registerWebMessageListener(void Function(String fragment) callback) {
     // Suppress
   }
 }
-

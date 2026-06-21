@@ -12,11 +12,11 @@ void downloadWebData(String fileName, String data) {
     final blob = html.Blob([bytes]);
     url = html.Url.createObjectUrlFromBlob(blob);
   }
-  
+
   html.AnchorElement(href: url)
     ..setAttribute("download", fileName)
     ..click();
-    
+
   if (!data.startsWith('data:')) {
     html.Url.revokeObjectUrl(url);
   }

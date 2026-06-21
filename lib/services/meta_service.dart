@@ -2,9 +2,9 @@ class Meta {
   final String dbKey;
   final List<dynamic>? tsPath;
   final Map<String, dynamic> counter = <String, dynamic>{
-    "add": <String, dynamic>{}, 
-    "update": <String, dynamic>{}, 
-    "delete": <String, dynamic>{}
+    "add": <String, dynamic>{},
+    "update": <String, dynamic>{},
+    "delete": <String, dynamic>{},
   };
   final Map<String, dynamic> keys = <String, dynamic>{};
 
@@ -13,7 +13,7 @@ class Meta {
   void add(dynamic record) {
     if (record is! Map) return;
     final Map<String, dynamic> r = record.cast<String, dynamic>();
-    
+
     int? ts = _extractTs(r);
     if (ts == null) return;
 
@@ -29,7 +29,7 @@ class Meta {
   void update(dynamic record) {
     if (record is! Map) return;
     final Map<String, dynamic> r = record.cast<String, dynamic>();
-    
+
     int? ts = _extractTs(r);
     if (ts != null) {
       _populate(ts, counter['update']);
@@ -46,12 +46,12 @@ class Meta {
   int? _extractTs(Map<String, dynamic> record) {
     if (record.isEmpty) return null;
     final val = record.values.first;
-    
+
     if (val is Map && val.containsKey('__meta__')) {
-       final m = val['__meta__'];
-       if (m is Map && m['time'] != null && m['time']['c'] != null) {
-         return m['time']['c'];
-       }
+      final m = val['__meta__'];
+      if (m is Map && m['time'] != null && m['time']['c'] != null) {
+        return m['time']['c'];
+      }
     }
 
     if (tsPath != null && val is Map) {
@@ -67,14 +67,14 @@ class Meta {
       if (current is int) return current;
       if (current is String) return int.tryParse(current);
     }
-    
+
     return DateTime.now().millisecondsSinceEpoch;
   }
 
   void _populate(int ts, dynamic target) {
     if (target is! Map) return;
     final Map<String, dynamic> t = target.cast<String, dynamic>();
-    
+
     final d = DateTime.fromMillisecondsSinceEpoch(ts);
     final data = [
       ["yy", d.year.toString()],
@@ -94,7 +94,8 @@ class Meta {
         current[key]["counter"]++;
       }
 
-      final Map<String, dynamic> nextLevel = (current[key] as Map).cast<String, dynamic>();
+      final Map<String, dynamic> nextLevel = (current[key] as Map)
+          .cast<String, dynamic>();
       if (!nextLevel.containsKey(value)) {
         nextLevel[value] = <String, dynamic>{"counter": 1};
       } else {
@@ -117,14 +118,15 @@ class Meta {
   Map<String, dynamic> _fetchStats(DateTime d, dynamic source) {
     if (source is! Map) return {'Year': 0, 'Month': 0, 'Today': 0};
     final Map<String, dynamic> s = source.cast<String, dynamic>();
-    
+
     final yy = d.year.toString();
     final mm = d.month.toString();
     final dd = d.day.toString();
-    
+
     int getVal(Map<String, dynamic> src, String k, String v) {
       if (src.containsKey(k)) {
-        final Map<String, dynamic> child = (src[k] as Map).cast<String, dynamic>();
+        final Map<String, dynamic> child = (src[k] as Map)
+            .cast<String, dynamic>();
         if (child.containsKey(v)) {
           return child[v]['counter'] ?? 0;
         }
@@ -132,9 +134,14 @@ class Meta {
       return 0;
     }
 
-    Map<String, dynamic>? getChild(Map<String, dynamic> src, String k, String v) {
+    Map<String, dynamic>? getChild(
+      Map<String, dynamic> src,
+      String k,
+      String v,
+    ) {
       if (src.containsKey(k)) {
-        final Map<String, dynamic> child = (src[k] as Map).cast<String, dynamic>();
+        final Map<String, dynamic> child = (src[k] as Map)
+            .cast<String, dynamic>();
         if (child.containsKey(v)) {
           return (child[v] as Map).cast<String, dynamic>();
         }

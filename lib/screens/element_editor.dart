@@ -32,7 +32,9 @@ class _ElementEditorState extends State<ElementEditor> {
     final validation = _editingElement.validate();
     if (validation['valid'] == false) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Validation error: ${validation['constraint']}")),
+        SnackBar(
+          content: Text("Validation error: ${validation['constraint']}"),
+        ),
       );
       return;
     }
@@ -48,22 +50,20 @@ class _ElementEditorState extends State<ElementEditor> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error saving: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error saving: $e")));
     }
   }
 
   @override
-  Widget build(BuildContext context) {    return Scaffold(
+  Widget build(BuildContext context) {
+    return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isNew ? "New ${widget.db.key}" : "Edit ${widget.element.key}"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _save,
-          ),
-        ],
+        title: Text(
+          widget.isNew ? "New ${widget.db.key}" : "Edit ${widget.element.key}",
+        ),
+        actions: [IconButton(icon: const Icon(Icons.save), onPressed: _save)],
       ),
       body: SingleChildScrollView(
         child: Padding(

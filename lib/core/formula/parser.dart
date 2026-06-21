@@ -24,7 +24,7 @@ class Parser {
       TokenType.greater,
       TokenType.greaterEqual,
       TokenType.less,
-      TokenType.lessEqual
+      TokenType.lessEqual,
     ])) {
       String operator = _previous().value;
       Expression right = _term();
@@ -86,7 +86,10 @@ class Parser {
     if (_match([TokenType.reference])) {
       ReferenceExpression ref = ReferenceExpression(_previous().value);
       if (_match([TokenType.colon])) {
-        Token next = _consume(TokenType.reference, "Expect reference after ':'.");
+        Token next = _consume(
+          TokenType.reference,
+          "Expect reference after ':'.",
+        );
         return RangeExpression(ref, ReferenceExpression(next.value));
       }
       return ref;

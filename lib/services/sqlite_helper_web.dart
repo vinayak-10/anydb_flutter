@@ -5,7 +5,11 @@ class SqliteHelper {
     return;
   }
 
-  static Future<List<Map<String, dynamic>>> getAll(String dbName, {String filter = 'Active', bool allRecords = false}) async {
+  static Future<List<Map<String, dynamic>>> getAll(
+    String dbName, {
+    String filter = 'Active',
+    bool allRecords = false,
+  }) async {
     return [];
   }
 
@@ -17,7 +21,10 @@ class SqliteHelper {
     return;
   }
 
-  static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
+  static Future<void> updateAll(
+    String dbName,
+    Map<String, dynamic> items,
+  ) async {
     return;
   }
 
@@ -29,7 +36,10 @@ class SqliteHelper {
     return;
   }
 
-  static Future<Map<String, dynamic>?> getActiveByBusinessKey(String dbName, String businessKeyValue) async {
+  static Future<Map<String, dynamic>?> getActiveByBusinessKey(
+    String dbName,
+    String businessKeyValue,
+  ) async {
     return null;
   }
 
@@ -41,7 +51,10 @@ class SqliteHelper {
     return null;
   }
 
-  static Future<void> setBusinessUniqueKey(String schemaName, String keyName) async {
+  static Future<void> setBusinessUniqueKey(
+    String schemaName,
+    String keyName,
+  ) async {
     return;
   }
 
@@ -49,7 +62,10 @@ class SqliteHelper {
     return null;
   }
 
-  static Future<void> setBusinessUniqueKeyRaw(String schemaName, String keyName) async {
+  static Future<void> setBusinessUniqueKeyRaw(
+    String schemaName,
+    String keyName,
+  ) async {
     return;
   }
 
@@ -57,23 +73,38 @@ class SqliteHelper {
     return [];
   }
 
-  static Future<List<Map<String, String>>> getAllRawString(String dbName) async {
+  static Future<List<Map<String, String>>> getAllRawString(
+    String dbName,
+  ) async {
     return [];
   }
 
-  static Future<List<Map<String, String>>> getActiveRecordsRawString(String dbName) async {
+  static Future<List<Map<String, String>>> getActiveRecordsRawString(
+    String dbName,
+  ) async {
     return [];
   }
 
-  static Future<List<Map<String, String>>> getInactiveRecordsRawString(String dbName) async {
+  static Future<List<Map<String, String>>> getInactiveRecordsRawString(
+    String dbName,
+  ) async {
     return [];
   }
 
-  static Future<void> updateAllRaw(String dbName, Map<String, dynamic> items, [String? businessKeyName]) async {
+  static Future<void> updateAllRaw(
+    String dbName,
+    Map<String, dynamic> items, [
+    String? businessKeyName,
+  ]) async {
     return;
   }
 
-  static Future<void> updateRaw(String dbName, String key, dynamic val, [String? businessKeyName]) async {
+  static Future<void> updateRaw(
+    String dbName,
+    String key,
+    dynamic val, [
+    String? businessKeyName,
+  ]) async {
     return;
   }
 
@@ -85,15 +116,27 @@ class SqliteHelper {
     return;
   }
 
-  static Future<void> updateRecordTimestamp(String dbName, String id, int isActive, int timestamp) async {
+  static Future<void> updateRecordTimestamp(
+    String dbName,
+    String id,
+    int isActive,
+    int timestamp,
+  ) async {
     return;
   }
 
-  static Future<List<String>> getTopRecentIds(String dbName, int limit, {String filter = 'Active'}) async {
+  static Future<List<String>> getTopRecentIds(
+    String dbName,
+    int limit, {
+    String filter = 'Active',
+  }) async {
     return [];
   }
 
-  static Future<List<Map<String, String>>> getRecordsByIds(String dbName, List<String> ids) async {
+  static Future<List<Map<String, String>>> getRecordsByIds(
+    String dbName,
+    List<String> ids,
+  ) async {
     return [];
   }
 

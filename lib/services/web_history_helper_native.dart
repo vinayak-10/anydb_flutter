@@ -10,4 +10,3 @@ void openPopup(String url, String title, int width, int height) {}
 void handleWebOauthCallback() {}
 
 void registerWebMessageListener(void Function(String fragment) callback) {}
-

@@ -36,14 +36,24 @@ class FileService {
       final home = pp.getHomeDir();
       return p.join(home ?? '', 'Documents', parentDir, appName);
     }
-    
+
     String? rootPath;
     if (isAndroid()) {
-      rootPath = await pp.getExtStorageDir();
+      final extDir = await pp.getExtStorageDir();
+      if (extDir != null) {
+        // extDir is typically: /storage/emulated/0/Android/data/com.example.anydb_flutter/files
+        // We parse out '/Android/data' to locate the root of user-accessible storage
+        final idx = extDir.indexOf('/Android/data');
+        if (idx != -1) {
+          rootPath = p.join(extDir.substring(0, idx), 'Documents');
+        } else {
+          rootPath = extDir;
+        }
+      }
     }
-    
+
     rootPath ??= await pp.getAppDocsDir();
-    
+
     return p.join(rootPath ?? "", parentDir, appName);
   }
 
@@ -51,17 +61,27 @@ class FileService {
     return name.replaceAll(' ', '_').replaceAll('/', '_');
   }
 
-  Future<String> getSchemaDir(String schemaName, {bool external = false}) async {
+  Future<String> getSchemaDir(
+    String schemaName, {
+    bool external = false,
+  }) async {
     final root = external ? await getExternalRoot() : await getInternalRoot();
     return p.join(root, sanitizeName(schemaName));
   }
 
-  Future<String> getDatabasePath(String schemaName, String dbName, {bool external = false}) async {
+  Future<String> getDatabasePath(
+    String schemaName,
+    String dbName, {
+    bool external = false,
+  }) async {
     final schemaDir = await getSchemaDir(schemaName, external: external);
     return p.join(schemaDir, 'Database');
   }
 
-  Future<String> getAggregatorPath(String schemaName, {bool external = false}) async {
+  Future<String> getAggregatorPath(
+    String schemaName, {
+    bool external = false,
+  }) async {
     final schemaDir = await getSchemaDir(schemaName, external: external);
     return p.join(schemaDir, 'Aggregators');
   }
@@ -71,7 +91,11 @@ class FileService {
     return p.join(schemaDir, 'logs');
   }
 
-  Future<String> getLogPath(String year, String month, {bool external = true}) async {
+  Future<String> getLogPath(
+    String year,
+    String month, {
+    bool external = true,
+  }) async {
     final root = external ? await getExternalRoot() : await getInternalRoot();
     return p.join(root, 'Logs', year, month);
   }
@@ -96,7 +120,7 @@ class FileService {
     if (kIsWeb) {
       _webCache[fullPath] = jsonStr;
       final prefs = await SharedPreferences.getInstance();
-      
+
       try {
         // Update file registry for the directory
         List<String> files = prefs.getStringList(path) ?? [];
@@ -105,8 +129,8 @@ class FileService {
           await prefs.setStringList(path, files);
         }
       } catch (e) {
-        if (e.toString().contains("QuotaExceededError") || 
-            e.toString().contains("quota") || 
+        if (e.toString().contains("QuotaExceededError") ||
+            e.toString().contains("quota") ||
             e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
           debugPrint("FileService: Web Quota Exceeded during registry update.");
         } else {
@@ -117,17 +141,19 @@ class FileService {
       try {
         await prefs.setString(fullPath, jsonStr);
       } catch (e) {
-        if (e.toString().contains("QuotaExceededError") || 
-            e.toString().contains("quota") || 
+        if (e.toString().contains("QuotaExceededError") ||
+            e.toString().contains("quota") ||
             e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
-          debugPrint("FileService: Web Quota Exceeded. Using In-Memory fallback.");
+          debugPrint(
+            "FileService: Web Quota Exceeded. Using In-Memory fallback.",
+          );
         } else {
           rethrow;
         }
       }
       return;
     }
-    
+
     await ensureDir(path);
 
     // Asynchronous lock queue for this specific file path to prevent race conditions
@@ -170,10 +196,13 @@ class FileService {
         final decoded = jsonDecode(content);
         return decoded is Map ? decoded.cast<String, dynamic>() : decoded;
       } catch (e) {
-        debugPrint("FileService.readJson: Corruption detected in $filePath. Error: $e");
+        debugPrint(
+          "FileService.readJson: Corruption detected in $filePath. Error: $e",
+        );
         // Proactive Self-Healing: Back up corrupted file for debugging and return null to prevent crashes
         try {
-          final backupPath = '$filePath.corrupted_${DateTime.now().millisecondsSinceEpoch}';
+          final backupPath =
+              '$filePath.corrupted_${DateTime.now().millisecondsSinceEpoch}';
           await io.copyFile(filePath, backupPath);
           debugPrint("FileService: Backed up corrupted file to $backupPath");
         } catch (err) {
@@ -191,10 +220,11 @@ class FileService {
       final files = prefs.getStringList(dirPath) ?? [];
       return files.where((f) => f.endsWith('.$extension')).toList();
     }
-    
+
     if (!await io.dirExists(dirPath)) return [];
-    
-    return io.listDir(dirPath)
+
+    return io
+        .listDir(dirPath)
         .where((e) => e.path.endsWith('.$extension'))
         .map((e) => e.path as String)
         .toList();
@@ -205,7 +235,7 @@ class FileService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(filePath);
       _webCache.remove(filePath);
-      
+
       final dirPath = p.dirname(filePath);
       List<String> files = prefs.getStringList(dirPath) ?? [];
       files.remove(filePath);
@@ -223,9 +253,9 @@ class FileService {
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     final fileName = "error_$timestamp.log";
     if (kIsWeb) {
-       await writeJson(path, fileName, {"error": error});
+      await writeJson(path, fileName, {"error": error});
     } else {
-       await io.writeString(p.join(path, fileName), error);
+      await io.writeString(p.join(path, fileName), error);
     }
   }
 }

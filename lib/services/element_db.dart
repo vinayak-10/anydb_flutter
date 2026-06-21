@@ -23,35 +23,43 @@ class ElementDb {
 
   Future<void> init(dynamic schemaJson, dynamic interface) async {
     if (schemaJson is! Map) {
-      debugPrint("ElementDb.init error: schemaJson is not a Map! It is ${schemaJson.runtimeType}");
+      debugPrint(
+        "ElementDb.init error: schemaJson is not a Map! It is ${schemaJson.runtimeType}",
+      );
       return;
     }
-    
+
     final Map<String, dynamic> sj = Map<String, dynamic>.from(schemaJson);
     debugPrint("ElementDb.init: starting for ${sj['name']}");
     fullSchema = <dynamic>[sj];
     key = sj['name']?.toString() ?? "";
-    
+
     final rawHeader = sj['header'] ?? [];
     debugPrint("ElementDb.init: rawHeader type is ${rawHeader.runtimeType}");
     dbHeader = _prepareHeader(rawHeader);
-    
+
     final rawSchema = sj['schema'] ?? [];
     debugPrint("ElementDb.init: rawSchema type is ${rawSchema.runtimeType}");
     dbSchema = _prepareSchema(rawSchema);
-    
+
     intf = interface;
 
     final List<dynamic>? tsPath = sj['meta']?['ts'];
     metaService = Meta(dbKey: key, tsPath: tsPath);
 
     if (sj.containsKey('events')) {
-      _triggerService = EventTriggerService(db: this, eventsSchema: sj['events']);
+      _triggerService = EventTriggerService(
+        db: this,
+        eventsSchema: sj['events'],
+      );
     }
 
     final storageConfig = sj['storage'] ?? [];
-    await storage.init(key, storageConfig is List ? storageConfig : [storageConfig]);
-    
+    await storage.init(
+      key,
+      storageConfig is List ? storageConfig : [storageConfig],
+    );
+
     initialized = true;
     _triggerService?.trigger('onDbStart');
     debugPrint("ElementDb.init: finished for $key");
@@ -62,7 +70,7 @@ class ElementDb {
     if (h is Map) {
       return <dynamic>[
         <dynamic>[h['title']?.toString() ?? ''],
-        <dynamic>[h['subtitle']?.toString() ?? '']
+        <dynamic>[h['subtitle']?.toString() ?? ''],
       ];
     }
     return <dynamic>[];
@@ -74,11 +82,13 @@ class ElementDb {
     return <dynamic>[];
   }
 
-  List<Map<String, dynamic>> segregate(List<Map<String, dynamic>> records, {List<String> types = const ["Active"]}) {
+  List<Map<String, dynamic>> segregate(
+    List<Map<String, dynamic>> records, {
+    List<String> types = const ["Active"],
+  }) {
     if (types.contains("All")) return records;
 
     return records.where((rec) {
-
       if (rec.isEmpty) return false;
       final val = rec.values.first;
       if (val is! Map) return false;
@@ -117,7 +127,8 @@ class ElementDb {
     // 2. Try simple-account transaction dates
     int maxTxTime = 0;
     for (var comp in e.components) {
-      if (comp.runtimeType.toString().contains('SimpleAccount') || comp.getType() == 'simple-account') {
+      if (comp.runtimeType.toString().contains('SimpleAccount') ||
+          comp.getType() == 'simple-account') {
         try {
           final dynamic sa = comp;
           final txTime = sa.getLastTransactionTime() as int;
@@ -132,7 +143,9 @@ class ElementDb {
     // 3. Try Registered On/created/date fields
     for (var entry in val.entries) {
       final lowerKey = entry.key.toLowerCase();
-      if (lowerKey.contains('register') || lowerKey.contains('created') || lowerKey.contains('date')) {
+      if (lowerKey.contains('register') ||
+          lowerKey.contains('created') ||
+          lowerKey.contains('date')) {
         final entryVal = entry.value;
         if (entryVal is int) {
           return entryVal;
@@ -148,13 +161,18 @@ class ElementDb {
     return 0;
   }
 
-  Future<int> initDb({bool forced = false, List<String> filter = const ["Active"]}) async {
+  Future<int> initDb({
+    bool forced = false,
+    List<String> filter = const ["Active"],
+  }) async {
     if (initialized && !forced && elements.isNotEmpty) {
       return elements.length;
     }
 
     elements = [];
-    final allData = await storage.fetch(filter: filter.isNotEmpty ? filter.first : 'Active');
+    final allData = await storage.fetch(
+      filter: filter.isNotEmpty ? filter.first : 'Active',
+    );
 
     // 1. Trigger Database Start (Ported from RN)
     await _triggerService?.trigger('onDbStart', allData);
@@ -190,16 +208,15 @@ class ElementDb {
     return elements.length;
   }
 
-
   Future<void> markArchive(ElementModel element) async {
     final data = element.fetch();
     final key = data.keys.first;
     final val = data.values.first as Map<String, dynamic>;
-    
+
     val['__meta__'] ??= {};
     val['__meta__']['time'] ??= {};
     val['__meta__']['time']['a'] = DateTime.now().millisecondsSinceEpoch;
-    
+
     await storage.add(key, val);
     await initDb(forced: true);
     onChanged?.call();
@@ -209,11 +226,11 @@ class ElementDb {
     final data = element.fetch();
     final key = data.keys.first;
     final val = data.values.first as Map<String, dynamic>;
-    
+
     val['__meta__'] ??= {};
     val['__meta__']['time'] ??= {};
     val['__meta__']['time']['d'] = DateTime.now().millisecondsSinceEpoch;
-    
+
     await storage.add(key, val);
     await initDb(forced: true);
     onChanged?.call();
@@ -223,12 +240,12 @@ class ElementDb {
     final data = element.fetch();
     final key = data.keys.first;
     final val = data.values.first as Map<String, dynamic>;
-    
+
     if (val['__meta__'] != null && val['__meta__']['time'] != null) {
       val['__meta__']['time'].remove('a');
       val['__meta__']['time'].remove('d');
     }
-    
+
     await storage.add(key, val);
     await initDb(forced: true);
     onChanged?.call();
@@ -239,7 +256,14 @@ class ElementDb {
   }
 
   DateTime? _getExpiryDate(Map<String, dynamic> val) {
-    final expiryKeywords = ['renewal', 'expiry', 'expire', 'expiration', 'valid', 'end'];
+    final expiryKeywords = [
+      'renewal',
+      'expiry',
+      'expire',
+      'expiration',
+      'valid',
+      'end',
+    ];
     for (var entry in val.entries) {
       final lowerKey = entry.key.toLowerCase();
       if (expiryKeywords.any((k) => lowerKey.contains(k))) {
@@ -267,7 +291,10 @@ class ElementDb {
         }
       }
       if (entry.value is Map) {
-        final res = _findValueRecursively(Map<String, dynamic>.from(entry.value as Map), targetKey);
+        final res = _findValueRecursively(
+          Map<String, dynamic>.from(entry.value as Map),
+          targetKey,
+        );
         if (res != null && res.isNotEmpty) {
           return res;
         }
@@ -280,28 +307,38 @@ class ElementDb {
     final data = element.fetch();
     final recordKey = data.keys.first;
     final recordVal = data.values.first;
-    final Map<String, dynamic> recordValData = recordVal is Map ? Map<String, dynamic>.from(recordVal) : {};
+    final Map<String, dynamic> recordValData = recordVal is Map
+        ? Map<String, dynamic>.from(recordVal)
+        : {};
 
     // 1. Retrieve the configured Business Unique Key
     final businessKeyName = await SqliteHelper.getBusinessUniqueKey(key);
     if (businessKeyName != null && businessKeyName.isNotEmpty) {
       // 2. Extract the value of the unique field from this incoming record recursively
-      final businessKeyValue = _findValueRecursively(recordValData, businessKeyName);
+      final businessKeyValue = _findValueRecursively(
+        recordValData,
+        businessKeyName,
+      );
 
       if (businessKeyValue != null && businessKeyValue.isNotEmpty) {
         // 3. Search for any existing ACTIVE duplicate record in SQLite
-        final activeRecord = await SqliteHelper.getActiveByBusinessKey(key, businessKeyValue);
+        final activeRecord = await SqliteHelper.getActiveByBusinessKey(
+          key,
+          businessKeyValue,
+        );
         if (activeRecord != null) {
           final activeKey = activeRecord.keys.first;
-          
+
           // Only perform validation if it's a completely different record (different physical key)
           if (activeKey != recordKey) {
             final activeVal = activeRecord.values.first as Map<String, dynamic>;
             final expiryDate = _getExpiryDate(activeVal);
-            
+
             bool isExpiring = false;
             if (expiryDate != null) {
-              final daysRemaining = expiryDate.difference(DateTime.now()).inDays;
+              final daysRemaining = expiryDate
+                  .difference(DateTime.now())
+                  .inDays;
               if (daysRemaining <= 30) {
                 isExpiring = true;
               }
@@ -311,13 +348,16 @@ class ElementDb {
               // Expiring <= 30 days: Auto-archive the old active duplicate record
               activeVal['__meta__'] ??= {};
               activeVal['__meta__']['time'] ??= {};
-              activeVal['__meta__']['time']['a'] = DateTime.now().millisecondsSinceEpoch;
-              
+              activeVal['__meta__']['time']['a'] =
+                  DateTime.now().millisecondsSinceEpoch;
+
               // Perform atomic updates: update old to archived
               await storage.add(activeKey, activeVal);
             } else {
               // Not expiring > 30 days (or no expiry date found): Block and notify user
-              throw Exception("Duplicate active record '$businessKeyValue' exists with more than 30 days remaining.");
+              throw Exception(
+                "Duplicate active record '$businessKeyValue' exists with more than 30 days remaining.",
+              );
             }
           }
         }
@@ -326,7 +366,7 @@ class ElementDb {
 
     // Save the new record as active
     await storage.add(recordKey, recordVal);
-    
+
     // Check if record already exists in local list to prevent duplicates
     int existingIdx = elements.indexWhere((e) => e.key == recordKey);
     if (existingIdx != -1) {
@@ -371,18 +411,18 @@ class ElementDb {
 
   List<ElementModel> applyFilter(String filterType) {
     if (filterType == 'All') return elements;
-    
+
     return elements.where((e) {
       final data = e.fetch();
       final val = data.values.first;
       final meta = val['__meta__'];
-      
+
       if (filterType == 'Active') {
         if (meta == null) return true;
         final time = meta['time'] ?? {};
         return !time.containsKey('a') && !time.containsKey('d');
       }
-      
+
       if (filterType == 'Archived') {
         if (meta == null) return false;
         final time = meta['time'] ?? {};
@@ -394,7 +434,7 @@ class ElementDb {
         final time = meta['time'] ?? {};
         return time.containsKey('d');
       }
-      
+
       return true;
     }).toList();
   }
@@ -415,49 +455,61 @@ class ElementDb {
     return fields.where((name) => name.isNotEmpty).toList();
   }
 
-  List<ElementModel> search(String query, {bool exact = false, String filter = 'Active'}) {
+  List<ElementModel> search(
+    String query, {
+    bool exact = false,
+    String filter = 'Active',
+  }) {
     if (query.isEmpty) return elements;
     final filtered = applyFilter(filter);
     return filtered.where((e) => e.match(query, exact: exact)[0]).toList();
   }
 
-  Future<List<ElementModel>> searchAsync(String query, {bool exact = false, String filter = 'Active'}) async {
+  Future<List<ElementModel>> searchAsync(
+    String query, {
+    bool exact = false,
+    String filter = 'Active',
+  }) async {
     if (query.isEmpty) return elements;
     try {
       final searchableFields = getSearchableFields(dbSchema);
-      final List<dynamic> rawResults = await IsolateWorker.instance.execute<List<dynamic>>(
-        'dbSearch',
-        {
-          'dbName': key, 
-          'query': query,
-          'searchableFields': searchableFields,
-          'exact': exact,
-          'filter': filter,
-        },
-      );
-      
-      final mappedResults = rawResults.map((item) => Map<String, dynamic>.from(item as Map)).toList();
-      return mappedResults.map((data) => ElementModel.lazy(dbSchema, intf, data)).toList();
+      final List<dynamic> rawResults = await IsolateWorker.instance
+          .execute<List<dynamic>>('dbSearch', {
+            'dbName': key,
+            'query': query,
+            'searchableFields': searchableFields,
+            'exact': exact,
+            'filter': filter,
+          });
+
+      final mappedResults = rawResults
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      return mappedResults
+          .map((data) => ElementModel.lazy(dbSchema, intf, data))
+          .toList();
     } catch (e) {
-      debugPrint("ElementDb.searchAsync error, falling back to local sync search: $e");
+      debugPrint(
+        "ElementDb.searchAsync error, falling back to local sync search: $e",
+      );
       return search(query, exact: exact, filter: filter);
     }
   }
 
   List<ElementModel> applyFilterTo(List<ElementModel> list, String filterType) {
     if (filterType == 'All') return list;
-    
+
     return list.where((e) {
       final data = e.fetch();
       final val = data.values.first;
       final meta = val['__meta__'];
-      
+
       if (filterType == 'Active') {
         if (meta == null) return true;
         final time = meta['time'] ?? {};
         return !time.containsKey('a') && !time.containsKey('d');
       }
-      
+
       if (filterType == 'Archived') {
         if (meta == null) return false;
         final time = meta['time'] ?? {};
@@ -469,7 +521,7 @@ class ElementDb {
         final time = meta['time'] ?? {};
         return time.containsKey('d');
       }
-      
+
       return true;
     }).toList();
   }
@@ -492,11 +544,11 @@ class DatabaseUpdateNotifier extends Notifier<Map<String, int>> {
   Map<String, int> build() => {};
 
   void increment(String dbKey) {
-    state = {
-      ...state,
-      dbKey: (state[dbKey] ?? 0) + 1,
-    };
+    state = {...state, dbKey: (state[dbKey] ?? 0) + 1};
   }
 }
 
-final databaseUpdateProvider = NotifierProvider<DatabaseUpdateNotifier, Map<String, int>>(DatabaseUpdateNotifier.new);
+final databaseUpdateProvider =
+    NotifierProvider<DatabaseUpdateNotifier, Map<String, int>>(
+      DatabaseUpdateNotifier.new,
+    );

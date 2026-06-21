@@ -21,7 +21,8 @@ class EmptyStateView extends StatelessWidget {
     return const EmptyStateView(
       icon: Icons.inventory_2_outlined,
       title: "No Archives Yet",
-      subtitle: "Archive old records to keep your active dashboard clean and speedy.",
+      subtitle:
+          "Archive old records to keep your active dashboard clean and speedy.",
     );
   }
 
@@ -30,7 +31,8 @@ class EmptyStateView extends StatelessWidget {
     return const EmptyStateView(
       icon: Icons.delete_sweep_outlined,
       title: "Clean Slate",
-      subtitle: "Deleted files stay here for 72 hours before being permanently purged.",
+      subtitle:
+          "Deleted files stay here for 72 hours before being permanently purged.",
     );
   }
 
@@ -39,7 +41,8 @@ class EmptyStateView extends StatelessWidget {
     return const EmptyStateView(
       icon: Icons.search_off_outlined,
       title: "No Matching Records",
-      subtitle: "Double check your spelling or clear active search query filters.",
+      subtitle:
+          "Double check your spelling or clear active search query filters.",
     );
   }
 
@@ -48,7 +51,8 @@ class EmptyStateView extends StatelessWidget {
     return EmptyStateView(
       icon: Icons.assignment_outlined,
       title: "Empty Database",
-      subtitle: "There are no active records in this database yet. Tap below to create your first record!",
+      subtitle:
+          "There are no active records in this database yet. Tap below to create your first record!",
       actionButtonText: "Create First Record",
       onActionButtonPressed: onCreateFirst,
     );
@@ -98,8 +102,13 @@ class EmptyStateView extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6B1524),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                 ),
                 onPressed: onActionButtonPressed,
                 icon: const Icon(Icons.add, size: 18),

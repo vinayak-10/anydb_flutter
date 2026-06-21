@@ -1,2 +1,1 @@
-export 'io_helper_web.dart'
-    if (dart.library.io) 'io_helper_io.dart';
+export 'io_helper_web.dart' if (dart.library.io) 'io_helper_io.dart';

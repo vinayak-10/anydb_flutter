@@ -14,7 +14,11 @@ class ElementModel {
 
   ElementModel();
 
-  ElementModel.lazy(List<dynamic> schema, dynamic repoIntf, Map<String, dynamic> dbJson) {
+  ElementModel.lazy(
+    List<dynamic> schema,
+    dynamic repoIntf,
+    Map<String, dynamic> dbJson,
+  ) {
     originalSchema = {'elements': schema};
     intf = repoIntf;
     key = dbJson.keys.first;
@@ -107,12 +111,12 @@ class ElementModel {
     ensureHydrated();
     final Map<String, dynamic> val = {};
     final Map<String, dynamic> componentData = {};
-    
+
     for (var component in components) {
       final cVal = component.fetch();
       componentData.addAll(cVal);
     }
-    
+
     val[key] = componentData;
     return val;
   }
@@ -137,7 +141,10 @@ class ElementModel {
     return [false, false];
   }
 
-  List<Widget> getEditors({required Function onChanged, bool autoFocusFirst = false}) {
+  List<Widget> getEditors({
+    required Function onChanged,
+    bool autoFocusFirst = false,
+  }) {
     ensureHydrated();
     int editableCount = 0;
     return components.map((c) {

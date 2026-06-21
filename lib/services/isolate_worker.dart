@@ -10,7 +10,6 @@ import 'aggregator_service.dart';
 import 'io_helper.dart' as io;
 import 'package:intl/intl.dart';
 
-
 class IsolateWorker {
   static final IsolateWorker _instance = IsolateWorker._internal();
   static IsolateWorker get instance => _instance;
@@ -31,12 +30,15 @@ class IsolateWorker {
 
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
-    
+
     try {
       // 1. Establish the persistent Database & Schema Worker Isolate
-      _dbIsolate = await Isolate.spawn(_dbWorkerEntryPoint, _dbReceivePort.sendPort);
+      _dbIsolate = await Isolate.spawn(
+        _dbWorkerEntryPoint,
+        _dbReceivePort.sendPort,
+      );
       final Completer<SendPort> dbPortCompleter = Completer<SendPort>();
-      
+
       _dbReceivePort.listen((message) {
         if (message is SendPort) {
           dbPortCompleter.complete(message);
@@ -44,7 +46,7 @@ class IsolateWorker {
           final int id = message['id'];
           final dynamic result = message['result'];
           final dynamic error = message['error'];
-          
+
           final completer = _pendingTasks.remove(id);
           if (completer != null) {
             if (error != null) {
@@ -58,9 +60,12 @@ class IsolateWorker {
       _dbSendPort = await dbPortCompleter.future;
 
       // 2. Establish the persistent Report & Calculation Worker Isolate
-      _processIsolate = await Isolate.spawn(_processWorkerEntryPoint, _processReceivePort.sendPort);
+      _processIsolate = await Isolate.spawn(
+        _processWorkerEntryPoint,
+        _processReceivePort.sendPort,
+      );
       final Completer<SendPort> processPortCompleter = Completer<SendPort>();
-      
+
       _processReceivePort.listen((message) {
         if (message is SendPort) {
           processPortCompleter.complete(message);
@@ -68,7 +73,7 @@ class IsolateWorker {
           final int id = message['id'];
           final dynamic result = message['result'];
           final dynamic error = message['error'];
-          
+
           final completer = _pendingTasks.remove(id);
           if (completer != null) {
             if (error != null) {
@@ -82,10 +87,7 @@ class IsolateWorker {
       _processSendPort = await processPortCompleter.future;
 
       // 3. Establish direct Inter-Isolate IPC connection
-      _processSendPort!.send({
-        'type': 'initIpc',
-        'dbSendPort': _dbSendPort,
-      });
+      _processSendPort!.send({'type': 'initIpc', 'dbSendPort': _dbSendPort});
 
       // 4. Resolve raw internal and external paths on main thread and establish SQLite folder mapping
       final internalRoot = await FileService().getInternalRoot();
@@ -95,12 +97,14 @@ class IsolateWorker {
         'internalRoot': internalRoot,
         'externalRoot': externalRoot,
       };
-      
+
       _dbSendPort!.send(initPathsMsg);
       _processSendPort!.send(initPathsMsg);
 
       _initialized = true;
-      debugPrint("IsolateWorker: Dual persistent worker pool successfully established.");
+      debugPrint(
+        "IsolateWorker: Dual persistent worker pool successfully established.",
+      );
     } catch (e) {
       debugPrint("IsolateWorker Init Error: $e");
       rethrow;
@@ -111,7 +115,7 @@ class IsolateWorker {
     if (kIsWeb) {
       return _executeTaskSync(taskType, params) as T;
     }
-    
+
     await init();
     final int taskId = _taskIdCounter++;
     final completer = Completer<T>();
@@ -121,11 +125,7 @@ class IsolateWorker {
     final isDbTask = taskType.startsWith('db') || taskType == 'importMerge';
     final targetPort = isDbTask ? _dbSendPort! : _processSendPort!;
 
-    targetPort.send({
-      'id': taskId,
-      'type': taskType,
-      'params': params,
-    });
+    targetPort.send({'id': taskId, 'type': taskType, 'params': params});
 
     return completer.future;
   }
@@ -173,7 +173,7 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final Map<String, dynamic> params = message['params'] ?? {};
         final String dbName = params['dbName'] ?? "";
         final tableCache = bgCache[dbName] ?? {};
-        
+
         final list = tableCache.entries
             .where((e) => !e.key.startsWith('__'))
             .map((e) => {e.key: e.value})
@@ -186,24 +186,26 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final SendPort replyPort = message['replyPort'];
         final Map<String, dynamic> params = message['params'] ?? {};
         final String dbName = params['dbName'] ?? "";
-        
+
         var tableCache = bgCache[dbName];
-        final bool hasInactiveLoaded = tableCache != null && tableCache['__inactive_loaded__'] == 'true';
-        
+        final bool hasInactiveLoaded =
+            tableCache != null && tableCache['__inactive_loaded__'] == 'true';
+
         if (tableCache == null || !hasInactiveLoaded) {
-          final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+          final List<Map<String, String>> rawRecords =
+              await SqliteHelper.getAllRawString(dbName);
           tableCache = bgCache[dbName] = {};
           for (var rec in rawRecords) {
             tableCache[rec['id']!] = jsonDecode(rec['value']!);
           }
           tableCache['__inactive_loaded__'] = 'true';
         }
-        
+
         final list = tableCache.entries
             .where((e) => !e.key.startsWith('__'))
             .map((e) => {e.key: e.value})
             .toList();
-        
+
         replyPort.send(list);
         return;
       }
@@ -214,35 +216,42 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final String dbName = params['dbName'] ?? "";
         final String reportKey = params['reportKey'] ?? "";
         final dynamic date = params['date'];
-        final Map<String, dynamic> aggregatorJson = params['aggregatorJson'] ?? {};
-        
+        final Map<String, dynamic> aggregatorJson =
+            params['aggregatorJson'] ?? {};
+
         // 1. Ensure cache is fully warmed
         var tableCache = bgCache[dbName];
-        final bool hasInactiveLoaded = tableCache != null && tableCache['__inactive_loaded__'] == 'true';
-        
+        final bool hasInactiveLoaded =
+            tableCache != null && tableCache['__inactive_loaded__'] == 'true';
+
         if (tableCache == null || !hasInactiveLoaded) {
-          final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
+          final List<Map<String, String>> rawRecords =
+              await SqliteHelper.getAllRawString(dbName);
           tableCache = bgCache[dbName] = {};
           for (var rec in rawRecords) {
             tableCache[rec['id']!] = jsonDecode(rec['value']!);
           }
           tableCache['__inactive_loaded__'] = 'true';
         }
-        
+
         // 2. Prepare elements from pre-decoded cache wrapped in {key: value} format
         final elements = tableCache.entries
             .where((e) => !e.key.startsWith('__'))
             .map((e) => {e.key: Map<String, dynamic>.from(e.value as Map)})
             .toList();
-            
+
         // 3. Initialize aggregator service and run daily filtering logic inside database isolate
         final agg = AggregatorService();
         agg.init(aggregatorJson);
         final report = agg.reports.firstWhere((r) => r.key == reportKey);
-        final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
-        
+        final DateTime targetDate = date is DateTime
+            ? date
+            : (date is String
+                  ? DateTime.tryParse(date) ?? DateTime.now()
+                  : DateTime.now());
+
         final extIntf = report.extractor[0];
-        
+
         // 4. Pre-filter elements using the date predicate before running the flattening/extraction engine.
         // This avoids running recursive flattening on thousands of unrelated records.
         final predicate = extIntf.extractor?.predicates.firstWhere(
@@ -253,27 +262,36 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         List<Map<String, dynamic>> filteredElements;
         if (predicate != null && predicate is Map) {
           final String searchKey = predicate['column']?.toString() ?? "Date";
-          final String matchType = predicate['parameter']?['type']?.toString() ?? "day";
+          final String matchType =
+              predicate['parameter']?['type']?.toString() ?? "day";
           filteredElements = elements.where((e) {
             if (e.isEmpty) return false;
             final recordVal = e.values.first;
-            return _recordMatchesDatePredicate(recordVal, targetDate, searchKey, matchType);
+            return _recordMatchesDatePredicate(
+              recordVal,
+              targetDate,
+              searchKey,
+              matchType,
+            );
           }).toList();
-          debugPrint("Isolate DB Worker: Pre-filtered elements from ${elements.length} down to ${filteredElements.length} using key='$searchKey', matchType='$matchType', date='$targetDate'.");
+          debugPrint(
+            "Isolate DB Worker: Pre-filtered elements from ${elements.length} down to ${filteredElements.length} using key='$searchKey', matchType='$matchType', date='$targetDate'.",
+          );
         } else {
           filteredElements = elements;
         }
 
         await extIntf.populateWithData(filteredElements);
-        
+
         final s = await extIntf.extractor!.applyPredicate(
           extIntf.extractor!.predicates[0],
           data: targetDate,
-          getFileName: (meta, {DateTime? timestamp}) => agg.getFileName(meta, timestamp: timestamp),
+          getFileName: (meta, {DateTime? timestamp}) =>
+              agg.getFileName(meta, timestamp: timestamp),
           timestamp: null,
           force: true,
         );
-        
+
         replyPort.send(s);
         return;
       }
@@ -285,17 +303,11 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
       try {
         final result = await _executeDbTask(taskType, params, bgCache);
         if (id != null) {
-          mainSendPort.send({
-            'id': id,
-            'result': result,
-          });
+          mainSendPort.send({'id': id, 'result': result});
         }
       } catch (e) {
         if (id != null) {
-          mainSendPort.send({
-            'id': id,
-            'error': e.toString(),
-          });
+          mainSendPort.send({'id': id, 'error': e.toString()});
         }
       }
     }
@@ -335,39 +347,51 @@ void _processWorkerEntryPoint(SendPort mainSendPort) {
       try {
         final result = await _executeProcessTask(taskType, params, dbSendPort);
         if (id != null) {
-          mainSendPort.send({
-            'id': id,
-            'result': result,
-          });
+          mainSendPort.send({'id': id, 'result': result});
         }
       } catch (e) {
         if (id != null) {
-          mainSendPort.send({
-            'id': id,
-            'error': e.toString(),
-          });
+          mainSendPort.send({'id': id, 'error': e.toString()});
         }
       }
     }
   });
 }
 
-bool _recordMatchesQuery(Map<String, dynamic> record, String query, List<String> searchableFields, {bool exact = false}) {
+bool _recordMatchesQuery(
+  Map<String, dynamic> record,
+  String query,
+  List<String> searchableFields, {
+  bool exact = false,
+}) {
   final bool filterBySearchable = searchableFields.isNotEmpty;
-  
+
   for (var entry in record.entries) {
     final key = entry.key;
     if (key == '__meta__') continue; // Always ignore metadata
-    
+
     final val = entry.value;
-    final bool isSearchable = !filterBySearchable || searchableFields.contains(key);
-    
+    final bool isSearchable =
+        !filterBySearchable || searchableFields.contains(key);
+
     if (val is Map) {
-      if (_recordMatchesQuery(Map<String, dynamic>.from(val), query, searchableFields, exact: exact)) return true;
+      if (_recordMatchesQuery(
+        Map<String, dynamic>.from(val),
+        query,
+        searchableFields,
+        exact: exact,
+      ))
+        return true;
     } else if (val is List) {
       for (var item in val) {
         if (item is Map) {
-          if (_recordMatchesQuery(Map<String, dynamic>.from(item), query, searchableFields, exact: exact)) return true;
+          if (_recordMatchesQuery(
+            Map<String, dynamic>.from(item),
+            query,
+            searchableFields,
+            exact: exact,
+          ))
+            return true;
         } else if (isSearchable) {
           final itemStr = item?.toString().toLowerCase() ?? '';
           final matched = exact ? (itemStr == query) : itemStr.contains(query);
@@ -382,9 +406,10 @@ bool _recordMatchesQuery(Map<String, dynamic> record, String query, List<String>
   }
   return false;
 }
+
 bool _recordMatchesFilter(Map<String, dynamic> record, String filter) {
   if (filter == 'All') return true;
-  
+
   Map<dynamic, dynamic>? meta;
   if (record.containsKey('__meta__')) {
     meta = record['__meta__'] as Map?;
@@ -394,32 +419,36 @@ bool _recordMatchesFilter(Map<String, dynamic> record, String filter) {
       meta = firstVal['__meta__'] as Map?;
     }
   }
-  
+
   if (filter == 'Active') {
     if (meta == null) return true;
     final time = meta['time'] ?? {};
     return !time.containsKey('a') && !time.containsKey('d');
   }
-  
+
   if (filter == 'Archived') {
     if (meta == null) return false;
     final time = meta['time'] ?? {};
     return time.containsKey('a');
   }
-  
+
   if (filter == 'Deleted') {
     if (meta == null) return false;
     final time = meta['time'] ?? {};
     return time.containsKey('d');
   }
-  
+
   return true;
 }
 
 // ==========================================
 // 3. Database Tasks execution logic
 // ==========================================
-Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<String, Map<String, dynamic>> bgCache) async {
+Future<dynamic> _executeDbTask(
+  String type,
+  Map<String, dynamic> params,
+  Map<String, Map<String, dynamic>> bgCache,
+) async {
   switch (type) {
     case 'dbGetBusinessUniqueKey':
       final String schemaName = params['schemaName'];
@@ -436,10 +465,10 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       final String id = params['id'];
       final dynamic value = params['value'];
       final String? businessKeyName = params['businessKeyName'];
-      
+
       // Perform database update
       await SqliteHelper.updateRaw(dbName, id, value, businessKeyName);
-      
+
       // Update isolate memory cache
       final tableCache = bgCache[dbName] ??= {};
       tableCache[id] = value;
@@ -477,10 +506,16 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
 
       // 4. Determine boundary limit based on the filtered records
       final int totalCount = rawRecords.length;
-      final int limit = allRecords ? totalCount : (totalCount * 0.30).round().clamp(100, totalCount);
+      final int limit = allRecords
+          ? totalCount
+          : (totalCount * 0.30).round().clamp(100, totalCount);
 
       // 5. Query top recent IDs from timestamps table using status filter
-      final List<String> recentIds = await SqliteHelper.getTopRecentIds(dbName, limit, filter: filter);
+      final List<String> recentIds = await SqliteHelper.getTopRecentIds(
+        dbName,
+        limit,
+        filter: filter,
+      );
 
       // 6. Look up raw strings from cache map
       final List<Map<String, String>> results = [];
@@ -495,44 +530,55 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
     case 'dbSearch':
       final String dbName = params['dbName'];
       final String query = params['query'].toString().toLowerCase();
-      final List<String> searchableFields = List<String>.from(params['searchableFields'] ?? []);
+      final List<String> searchableFields = List<String>.from(
+        params['searchableFields'] ?? [],
+      );
       final bool exact = params['exact'] == true;
       final String filter = params['filter']?.toString() ?? 'Active';
-      
+
       // Auto-populate cache with active records if not loaded yet
       var tableCache = bgCache[dbName];
       if (tableCache == null || tableCache.isEmpty) {
-        final List<Map<String, String>> activeRecords = await SqliteHelper.getActiveRecordsRawString(dbName);
+        final List<Map<String, String>> activeRecords =
+            await SqliteHelper.getActiveRecordsRawString(dbName);
         tableCache = bgCache[dbName] = {};
         for (var rec in activeRecords) {
           tableCache[rec['id']!] = jsonDecode(rec['value']!);
         }
       }
-      
+
       // Lazy load inactive records when searching non-active views (Archived, Deleted, All)
       if (filter != 'Active') {
-        final bool hasInactiveLoaded = tableCache['__inactive_loaded__'] == 'true';
+        final bool hasInactiveLoaded =
+            tableCache['__inactive_loaded__'] == 'true';
         if (!hasInactiveLoaded) {
-          final List<Map<String, String>> inactiveRecords = await SqliteHelper.getInactiveRecordsRawString(dbName);
+          final List<Map<String, String>> inactiveRecords =
+              await SqliteHelper.getInactiveRecordsRawString(dbName);
           for (var rec in inactiveRecords) {
             tableCache[rec['id']!] = jsonDecode(rec['value']!);
           }
           tableCache['__inactive_loaded__'] = 'true';
         }
       }
-      
+
       final List<Map<String, dynamic>> matches = [];
       for (var entry in tableCache.entries) {
         final key = entry.key;
-        if (key.startsWith('__')) continue; // Ignore cache metadata like __inactive_loaded__
-        
+        if (key.startsWith('__'))
+          continue; // Ignore cache metadata like __inactive_loaded__
+
         final decoded = entry.value;
         if (decoded is Map) {
           final decodedMap = Map<String, dynamic>.from(decoded);
-          
+
           if (!_recordMatchesFilter(decodedMap, filter)) continue;
-          
-          if (_recordMatchesQuery(decodedMap, query, searchableFields, exact: exact)) {
+
+          if (_recordMatchesQuery(
+            decodedMap,
+            query,
+            searchableFields,
+            exact: exact,
+          )) {
             matches.add({key: decoded});
           }
         }
@@ -541,12 +587,14 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
 
     case 'dbUpdateAll':
       final String dbName = params['dbName'];
-      final Map<String, dynamic> items = Map<String, dynamic>.from(params['items']);
+      final Map<String, dynamic> items = Map<String, dynamic>.from(
+        params['items'],
+      );
       final String? businessKeyName = params['businessKeyName'];
-      
+
       // Synchronous batch transaction on warm SQLite connection
       await SqliteHelper.updateAllRaw(dbName, items, businessKeyName);
-      
+
       // Sync cache as decoded maps
       final tableCache = bgCache[dbName] ??= {};
       for (var entry in items.entries) {
@@ -560,8 +608,9 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
       final List<dynamic> data = params['data'];
 
       // 1. Fetch current raw string records directly inside the isolate in micro-seconds (No IPC!)
-      final List<Map<String, String>> rawRecords = await SqliteHelper.getAllRawString(dbName);
-      
+      final List<Map<String, String>> rawRecords =
+          await SqliteHelper.getAllRawString(dbName);
+
       // 2. Build the warm memory cache for fast O(1) matching
       final Map<String, Map<String, dynamic>> cache = {};
       for (var rec in rawRecords) {
@@ -591,7 +640,10 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
             key = m.keys.first;
             val = Map<String, dynamic>.from(m.values.first as Map);
           } else {
-            key = m['Card Number']?.toString() ?? m['key']?.toString() ?? m['id']?.toString();
+            key =
+                m['Card Number']?.toString() ??
+                m['key']?.toString() ??
+                m['id']?.toString();
             val = m;
           }
 
@@ -600,7 +652,9 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
           if (cache.containsKey(key)) {
             final existingRecord = cache[key];
             if (existingRecord != null) {
-              final existingDate = _getLatestDateStaticForImport(existingRecord);
+              final existingDate = _getLatestDateStaticForImport(
+                existingRecord,
+              );
               final incomingDate = _getLatestDateStaticForImport(val);
               if (incomingDate >= existingDate) {
                 itemsToUpdate['$dbName:$key'] = val;
@@ -616,9 +670,11 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
 
       // 4. Perform direct transactional batch write to SQLite inside the Database Isolate (zero IPC!)
       if (itemsToUpdate.isNotEmpty) {
-        final businessKeyName = await SqliteHelper.getBusinessUniqueKeyRaw(dbName);
+        final businessKeyName = await SqliteHelper.getBusinessUniqueKeyRaw(
+          dbName,
+        );
         await SqliteHelper.updateAllRaw(dbName, itemsToUpdate, businessKeyName);
-        
+
         // 5. Update the background warm cache in place
         final tableCache = bgCache[dbName] ??= {};
         for (var entry in itemsToUpdate.entries) {
@@ -637,7 +693,11 @@ Future<dynamic> _executeDbTask(String type, Map<String, dynamic> params, Map<Str
 // ==========================================
 // 4. Processing / Heavy Compute Tasks logic
 // ==========================================
-Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, SendPort? dbSendPort) async {
+Future<dynamic> _executeProcessTask(
+  String type,
+  Map<String, dynamic> params,
+  SendPort? dbSendPort,
+) async {
   switch (type) {
     case 'writeExcel':
       return WorkbookService.writeExcelInIsolate(params);
@@ -659,18 +719,18 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       final dynamic date = params['date'];
       final String targetPath = params['targetPath'];
       final Map<String, dynamic> aggregatorJson = params['aggregatorJson'];
-      
+
       // B. Initialize Aggregator Service and AggregatorReport in Isolate first to resolve source schema name
       final agg = AggregatorService();
       agg.init(aggregatorJson);
-      
+
       final report = agg.reports.firstWhere((r) => r.key == reportKey);
-      final String sourceDbName = report.extractor.isNotEmpty 
-          ? (report.extractor[0].extractor?.source['name'] ?? dbName) 
+      final String sourceDbName = report.extractor.isNotEmpty
+          ? (report.extractor[0].extractor?.source['name'] ?? dbName)
           : dbName;
-          
-      final String sourceType = report.extractor.isNotEmpty 
-          ? (report.extractor[0].extractor?.source['type'] ?? 'database') 
+
+      final String sourceType = report.extractor.isNotEmpty
+          ? (report.extractor[0].extractor?.source['type'] ?? 'database')
           : 'database';
 
       Map<String, dynamic> s;
@@ -693,22 +753,34 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
         s = Map<String, dynamic>.from(sRaw as Map);
       } else {
         // For report-sourced extractors (like unconsolidated Monthly), read directly from files on disk
-        final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
+        final DateTime targetDate = date is DateTime
+            ? date
+            : (date is String
+                  ? DateTime.tryParse(date) ?? DateTime.now()
+                  : DateTime.now());
         final extIntf = report.extractor[0];
-        
+
         s = await extIntf.extractor!.applyPredicate(
           extIntf.extractor!.predicates[0],
           data: targetDate,
-          getFileName: (meta, {DateTime? timestamp}) => agg.getFileName(meta, timestamp: timestamp),
+          getFileName: (meta, {DateTime? timestamp}) =>
+              agg.getFileName(meta, timestamp: timestamp),
           timestamp: null,
           force: true,
         );
       }
-      
+
       // Inject final sheetName
-      final DateTime targetDate = date is DateTime ? date : (date is String ? DateTime.tryParse(date) ?? DateTime.now() : DateTime.now());
+      final DateTime targetDate = date is DateTime
+          ? date
+          : (date is String
+                ? DateTime.tryParse(date) ?? DateTime.now()
+                : DateTime.now());
       final extIntf = report.extractor[0];
-      final String entryName = extIntf.predicatedName(extIntf.extractor!.predicates[0] ?? {}, targetDate.toIso8601String());
+      final String entryName = extIntf.predicatedName(
+        extIntf.extractor!.predicates[0] ?? {},
+        targetDate.toIso8601String(),
+      );
       final sheetName = FileService().sanitizeName(entryName);
       String finalSheetName = sheetName;
       if (report.key.toLowerCase().contains('monthly')) {
@@ -716,33 +788,43 @@ Future<dynamic> _executeProcessTask(String type, Map<String, dynamic> params, Se
       }
       s['extra'] ??= {};
       s['extra']['name'] = finalSheetName;
-      
+
       // D. Generate report data rows and evaluate formulas
       final reportData = report.generateData(s);
-      
+
       // E. Compile Excel Workbook and write to file
       final writeParams = {
         'existingBytes': null,
         'data': reportData,
         'sheetName': finalSheetName,
       };
-      
+
       // Check if target file exists to load existingBytes (supporting sheets appending)
       List<int>? existingBytes;
       if (await io.fileExists(targetPath)) {
         existingBytes = await io.readBytes(targetPath);
         writeParams['existingBytes'] = existingBytes;
       }
-      
-      final List<int>? fileBytes = WorkbookService.writeExcelInIsolate(writeParams);
+
+      final List<int>? fileBytes = WorkbookService.writeExcelInIsolate(
+        writeParams,
+      );
       if (fileBytes != null) {
         await io.writeBytes(targetPath, Uint8List.fromList(fileBytes));
       }
-      
-      return {
-        'data': reportData,
-        'path': targetPath,
-      };
+
+      final List<Map<String, dynamic>> records =
+          List<Map<String, dynamic>>.from(reportData['data'] as List? ?? []);
+      final List<List<dynamic>> aoa = [];
+      if (records.isNotEmpty) {
+        final List<String> columnNames = records[0].keys.toList();
+        aoa.add(columnNames);
+        for (var record in records) {
+          aoa.add(columnNames.map((name) => record[name] ?? '').toList());
+        }
+      }
+
+      return {'data': reportData, 'path': targetPath, 'aoa': aoa};
     default:
       throw "Process Isolate: Unknown task type '$type'";
   }
@@ -789,7 +871,10 @@ int _getLatestDateStaticForImport(Map<String, dynamic> record) {
               if (d is int) {
                 dt = d;
               } else if (d is String) {
-                dt = DateTime.tryParse(d)?.millisecondsSinceEpoch ?? int.tryParse(d) ?? 0;
+                dt =
+                    DateTime.tryParse(d)?.millisecondsSinceEpoch ??
+                    int.tryParse(d) ??
+                    0;
               }
               if (dt > maxDate) maxDate = dt;
             }
@@ -797,7 +882,7 @@ int _getLatestDateStaticForImport(Map<String, dynamic> record) {
         }
       }
     }
-    
+
     final meta = record['__meta__'];
     if (meta is Map) {
       final time = meta['time'];
@@ -814,10 +899,10 @@ DateTime? _parseDateStatic(dynamic val) {
   if (val == null) return null;
   if (val is DateTime) return val;
   if (val is num) {
-     if (val.isNaN || val.isInfinite) return null;
-     return DateTime.fromMillisecondsSinceEpoch(val.toInt());
+    if (val.isNaN || val.isInfinite) return null;
+    return DateTime.fromMillisecondsSinceEpoch(val.toInt());
   }
-  
+
   final s = val.toString().trim();
   if (s.isEmpty || s.toLowerCase() == "nan") return null;
 
@@ -838,16 +923,26 @@ dynamic _findValueInsensitiveStatic(Map<dynamic, dynamic> row, String key) {
   return null;
 }
 
-bool _recordMatchesDatePredicate(Map<dynamic, dynamic> record, DateTime targetDate, String searchKey, String matchType) {
+bool _recordMatchesDatePredicate(
+  Map<dynamic, dynamic> record,
+  DateTime targetDate,
+  String searchKey,
+  String matchType,
+) {
   // Check root level fields (like "Date" if it exists at root, or "Registered On")
-  final rootVal = record[searchKey] ?? _findValueInsensitiveStatic(record, searchKey);
+  final rootVal =
+      record[searchKey] ?? _findValueInsensitiveStatic(record, searchKey);
   if (rootVal != null) {
     final rd = _parseDateStatic(rootVal);
     if (rd != null) {
       if (matchType == 'month') {
-        if (rd.month == targetDate.month && rd.year == targetDate.year) return true;
+        if (rd.month == targetDate.month && rd.year == targetDate.year)
+          return true;
       } else {
-        if (rd.day == targetDate.day && rd.month == targetDate.month && rd.year == targetDate.year) return true;
+        if (rd.day == targetDate.day &&
+            rd.month == targetDate.month &&
+            rd.year == targetDate.year)
+          return true;
       }
     }
   }
@@ -859,13 +954,18 @@ bool _recordMatchesDatePredicate(Map<dynamic, dynamic> record, DateTime targetDa
     if (history is List) {
       for (var tx in history) {
         if (tx is Map) {
-          final val = tx[searchKey] ?? _findValueInsensitiveStatic(tx, searchKey);
+          final val =
+              tx[searchKey] ?? _findValueInsensitiveStatic(tx, searchKey);
           final rd = _parseDateStatic(val);
           if (rd != null) {
             if (matchType == 'month') {
-              if (rd.month == targetDate.month && rd.year == targetDate.year) return true;
+              if (rd.month == targetDate.month && rd.year == targetDate.year)
+                return true;
             } else {
-              if (rd.day == targetDate.day && rd.month == targetDate.month && rd.year == targetDate.year) return true;
+              if (rd.day == targetDate.day &&
+                  rd.month == targetDate.month &&
+                  rd.year == targetDate.year)
+                return true;
             }
           }
         }
@@ -874,6 +974,3 @@ bool _recordMatchesDatePredicate(Map<dynamic, dynamic> record, DateTime targetDa
   }
   return false;
 }
-
-
-

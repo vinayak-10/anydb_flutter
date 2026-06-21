@@ -29,7 +29,7 @@ class _LogsPageState extends ConsumerState<LogsPage> {
     final fileService = ref.read(fileServiceProvider);
     final root = await fileService.getExternalRoot();
     _logsRoot = p.join(root, 'Logs');
-    
+
     List<dynamic> allLogs = [];
     if (await io.dirExists(_logsRoot!)) {
       await _collectLogs(_logsRoot!, allLogs);
@@ -73,20 +73,26 @@ class _LogsPageState extends ConsumerState<LogsPage> {
               setState(() => _loading = true);
               _loadLogs();
             },
-          )
+          ),
         ],
       ),
-      body: _loading 
-        ? const Center(child: CircularProgressIndicator())
-        : _logFiles.isEmpty
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _logFiles.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(Icons.history_edu, size: 64, color: Colors.grey),
                   const SizedBox(height: 16),
-                  const Text("No system logs found.", style: TextStyle(color: Colors.grey)),
-                  Text("Root: $_logsRoot", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  const Text(
+                    "No system logs found.",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  Text(
+                    "Root: $_logsRoot",
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
                 ],
               ),
             )
@@ -96,15 +102,22 @@ class _LogsPageState extends ConsumerState<LogsPage> {
                 final file = _logFiles[index];
                 final stat = io.getFileStatSync(file.path);
                 final name = p.basename(file.path);
-                final relativeDir = p.relative(p.dirname(file.path), from: _logsRoot);
-                
+                final relativeDir = p.relative(
+                  p.dirname(file.path),
+                  from: _logsRoot,
+                );
+
                 return ListTile(
                   leading: const Icon(Icons.description, color: Colors.orange),
                   title: Text(name),
-                  subtitle: Text("$relativeDir • ${DateFormat('yyyy-MM-dd HH:mm').format(stat.modified)}"),
+                  subtitle: Text(
+                    "$relativeDir • ${DateFormat('yyyy-MM-dd HH:mm').format(stat.modified)}",
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.share),
-                    onPressed: () => Share.shareXFiles([XFile(file.path)], text: 'anydb Log: $name'),
+                    onPressed: () => Share.shareXFiles([
+                      XFile(file.path),
+                    ], text: 'anydb Log: $name'),
                   ),
                   onTap: () => _viewLog(file.path, name),
                 );
@@ -119,8 +132,8 @@ class _LogsPageState extends ConsumerState<LogsPage> {
 
     // Show summarized view
     final lines = content.split('\n');
-    final recentLines = lines.length > 50 
-        ? lines.sublist(lines.length - 51).join('\n') 
+    final recentLines = lines.length > 50
+        ? lines.sublist(lines.length - 51).join('\n')
         : content;
 
     showDialog(
@@ -151,12 +164,13 @@ class _LogsPageState extends ConsumerState<LogsPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Share.shareXFiles([XFile(path)], text: 'anydb Log: $name'),
+            onPressed: () =>
+                Share.shareXFiles([XFile(path)], text: 'anydb Log: $name'),
             child: const Text("SHARE FULL LOG"),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context), 
-            child: const Text("CLOSE")
+            onPressed: () => Navigator.pop(context),
+            child: const Text("CLOSE"),
           ),
         ],
       ),

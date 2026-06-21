@@ -12,6 +12,7 @@ import '../core/cell_helper.dart';
 import '../core/logger.dart';
 import 'package:path/path.dart' as p;
 import 'io_helper.dart' as io;
+import 'package:archive/archive.dart';
 
 class WorkbookService {
   static final WorkbookService _instance = WorkbookService._internal();
@@ -28,29 +29,41 @@ class WorkbookService {
     _cachedExcel = null;
   }
 
-  Future<String> write(Map<String, dynamic> meta, Map<String, dynamic> data, {DateTime? timestamp}) async {
+  Future<String> write(
+    Map<String, dynamic> meta,
+    Map<String, dynamic> data, {
+    DateTime? timestamp,
+  }) async {
     final now = timestamp ?? DateTime.now();
-    
+
     final String collectionName = meta['collection'] ?? 'Report';
-    
+
     String fileName = meta['fileName'] ?? "";
     if (fileName.isEmpty) {
       final String datePattern = formatFilenameDate(now);
-      fileName = "${_fileService.sanitizeName(collectionName)}_$datePattern.xlsx";
+      fileName =
+          "${_fileService.sanitizeName(collectionName)}_$datePattern.xlsx";
     }
-    
+
     final schemaName = meta['aggregator'] ?? 'Default';
-    final aggregatorDir = await _fileService.getAggregatorPath(schemaName, external: true);
+    final aggregatorDir = await _fileService.getAggregatorPath(
+      schemaName,
+      external: true,
+    );
     _lastAggregatorDir = aggregatorDir;
     await _fileService.ensureDir(aggregatorDir);
-    
+
     final fullPath = p.join(aggregatorDir, fileName);
-    final String targetPath = p.isAbsolute(fullPath) ? fullPath : p.absolute(fullPath);
-    
+    final String targetPath = p.isAbsolute(fullPath)
+        ? fullPath
+        : p.absolute(fullPath);
+
     final String entryName = meta['entry'] ?? 'Default';
     final sheetName = _fileService.sanitizeName(entryName);
-    logger.log("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
-    
+    logger.log(
+      "WorkbookService: Writing to sheet '$sheetName' in file '$fileName'",
+    );
+
     List<int>? fileBytes;
     if (kIsWeb) {
       Excel excel;
@@ -62,19 +75,24 @@ class WorkbookService {
       }
       final Sheet reportSheet = excel[sheetName];
       _prepareSheet(reportSheet, data, sheetName);
-      
+
       final List<String> sheetsToDelete = [];
       for (var sn in excel.sheets.keys) {
         if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
           sheetsToDelete.add(sn);
         }
       }
-      if (sheetsToDelete.isNotEmpty && excel.sheets.length > sheetsToDelete.length) {
+      if (sheetsToDelete.isNotEmpty &&
+          excel.sheets.length > sheetsToDelete.length) {
         for (var sn in sheetsToDelete) {
           excel.delete(sn);
         }
       }
       fileBytes = excel.encode();
+      if (fileBytes != null) {
+        fileBytes = WorkbookService.sortSheetsInBytes(fileBytes);
+        _cachedExcel = Excel.decodeBytes(fileBytes);
+      }
     } else {
       List<int>? existingBytes;
       if (_cachedExcel != null) {
@@ -82,7 +100,7 @@ class WorkbookService {
       } else if (await io.fileExists(targetPath)) {
         existingBytes = await io.readBytes(targetPath);
       }
-      
+
       if (IsolateWorker.isInsideWorkerIsolate) {
         final fileBytesList = WorkbookService.writeExcelInIsolate({
           'existingBytes': existingBytes,
@@ -100,18 +118,19 @@ class WorkbookService {
           },
         );
       }
-      
+
       if (fileBytes != null) {
         _cachedExcel = Excel.decodeBytes(fileBytes);
       }
     }
 
     _lastReportPath = targetPath;
-    
+
     if (kIsWeb) {
       if (fileBytes != null) {
         final base64Data = base64Encode(fileBytes);
-        _lastReportPath = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,$base64Data|$fileName";
+        _lastReportPath =
+            "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,$base64Data|$fileName";
         return _lastReportPath!;
       }
       return fileName;
@@ -127,7 +146,11 @@ class WorkbookService {
     return _lastReportPath!;
   }
 
-  static void _prepareSheet(Sheet ws, Map<String, dynamic> jo, String sheetName) {
+  static void _prepareSheet(
+    Sheet ws,
+    Map<String, dynamic> jo,
+    String sheetName,
+  ) {
     // Set default column width for the first 30 columns to prevent '###'
     for (int i = 0; i < 30; i++) {
       ws.setColumnWidth(i, 20.0);
@@ -139,8 +162,13 @@ class WorkbookService {
 
     // Matches workbook.js exactly
     // 0. Add Report Name at top
-    ws.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row)).value = TextCellValue("Report Type");
-    ws.cell(CellIndex.indexByColumnRow(columnIndex: col + 1, rowIndex: row)).value = TextCellValue(jo['name'] ?? "");
+    ws.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row)).value =
+        TextCellValue("Report Type");
+    ws
+        .cell(CellIndex.indexByColumnRow(columnIndex: col + 1, rowIndex: row))
+        .value = TextCellValue(
+      jo['name'] ?? "",
+    );
     row += 1;
 
     // 1. Add Header (AOA)
@@ -164,50 +192,79 @@ class WorkbookService {
       row += gap;
     }
 
-    final Map<String, dynamic> summary = Map<String, dynamic>.from(jo['summary'] ?? {});
+    final Map<String, dynamic> summary = Map<String, dynamic>.from(
+      jo['summary'] ?? {},
+    );
     final List<String> summaryKeys = summary.keys.toList();
     for (int i = 0; i < summaryKeys.length; i++) {
-      ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(summaryKeys[i].toUpperCase());
+      ws
+          .cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row))
+          .value = TextCellValue(
+        summaryKeys[i].toUpperCase(),
+      );
     }
-    
+
     row += gap; // Summary Values row (should be 6)
-    
+
     final List<dynamic> tableData = jo['data'] ?? [];
-    final List<String> columnNames = tableData.isNotEmpty 
-        ? Map<String, dynamic>.from(tableData.first as Map).keys.toList() 
+    final List<String> columnNames = tableData.isNotEmpty
+        ? Map<String, dynamic>.from(tableData.first as Map).keys.toList()
         : [];
-    
+
     // 2.2 Add Summary / Formulas - Values
-    final Map<String, dynamic> formulasMap = Map<String, dynamic>.from(jo['summaryFormulas'] ?? jo['summary'] ?? {});
+    final Map<String, dynamic> formulasMap = Map<String, dynamic>.from(
+      jo['summaryFormulas'] ?? jo['summary'] ?? {},
+    );
     final List<dynamic> formulaValues = formulasMap.values.toList();
-    
+
     // Convert tableData to the format FormulaEngine expects
-    final List<Map<String, dynamic>> records = tableData.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+    final List<Map<String, dynamic>> records = tableData
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
 
     final int summaryValRow = row;
-    debugPrint("WorkbookService: Summary Values at Row $summaryValRow (A${summaryValRow + 1})");
+    debugPrint(
+      "WorkbookService: Summary Values at Row $summaryValRow (A${summaryValRow + 1})",
+    );
     final int tableHeaderRow = summaryValRow + gap + gap;
     final int dataStartRow = tableHeaderRow + 1;
-    
+
     // Excel is 1-indexed.
-    final int sr = dataStartRow + 1; 
+    final int sr = dataStartRow + 1;
     final int er = sr + (tableData.isNotEmpty ? tableData.length - 1 : 0);
-    logger.log("WorkbookService: Sheet '$sheetName' formula range sr=$sr, er=$er. Records: ${tableData.length}");
+    logger.log(
+      "WorkbookService: Sheet '$sheetName' formula range sr=$sr, er=$er. Records: ${tableData.length}",
+    );
 
     for (int i = 0; i < formulaValues.length; i++) {
       final vs = CellHelper.unwrap(formulaValues[i]).toString();
-      final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: summaryValRow));
-      
+      final cell = ws.cell(
+        CellIndex.indexByColumnRow(
+          columnIndex: col + i,
+          rowIndex: summaryValRow,
+        ),
+      );
+
       // 1. Calculate the static value using our high-precision AST engine
-      final dynamic calculatedValue = FormulaEngine.evaluate(vs, records, columnNames);
-      
+      final dynamic calculatedValue = FormulaEngine.evaluate(
+        vs,
+        records,
+        columnNames,
+      );
+
       // 2. Format the Excel formula string
-      final formulated = FormulaEngine.formulate(vs, columnNames, sr, er, sheetName: sheetName);
+      final formulated = FormulaEngine.formulate(
+        vs,
+        columnNames,
+        sr,
+        er,
+        sheetName: sheetName,
+      );
       String formulaStr = formulated ?? vs;
       if (formulaStr.startsWith('=')) {
         formulaStr = formulaStr.substring(1);
       }
-      
+
       // 3. Write HYBRID cell: Formula for live updates, Static Value for immediate accuracy
       cell.setFormula(formulaStr);
       if (calculatedValue is num) {
@@ -227,40 +284,53 @@ class WorkbookService {
     final sourceType = source['type'] ?? 'database';
 
     if (sourceType == 'database' || sourceType == 'report') {
-       // Table Header
-       for (int i = 0; i < columnNames.length; i++) {
-         ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row)).value = TextCellValue(columnNames[i]);
-       }
-       row++;
-       // Table Data
-       for (var rowData in tableData) {
-         final Map<String, dynamic> rowMap = Map<String, dynamic>.from(rowData as Map);
-         for (int i = 0; i < columnNames.length; i++) {
-           final val = CellHelper.unwrap(rowMap[columnNames[i]]);
-           final cell = ws.cell(CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row));
-           
-           // Check if it's a formula reference (starts with ! or contains ! and looks like a cell ref)
-           bool isFormula = val is String && (val.startsWith('=') || val.contains('!'));
+      // Table Header
+      for (int i = 0; i < columnNames.length; i++) {
+        ws
+            .cell(
+              CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row),
+            )
+            .value = TextCellValue(
+          columnNames[i],
+        );
+      }
+      row++;
+      // Table Data
+      for (var rowData in tableData) {
+        final Map<String, dynamic> rowMap = Map<String, dynamic>.from(
+          rowData as Map,
+        );
+        for (int i = 0; i < columnNames.length; i++) {
+          final val = CellHelper.unwrap(rowMap[columnNames[i]]);
+          final cell = ws.cell(
+            CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row),
+          );
 
-           if (sourceType == 'report' && isFormula) {
-              String formulaStr = val.toString();
-              if (formulaStr.startsWith('=')) {
-                formulaStr = formulaStr.substring(1);
-              }
-              cell.value = FormulaCellValue(formulaStr);
-           } else {
-              _setCellValue(ws, col + i, row, val);
-           }
-         }
-         row++;
-       }
+          // Check if it's a formula reference (starts with ! or contains ! and looks like a cell ref)
+          bool isFormula =
+              val is String && (val.startsWith('=') || val.contains('!'));
+
+          if (sourceType == 'report' && isFormula) {
+            String formulaStr = val.toString();
+            if (formulaStr.startsWith('=')) {
+              formulaStr = formulaStr.substring(1);
+            }
+            cell.value = FormulaCellValue(formulaStr);
+          } else {
+            _setCellValue(ws, col + i, row, val);
+          }
+        }
+        row++;
+      }
     }
   }
 
   static void _setCellValue(Sheet sheet, int c, int r, dynamic val) {
-    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
+    final cell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r),
+    );
     final unwrapped = CellHelper.unwrap(val);
-    
+
     if (unwrapped is num) {
       if (unwrapped.isNaN || unwrapped.isInfinite) {
         cell.value = IntCellValue(0);
@@ -292,14 +362,21 @@ class WorkbookService {
   Future<void> openReport(String? path) async {
     var pStr = path ?? _lastReportPath;
     if (pStr != null) {
-      if (!p.isAbsolute(pStr) && !pStr.startsWith('http') && !pStr.startsWith('data:') && _lastAggregatorDir != null) {
+      if (!p.isAbsolute(pStr) &&
+          !pStr.startsWith('http') &&
+          !pStr.startsWith('data:') &&
+          _lastAggregatorDir != null) {
         pStr = p.join(_lastAggregatorDir!, pStr);
       }
       await InvokerService.open(pStr);
     }
   }
 
-  void _triggerRemoteShares(List<dynamic> shares, String filePath, String fileName) async {
+  void _triggerRemoteShares(
+    List<dynamic> shares,
+    String filePath,
+    String fileName,
+  ) async {
     for (var share in shares) {
       final type = share['type'];
       final url = share['url'];
@@ -307,7 +384,8 @@ class WorkbookService {
         final Uri emailLaunchUri = Uri(
           scheme: 'mailto',
           path: url,
-          query: 'subject=Report: $fileName&body=Please find the attached report.',
+          query:
+              'subject=Report: $fileName&body=Please find the attached report.',
         );
         launchUrl(emailLaunchUri);
       } else if (type == 'url' && url != null) {
@@ -323,7 +401,11 @@ class WorkbookService {
 
   Future<void> _backupDatabase(String schemaName, String dbName) async {
     try {
-      final dbDir = await _fileService.getDatabasePath(schemaName, dbName, external: true);
+      final dbDir = await _fileService.getDatabasePath(
+        schemaName,
+        dbName,
+        external: true,
+      );
       await _fileService.ensureDir(dbDir);
     } catch (e) {
       debugPrint("WorkbookService: Backup failed: $e");
@@ -346,7 +428,10 @@ class WorkbookService {
 
       String? currentDir = _lastAggregatorDir;
       if (currentDir == null && aggregator.isNotEmpty) {
-        currentDir = await _fileService.getAggregatorPath(aggregator, external: true);
+        currentDir = await _fileService.getAggregatorPath(
+          aggregator,
+          external: true,
+        );
         _lastAggregatorDir = currentDir;
       }
 
@@ -361,24 +446,33 @@ class WorkbookService {
       final String sanitizedCol = _fileService.sanitizeName(collection);
       final bool isCacheMatch = kIsWeb
           ? (_lastReportPath != null &&
-              ((sanitizedCol.isNotEmpty && p.basename(_lastReportPath!.split('|').last).startsWith(sanitizedCol)) ||
-               _lastReportPath == targetPath))
+                ((sanitizedCol.isNotEmpty &&
+                        p
+                            .basename(_lastReportPath!.split('|').last)
+                            .startsWith(sanitizedCol)) ||
+                    _lastReportPath == targetPath))
           : (_lastReportPath == targetPath);
 
       if (_cachedExcel != null && isCacheMatch) {
-        debugPrint("WorkbookService: Using cached excel for getSheetNames: $targetPath");
+        debugPrint(
+          "WorkbookService: Using cached excel for getSheetNames: $targetPath",
+        );
         return _getMatchedSheets(_cachedExcel!, type);
       }
 
       // If exact file doesn't exist, try to find the latest matching the collection
-      if (!await io.fileExists(targetPath) && collection.isNotEmpty && currentDir != null) {
+      if (!await io.fileExists(targetPath) &&
+          collection.isNotEmpty &&
+          currentDir != null) {
         final dir = io.listDir(currentDir);
         final sanitizedCollection = collection.replaceAll(' ', '_');
         final matches = dir.where((e) {
-           final base = p.basename(e.path);
-           return (base.startsWith(collection) || base.startsWith(sanitizedCollection)) && base.endsWith('.xlsx');
+          final base = p.basename(e.path);
+          return (base.startsWith(collection) ||
+                  base.startsWith(sanitizedCollection)) &&
+              base.endsWith('.xlsx');
         }).toList();
-        
+
         if (matches.isNotEmpty) {
           // FIX: Sort by modification time to ensure we pick the truly 'latest' file
           matches.sort((a, b) {
@@ -387,7 +481,9 @@ class WorkbookService {
             return statB.modified.compareTo(statA.modified);
           });
           targetPath = matches.first.path;
-          debugPrint("WorkbookService: Discovered existing workbook for discovery at $targetPath");
+          debugPrint(
+            "WorkbookService: Discovered existing workbook for discovery at $targetPath",
+          );
         }
       }
 
@@ -398,7 +494,9 @@ class WorkbookService {
 
       final bytes = await io.readBytes(targetPath);
       if (bytes == null) {
-        debugPrint("WorkbookService: Could not read workbook for discovery at $targetPath");
+        debugPrint(
+          "WorkbookService: Could not read workbook for discovery at $targetPath",
+        );
         return [];
       }
       if (IsolateWorker.isInsideWorkerIsolate) {
@@ -419,10 +517,12 @@ class WorkbookService {
     for (var table in excel.tables.keys) {
       final sheet = excel.tables[table];
       if (sheet == null) continue;
-      
+
       // RN Logic: Check B1 (col 1, row 0) for the report type
       if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
-        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
+        final cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0),
+        );
         final val = CellHelper.unwrap(cell.value);
         if (val.toString().trim().toLowerCase() == type.toLowerCase()) {
           matchedSheets.add(table);
@@ -448,7 +548,10 @@ class WorkbookService {
 
       String? currentDir = _lastAggregatorDir;
       if (currentDir == null && aggregator.isNotEmpty) {
-        currentDir = await _fileService.getAggregatorPath(aggregator, external: true);
+        currentDir = await _fileService.getAggregatorPath(
+          aggregator,
+          external: true,
+        );
         _lastAggregatorDir = currentDir;
       }
 
@@ -463,25 +566,34 @@ class WorkbookService {
       final String sanitizedCol = _fileService.sanitizeName(collection);
       final bool isCacheMatch = kIsWeb
           ? (_lastReportPath != null &&
-              ((sanitizedCol.isNotEmpty && p.basename(_lastReportPath!.split('|').last).startsWith(sanitizedCol)) ||
-               _lastReportPath == targetPath))
+                ((sanitizedCol.isNotEmpty &&
+                        p
+                            .basename(_lastReportPath!.split('|').last)
+                            .startsWith(sanitizedCol)) ||
+                    _lastReportPath == targetPath))
           : (_lastReportPath == targetPath);
 
       if (_cachedExcel != null && isCacheMatch) {
         debugPrint("WorkbookService: Using cached excel for read: $targetPath");
         final sheet = _cachedExcel!.tables[sheetName];
         if (sheet != null) {
-          return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();
+          return sheet.rows
+              .map((row) => row.map((cell) => cell?.value).toList())
+              .toList();
         }
       }
 
       // If exact file doesn't exist, try to find the latest matching the collection
-      if (!await io.fileExists(targetPath) && collection.isNotEmpty && currentDir != null) {
+      if (!await io.fileExists(targetPath) &&
+          collection.isNotEmpty &&
+          currentDir != null) {
         final dir = io.listDir(currentDir);
         final sanitizedCollection = collection.replaceAll(' ', '_');
         final matches = dir.where((e) {
-           final base = p.basename(e.path);
-           return (base.startsWith(collection) || base.startsWith(sanitizedCollection)) && base.endsWith('.xlsx');
+          final base = p.basename(e.path);
+          return (base.startsWith(collection) ||
+                  base.startsWith(sanitizedCollection)) &&
+              base.endsWith('.xlsx');
         }).toList();
 
         if (matches.isNotEmpty) {
@@ -492,7 +604,9 @@ class WorkbookService {
             return statB.modified.compareTo(statA.modified);
           });
           targetPath = matches.first.path;
-          debugPrint("WorkbookService: Discovered existing workbook for read at $targetPath");
+          debugPrint(
+            "WorkbookService: Discovered existing workbook for read at $targetPath",
+          );
         }
       }
 
@@ -500,13 +614,15 @@ class WorkbookService {
       if (_cachedExcel != null && isCacheMatch) {
         final sheet = _cachedExcel!.tables[sheetName];
         if (sheet != null) {
-          return sheet.rows.map((row) => row.map((cell) => cell?.value).toList()).toList();
+          return sheet.rows
+              .map((row) => row.map((cell) => cell?.value).toList())
+              .toList();
         }
       }
 
       final bytes = await io.readBytes(targetPath);
       if (bytes == null) return [];
-      
+
       if (IsolateWorker.isInsideWorkerIsolate) {
         return readSheetInIsolate({'bytes': bytes, 'sheetName': sheetName});
       }
@@ -514,7 +630,7 @@ class WorkbookService {
         'readSheet',
         {'bytes': bytes, 'sheetName': sheetName},
       );
-      
+
       if (rawRows is List) {
         return rawRows.map((row) => (row as List).toList()).toList();
       }
@@ -530,10 +646,13 @@ class WorkbookService {
     final String dayName = DateFormat('E').format(dt);
     final String monthName = DateFormat('MMM').format(dt);
     final String rest = DateFormat('dd_yyyy_HH_mm_ss').format(dt);
-    
+
     final offset = dt.timeZoneOffset;
     final String hours = offset.inHours.abs().toString().padLeft(2, '0');
-    final String mins = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    final String mins = (offset.inMinutes.abs() % 60).toString().padLeft(
+      2,
+      '0',
+    );
     final String sign = offset.isNegative ? "-" : "";
     final String gmt = "GMT_$sign$hours$mins";
 
@@ -545,42 +664,170 @@ class WorkbookService {
     final List<int>? existingBytes = params['existingBytes'];
     final Map<String, dynamic> data = params['data'];
     final String sheetName = params['sheetName'];
-    
+
     Excel excel;
     if (existingBytes != null && existingBytes.isNotEmpty) {
       excel = Excel.decodeBytes(existingBytes);
     } else {
       excel = Excel.createExcel();
     }
-    
+
     final Sheet ws = excel[sheetName];
     _prepareSheet(ws, data, sheetName);
-    
+
     final List<String> sheetsToDelete = [];
     for (var sn in excel.sheets.keys) {
       if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
         sheetsToDelete.add(sn);
       }
     }
-    if (sheetsToDelete.isNotEmpty && excel.sheets.length > sheetsToDelete.length) {
+    if (sheetsToDelete.isNotEmpty &&
+        excel.sheets.length > sheetsToDelete.length) {
       for (var sn in sheetsToDelete) {
         excel.delete(sn);
       }
     }
-    return excel.save();
+    final savedBytes = excel.save();
+    if (savedBytes != null) {
+      return sortSheetsInBytes(savedBytes);
+    }
+    return savedBytes;
+  }
+
+  static final Map<String, int> _monthMap = {
+    'jan': 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12,
+  };
+
+  static bool isMonthly(String name) {
+    final regex = RegExp(r'^[A-Za-z]{3}_\d{4}$');
+    return regex.hasMatch(name);
+  }
+
+  static DateTime? parseSheetDate(String name) {
+    final monthlyRegex = RegExp(r'^([A-Za-z]{3})_(\d{4})$');
+    final monthlyMatch = monthlyRegex.firstMatch(name);
+    if (monthlyMatch != null) {
+      final monthStr = monthlyMatch.group(1)!;
+      final yearStr = monthlyMatch.group(2)!;
+      final month = _monthMap[monthStr.toLowerCase()] ?? 1;
+      final year = int.tryParse(yearStr) ?? DateTime.now().year;
+      return DateTime(year, month, 1);
+    }
+
+    final cleaned = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), ' ').trim();
+    final parts = cleaned.split(RegExp(r'\s+'));
+    if (parts.length >= 3) {
+      final day = int.tryParse(parts[0]);
+      if (day != null && day >= 1 && day <= 31) {
+        int? month;
+        final secondPart = parts[1].toLowerCase();
+        month = _monthMap[secondPart];
+        month ??= int.tryParse(parts[1]);
+
+        final year = int.tryParse(parts[2]);
+        if (month != null && year != null) {
+          return DateTime(year, month, day);
+        }
+      }
+    }
+    return DateTime.tryParse(cleaned) ?? DateTime.tryParse(name);
+  }
+
+  static int compareSheetNames(String a, String b) {
+    final bool aMonthly = isMonthly(a);
+    final bool bMonthly = isMonthly(b);
+    if (aMonthly && !bMonthly) return -1;
+    if (!aMonthly && bMonthly) return 1;
+
+    final dateA = parseSheetDate(a);
+    final dateB = parseSheetDate(b);
+    if (dateA != null && dateB != null) {
+      return dateB.compareTo(dateA); // descending
+    }
+    return b.compareTo(a);
+  }
+
+  static List<int> sortSheetsInBytes(List<int> bytes) {
+    try {
+      var archive = ZipDecoder().decodeBytes(bytes);
+
+      ArchiveFile? workbookXmlFile;
+      for (var file in archive.files) {
+        if (file.name == 'xl/workbook.xml') {
+          workbookXmlFile = file;
+          break;
+        }
+      }
+      if (workbookXmlFile == null) return bytes;
+
+      var xmlContent = utf8.decode(workbookXmlFile.content);
+
+      // Find <sheets>...</sheets>
+      var sheetsMatch = RegExp(
+        r'<sheets>(.*?)</sheets>',
+      ).firstMatch(xmlContent);
+      if (sheetsMatch == null) return bytes;
+
+      var sheetsInner = sheetsMatch.group(1)!;
+
+      // Extract all <sheet ...> style tags
+      var sheetRegex = RegExp(r'(<sheet\s+[^>]*name="([^"]+)"[^>]*>)');
+      var matches = sheetRegex.allMatches(sheetsInner).toList();
+
+      // Sort the matches by sheet name
+      matches.sort((m1, m2) {
+        var name1 = m1.group(2)!;
+        var name2 = m2.group(2)!;
+        return compareSheetNames(name1, name2);
+      });
+
+      var sortedSheetsStr = matches.map((m) => m.group(1)!).join('');
+
+      var newXmlContent = xmlContent.replaceFirst(sheetsInner, sortedSheetsStr);
+      var newContent = utf8.encode(newXmlContent);
+
+      var newArchive = Archive();
+      for (var file in archive.files) {
+        if (file.name == 'xl/workbook.xml') {
+          newArchive.addFile(
+            ArchiveFile('xl/workbook.xml', newContent.length, newContent),
+          );
+        } else {
+          newArchive.addFile(file);
+        }
+      }
+
+      return ZipEncoder().encode(newArchive) ?? bytes;
+    } catch (e) {
+      debugPrint("WorkbookService.sortSheetsInBytes Error: $e");
+      return bytes;
+    }
   }
 
   static List<String> getMatchedSheetsInIsolate(Map<String, dynamic> params) {
     final List<int> bytes = params['bytes'];
     final String type = params['type'];
     final excel = Excel.decodeBytes(bytes);
-    
+
     List<String> matchedSheets = [];
     for (var table in excel.tables.keys) {
       final sheet = excel.tables[table];
       if (sheet == null) continue;
       if (sheet.maxColumns > 1 && sheet.maxRows > 0) {
-        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0));
+        final cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0),
+        );
         final val = CellHelper.unwrap(cell.value);
         if (val.toString().trim().toLowerCase() == type.toLowerCase()) {
           matchedSheets.add(table);
@@ -596,7 +843,11 @@ class WorkbookService {
     final excel = Excel.decodeBytes(bytes);
     final sheet = excel.tables[sheetName];
     if (sheet == null) return [];
-    
-    return sheet.rows.map((row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList()).toList();
+
+    return sheet.rows
+        .map(
+          (row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList(),
+        )
+        .toList();
   }
 }

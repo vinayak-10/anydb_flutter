@@ -5,7 +5,10 @@ import 'storage_service.dart';
 
 abstract class EventPredicate {
   String getName();
-  Future<dynamic> execute(Map<String, dynamic> record, List<dynamic> prevResults);
+  Future<dynamic> execute(
+    Map<String, dynamic> record,
+    List<dynamic> prevResults,
+  );
 }
 
 class EventActionMatch extends EventPredicate {
@@ -21,7 +24,10 @@ class EventActionMatch extends EventPredicate {
   String getName() => "match";
 
   @override
-  Future<dynamic> execute(Map<String, dynamic> record, List<dynamic> prevResults) async {
+  Future<dynamic> execute(
+    Map<String, dynamic> record,
+    List<dynamic> prevResults,
+  ) async {
     final vals = extractor.extract(record);
     if (vals.isEmpty) return Future.error("No value extracted");
 
@@ -31,20 +37,30 @@ class EventActionMatch extends EventPredicate {
 
     if (predicate.containsKey('before')) {
       final before = predicate['before'];
-      final target = now.subtract(Duration(
-        days: (before['dd'] ?? 0),
-        // Simplification for months/years
-      )).subtract(Duration(days: (before['mm'] ?? 0) * 30 + (before['yy'] ?? 0) * 365));
-      
+      final target = now
+          .subtract(
+            Duration(
+              days: (before['dd'] ?? 0),
+              // Simplification for months/years
+            ),
+          )
+          .subtract(
+            Duration(
+              days: (before['mm'] ?? 0) * 30 + (before['yy'] ?? 0) * 365,
+            ),
+          );
+
       if (ts < target.millisecondsSinceEpoch) return ts;
     }
 
     if (predicate.containsKey('after')) {
       final after = predicate['after'];
-      final target = now.add(Duration(
-        days: (after['dd'] ?? 0),
-      )).add(Duration(days: (after['mm'] ?? 0) * 30 + (after['yy'] ?? 0) * 365));
-      
+      final target = now
+          .add(Duration(days: (after['dd'] ?? 0)))
+          .add(
+            Duration(days: (after['mm'] ?? 0) * 30 + (after['yy'] ?? 0) * 365),
+          );
+
       if (ts > target.millisecondsSinceEpoch) return ts;
     }
 
@@ -53,7 +69,8 @@ class EventActionMatch extends EventPredicate {
 
   int _toTimestamp(dynamic val) {
     if (val is num) return val.toInt();
-    if (val is String) return DateTime.tryParse(val)?.millisecondsSinceEpoch ?? 0;
+    if (val is String)
+      return DateTime.tryParse(val)?.millisecondsSinceEpoch ?? 0;
     return 0;
   }
 }
@@ -66,16 +83,27 @@ class EventActionMeta extends EventPredicate {
   late String what;
 
   EventActionMeta(this.schema, this.dbSchema, this.storage, dynamic repoIntf)
-      : srcExtractor = schema['parameter']['src'] != null ? ValueExtractor() : null {
+    : srcExtractor = schema['parameter']['src'] != null
+          ? ValueExtractor()
+          : null {
     if (srcExtractor != null) {
       srcExtractor!.init(schema['parameter']['src'], dbSchema, repoIntf);
     }
     switch (schema['parameter']['modify']) {
-      case "time.create": what = "c"; break;
-      case "time.update": what = "u"; break;
-      case "time.archive": what = "a"; break;
-      case "time.delete": what = "d"; break;
-      default: what = "";
+      case "time.create":
+        what = "c";
+        break;
+      case "time.update":
+        what = "u";
+        break;
+      case "time.archive":
+        what = "a";
+        break;
+      case "time.delete":
+        what = "d";
+        break;
+      default:
+        what = "";
     }
   }
 
@@ -83,7 +111,10 @@ class EventActionMeta extends EventPredicate {
   String getName() => "meta";
 
   @override
-  Future<dynamic> execute(Map<String, dynamic> record, List<dynamic> prevResults) async {
+  Future<dynamic> execute(
+    Map<String, dynamic> record,
+    List<dynamic> prevResults,
+  ) async {
     int value2Update = DateTime.now().millisecondsSinceEpoch;
     if (srcExtractor != null) {
       final vals = srcExtractor!.extract(record);
@@ -95,7 +126,10 @@ class EventActionMeta extends EventPredicate {
     bool updated = false;
 
     if (!valueO.containsKey("__meta__")) {
-      valueO["__meta__"] = {"time": {"c": 0, "u": 0}, "flags": []};
+      valueO["__meta__"] = {
+        "time": {"c": 0, "u": 0},
+        "flags": [],
+      };
       updated = true;
     }
 
@@ -145,7 +179,10 @@ class EventActionDelete extends EventPredicate {
   String getName() => "delete";
 
   @override
-  Future<dynamic> execute(Map<String, dynamic> record, List<dynamic> prevResults) async {
+  Future<dynamic> execute(
+    Map<String, dynamic> record,
+    List<dynamic> prevResults,
+  ) async {
     final key = record.keys.first;
     await storage.remove(key);
     return key;
@@ -158,26 +195,39 @@ class EventAction {
 
   EventAction(this.name);
 
-  void init(Map<String, dynamic> schema, List<dynamic> dbSchema, StorageService storage, dynamic repoIntf) {
+  void init(
+    Map<String, dynamic> schema,
+    List<dynamic> dbSchema,
+    StorageService storage,
+    dynamic repoIntf,
+  ) {
     final preds = schema['predicates'] as List<dynamic>? ?? [];
     for (var p in preds) {
       switch (p['type']) {
-        case 'match': predicates.add(EventActionMatch(p, dbSchema, repoIntf)); break;
-        case 'meta': predicates.add(EventActionMeta(p, dbSchema, storage, repoIntf)); break;
-        case 'delete': predicates.add(EventActionDelete(storage)); break;
+        case 'match':
+          predicates.add(EventActionMatch(p, dbSchema, repoIntf));
+          break;
+        case 'meta':
+          predicates.add(EventActionMeta(p, dbSchema, storage, repoIntf));
+          break;
+        case 'delete':
+          predicates.add(EventActionDelete(storage));
+          break;
         // Other types like export/generate can be added here
       }
     }
   }
 
-  Future<Map<String, dynamic>> executeAll(List<Map<String, dynamic>>? records) async {
+  Future<Map<String, dynamic>> executeAll(
+    List<Map<String, dynamic>>? records,
+  ) async {
     Map<String, dynamic> stats = {"success": 0, "failure": 0, "updated": false};
     if (records == null) return stats;
 
     for (var record in records) {
       List<dynamic> results = [];
       bool sequenceSuccess = true;
-      
+
       for (var pred in predicates) {
         try {
           final res = await pred.execute(record, results);
@@ -188,7 +238,7 @@ class EventAction {
           break;
         }
       }
-      
+
       if (sequenceSuccess) {
         stats["success"]++;
       } else {
@@ -239,7 +289,10 @@ class EventTriggerService {
     return result;
   }
 
-  Future<void> trigger(String eventName, [List<Map<String, dynamic>>? records]) async {
+  Future<void> trigger(
+    String eventName, [
+    List<Map<String, dynamic>>? records,
+  ]) async {
     final actions = _triggers[eventName];
     if (actions == null || actions.isEmpty) return;
 

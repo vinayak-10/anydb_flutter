@@ -1,0 +1,21 @@
+Make card appear in one screen without scroll
+Search bar eating too much vertical space in home view, optimize
+Daily report still picking up cached report
+Remove extra paddings
+Remove menu on header bar and give import export done openly
+In monthly report give month instead of date
+Per day only one report and one database backup
+Schema change from ui
+Keep keyboard autofocus off
+Cross on search when keyboard is off makes + fab reappear
+On search view make search bar stick below headerbar
+Remove plus from headerbar
+Revert to horizontal scroll
+Make totals ribbon cap at 2 rows, enable horizontal scroll in case of space crunch
+Consolidated monthly report taking longer time on second launch also
+Back button on home screen goes to select schema page, it should ask for confirmation to go out of app
+Make logo on search view smaller
+Give user option to change pic instead of logo on search view
+Consolidated monthly report should percolate to simple generate monthly.
+And all reports should be viewable in a consolidated excel
+After generating report from done button there is discrepancy in monthly report

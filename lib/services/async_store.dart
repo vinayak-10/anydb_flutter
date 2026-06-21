@@ -13,24 +13,37 @@ class AsyncStore {
     return _prefs!;
   }
 
-  static Future<List<Map<String, dynamic>>> getAll(String dbName, {String filter = 'Active', bool allRecords = false}) async {
+  static Future<List<Map<String, dynamic>>> getAll(
+    String dbName, {
+    String filter = 'Active',
+    bool allRecords = false,
+  }) async {
     if (!kIsWeb) {
-      return await SqliteHelper.getAll(dbName, filter: filter, allRecords: allRecords);
+      return await SqliteHelper.getAll(
+        dbName,
+        filter: filter,
+        allRecords: allRecords,
+      );
     }
 
     final prefs = await _getPrefs();
     final keys = prefs.getKeys().where((k) => k.startsWith('$dbName:'));
-    
+
     // Combine persistent keys and web cache keys
-    final allKeys = {...keys, ..._webCache.keys.where((k) => k.startsWith('$dbName:'))};
-    
+    final allKeys = {
+      ...keys,
+      ..._webCache.keys.where((k) => k.startsWith('$dbName:')),
+    };
+
     List<Map<String, dynamic>> items = <Map<String, dynamic>>[];
     for (var key in allKeys) {
       final String? data = _webCache[key] ?? prefs.getString(key);
       if (data != null) {
         try {
           final decoded = jsonDecode(data);
-          items.add({key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded});
+          items.add({
+            key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded,
+          });
         } catch (e) {
           debugPrint("AsyncStore.getAll error decoding $key: $e");
         }
@@ -41,7 +54,7 @@ class AsyncStore {
 
   static Future<Map<String, dynamic>?> get(String key) async {
     if (!kIsWeb) {
-      // Key format on Linux/Mobile is expected to be 'dbName:recordKey' 
+      // Key format on Linux/Mobile is expected to be 'dbName:recordKey'
       // but SqliteHelper expects dbName and recordKey separately.
       final parts = key.split(':');
       if (parts.length >= 2) {
@@ -51,16 +64,20 @@ class AsyncStore {
 
     if (kIsWeb && _webCache.containsKey(key)) {
       final decoded = jsonDecode(_webCache[key]!);
-      return <String, dynamic>{key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded};
+      return <String, dynamic>{
+        key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded,
+      };
     }
-    
+
     final prefs = await _getPrefs();
     final data = prefs.getString(key);
     if (data != null) {
       if (kIsWeb) _webCache[key] = data;
       try {
         final decoded = jsonDecode(data);
-        return <String, dynamic>{key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded};
+        return <String, dynamic>{
+          key: decoded is Map ? Map<String, dynamic>.from(decoded) : decoded,
+        };
       } catch (e) {
         debugPrint("AsyncStore.get error decoding $key: $e");
         return null;
@@ -100,18 +117,21 @@ class AsyncStore {
     }
   }
 
-  static Future<void> updateAll(String dbName, Map<String, dynamic> items) async {
+  static Future<void> updateAll(
+    String dbName,
+    Map<String, dynamic> items,
+  ) async {
     if (!kIsWeb) {
       await SqliteHelper.updateAll(dbName, items);
       return;
     }
 
     final prefs = await _getPrefs();
-    
+
     for (var entry in items.entries) {
       final jsonStr = jsonEncode(entry.value);
       if (kIsWeb) _webCache[entry.key] = jsonStr;
-      
+
       if (_isQuotaExceeded) continue;
 
       try {
@@ -122,7 +142,9 @@ class AsyncStore {
             e.toString().contains("quota") ||
             e.toString().contains("NS_ERROR_DOM_QUOTA_REACHED")) {
           _isQuotaExceeded = true;
-          debugPrint("AsyncStore.updateAll: Web Quota Exceeded. Kept in-memory.");
+          debugPrint(
+            "AsyncStore.updateAll: Web Quota Exceeded. Kept in-memory.",
+          );
         } else {
           rethrow;
         }
@@ -161,7 +183,7 @@ class AsyncStore {
 
   static Future<void> clearAll() async {
     if (!kIsWeb) {
-      // clearAll for SQLite would mean dropping everything, 
+      // clearAll for SQLite would mean dropping everything,
       // but usually we just want to clear per-db.
       // For now, we leave it as per-db clear via clear(dbName).
     }

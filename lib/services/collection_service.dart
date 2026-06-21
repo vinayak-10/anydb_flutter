@@ -26,10 +26,12 @@ class CollectionService {
 
   Future<Map<String, int>> init(dynamic collectionSchema) async {
     if (collectionSchema is! Map) {
-      debugPrint("CollectionService.init error: collectionSchema is not a Map!");
+      debugPrint(
+        "CollectionService.init error: collectionSchema is not a Map!",
+      );
       return {'database': 0, 'aggregator': 0};
     }
-    
+
     final Map<String, dynamic> cs = Map<String, dynamic>.from(collectionSchema);
     debugPrint("CollectionService.init: starting for ${cs['name']}");
     collectionName = cs['name'] ?? '';
@@ -63,36 +65,40 @@ class CollectionService {
             'dataRefIntf': (r) => getDb(r),
             'open': (what) => open(what),
           });
-          dbsList.add(AppContent(
-            name: name,
-            type: ContentType.database,
-            service: edb,
-            schema: item,
-          ));
+          dbsList.add(
+            AppContent(
+              name: name,
+              type: ContentType.database,
+              service: edb,
+              schema: item,
+            ),
+          );
           dbCount++;
         } else if (type == 'aggregator') {
           final agg = AggregatorService();
           agg.init(item);
-          aggsList.add(AppContent(
-            name: name,
-            type: ContentType.aggregator,
-            service: agg,
-            schema: item,
-          ));
+          aggsList.add(
+            AppContent(
+              name: name,
+              type: ContentType.aggregator,
+              service: agg,
+              schema: item,
+            ),
+          );
           aggCount++;
         }
       }
       contents.addAll(dbsList);
       contents.addAll(aggsList);
     }
-    
+
     return {'database': dbCount, 'aggregator': aggCount};
   }
 
   ElementDb? getDb(String name) {
     try {
       final content = contents.firstWhere(
-        (c) => c.type == ContentType.database && c.name == name
+        (c) => c.type == ContentType.database && c.name == name,
       );
       return content.service as ElementDb;
     } catch (_) {

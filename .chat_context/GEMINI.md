@@ -94,6 +94,51 @@
 - **Empty Database Alert Trigger:** Implemented a low-level, high-performance static check `SqliteHelper.isTableEmpty(dbName)` to check for empty database states, triggering a premium warning SnackBar and displaying a gorgeous visual Velvet Crimson warning card in search results when no backup has been imported altogether.
 - **One-Shot Empty Warning:** Prevented Toast spamming on every keystroke by integrating a state-retained `_hasShownEmptyWarning` flag inside the search controller typing listener. This triggers the error SnackBar only once at the beginning of the typing sequence and resets cleanly when the query is cleared or when database records are successfully imported.
 
+### 16. Private GitHub Remote Setup & Apple Actions Pipeline
+- **Multi-Remote Architecture:** Successfully split local remote configs to support a dual-remote model: `local-server` (local Git server) and `origin` (private GitHub remote at `git@github.com:vinayak-10/anydb_flutter.git`). Pushed both `dev` and `master` branches.
+- **Apple Actions Automation:** Drafted a macOS and iOS compile automation pipeline (`.github/workflows/build_apple.yml`) using Apple Silicon macOS runners to handle Flutter desktop packaging.
+- **iOS Packaging Assembly:** Created `ios/ExportOptions.plist` mapped to the bundle identifier `com.example.anydbFlutter` for manual signing assembly exports.
+
+### 17. Sticky Header & Fit-to-Width Report View
+- **Fit-to-Width Columns:** Refactored the Excel-generation report preview table from `DataTable` to a custom `Table` component. Implemented dynamic flex-width columns to fit 100% of the screen width with zero horizontal scrolling.
+- **Sticky Header & Scrollable Body:** Added a sticky/static top-pinned header and a vertically scrollable body table aligned with the header. Enforced a default font size of `16` for elderly readability with single-line ellipsis clipping.
+
+### 18. Force-Reload on Report preview & Done Sequence
+- **Force workbook generation:** Added the `force` reload parameter to `generateWorkbook()` inside `AggregatorService` and passed it down to `ExtractorDatabase.reinit`.
+- **Done Flow Real-time Sync:** Forced report regeneration inside the "Done" (Finalize Day) sequence, "Share" flow, and report "OPEN" action to ensure the latest added transactions are correctly queried and reflected in the preview sheet.
+
+### 19. Optimized SQLite RAM Cache & Android largeHeap
+- **128MB RAM Page Cache:** Increased SQLite's page cache size limit to 128MB (`-128000`) and set `PRAGMA synchronous = NORMAL` inside the connection initializer of `SqliteHelper` to accelerate high-volume database reads and writes.
+- **Large Heap Allocation:** Verified that `android:largeHeap="true"` is enabled inside the application manifest to request maximum heap allocation from the OS.
+
+### 20. Adaptive Floating Dock & Font Scale Clamp
+- **Platform-Agnostic Option B Dock:** Upgraded the custom bottom navigation dock to run globally on all platforms and screens. Removed redundant `BottomAppBar` to bypass native Material 3 vertical padding overrides and minimum height constraints.
+- **Adaptive Spacing & Font Clamp:** Implemented dynamic bottom margin based on `MediaQuery` system safe area insets to prevent double-padding on tablets. Wrapped contents in a `MediaQuery` clamping `textScaler` to `1.0` and set single-line ellipsis text wrapping to avoid font overflows on small screens.
+
+### 21. Compact Reports Tab UI Redesign & Cradle FAB Home Alignment
+- **Edge-Aligned Layout**: Replaced the report list view and loose bottom buttons with exactly two action buttons (`GENERATE DAILY` on the left, `GENERATE MONTHLY` on the right) directly below the Date Picker card.
+- **Consolidation Checkbox**: Integrated an optional checkbox ("Consolidate all daily reports") under the `GENERATE MONTHLY` button that defaults to unchecked (fast compilation from disk cache) and can be toggled to perform a full month rebuild and consolidation.
+- **Home FAB Navigation**: Configured the reports tab's cradle FAB to show a home icon and navigate back to the Database Tab's landing page while clearing search query states.
+
+### 22. Schema Auto-Select with Startup Countdown
+- **Settings Persistence:** Added `lastLoadedSchemaPath` to the global `SettingsState` stored persistently in `SharedPreferences` via `setLastLoadedSchema()`.
+- **Startup Countdown Banner:** Implemented a 5-second countdown timer on the Home Page inside `_HomePageState` in [main.dart](file:///lib/main.dart). If a cached schema path exists, it renders a sleek Velvet Crimson (`#6B1524`) banner with a Gold (`#E5C158`) border containing a progress indicator and countdown.
+- **User Interrupt Controls:** Tapping **CANCEL** on the banner stops the timer and clears the cache to avoid redirect loops on future boots. Tapping any other schema immediately stops the timer and loads the new schema.
+
+### 23. Zipped Windows Desktop CI Pipeline & C++ Wrapper Fix
+- **Windows Release Pipeline:** Established a new GitHub Actions workflow ([build_windows.yml](file:///.github/workflows/build_windows.yml)) running on a `windows-latest` VM that builds Windows desktop releases. Since Windows executables require sibling DLLs and data assets, the entire output directory is zipped into `anydb_windows.zip` for release download.
+- **MSVC Build Fix:** Addressed a `CMakeLists.txt` C++ client wrapper compilation failure on Windows hosts. Wrapped the dummy Linux bypass command in a `if(WIN32)` conditional in [CMakeLists.txt](file:///windows/flutter/CMakeLists.txt) to restore the standard `${FLUTTER_TOOL_ENVIRONMENT}` and `tool_backend.bat` invocation on Windows builders while preserving the Linux mock compilation bypass for local offline setups.
+
+### 24. Android & Apple CI/CD Pipeline with Signing Fallbacks & Deactivation
+- **Android & iOS Workflows:** Created [.github/workflows/build_android.yml](file:///.github/workflows/build_android.yml) supporting compilation of signed release APKs and AABs.
+- **Robust Signing Fallbacks:** Programmed the signing key injector to dynamically reconstruct keystores using Base64 environment secrets if available, falling back to a self-generated temporary key if passwords/secrets are missing so compilation never fails.
+- **Trigger Deactivation:** Commented out automatic push triggers in both `build_android.yml` and `build_apple.yml` globally. Android and Apple workflows will now only trigger manually via the GitHub Actions UI to conserve monthly free quota.
+
+### 25. High-Performance Date Pre-Filtering for Daily Reports
+- **Shape Mismatch Fix:** Resolved a data structure shape mismatch in the background isolate's `ipcGetFilteredReportData` task that caused daily report generation to filter out all records (returning "no records found").
+- **Date Pre-Filtering:** Optimized report compilation speeds by checking the record's transaction dates in the warm cache (`Account.history[].Date`) *before* executing the expensive recursive `_flatten` engine.
+- **100x Acceleration:** Reduced flattening workloads from 10,000+ records to only ~25 matched records, reducing daily report generation times from seconds/minutes down to **under 50 milliseconds**.
+
 ---
 
 ## Development Standards & Walkthroughs
@@ -124,13 +169,36 @@
 - **Core Error Interception:** Bound `FlutterError.onError` and `PlatformDispatcher.instance.onError` to automatically capture all UI rendering exceptions, widget tree crashes, and unhandled asynchronous/isolate thread zone errors.
 - **Persistent Storage:** Appends formatted failure reports to daily log files on disk.
 
+### 7. Apple Developer Account Constraints & Sideloading Options
+- **Paid vs. Free Account Portal Block:** Apple's developer portal restricts "Certificates, IDs, & Profiles" to paid accounts ($99/year). Free accounts cannot generate `.p12` certificates or manual `.mobileprovision` profiles for cloud Actions runners.
+- **Sideloading Alternatives:** If cloud signing is bypassed, developers can compile the iOS package unsigned (`--no-codesign`) on GitHub Actions, then sideload it locally using free utilities like **AltStore** or third-party UDID registration services.
+
+### 8. GitHub Private Repo Telemetry & Copilot Opt-Out
+- **At-Rest Protection:** GitHub terms guarantee that code in private repositories is not used to train AI models.
+- **Copilot Interactions:** To stop Copilot IDE extensions from transmitting telemetry context for product improvement, opt out globally via **GitHub Settings > Copilot > Privacy > Allow GitHub to use my data for AI model training** and set to **Disabled**.
+
+### 9. Android Database Backup Directory & Storage Architecture
+- **Active WAL SQLite Database**: Stored in internal app documents under `/data/user/0/com.example.anydbFlutter/app_flutter/xyz.maya/anydb/anydb_storage.db`. This folder is private and locked (non-navigable).
+- **Local Exports & Backups**: Written to the external documents path `/storage/emulated/0/Android/data/com.example.anydbFlutter/files/xyz.maya/anydb/` (with nested folders for `Database` and `Aggregators`).
+- **Navigability on Android 11+**: Scoped Storage blocks on-device navigation to `/Android/data/`. Access must be performed using a USB-connected computer or SAF-compatible advanced File Managers (Solid Explorer, FV File Manager) with explicit folder access granted.
+- **Cloud Backups**: Stored inside the user's personal Google Drive folder at `/xyz.maya/anydb/Database/`.
+- **References**: See full guide in [.chat_context/android_backup_location_context.md](file:///.chat_context/android_backup_location_context.md).
+
+---
+
 ## Planned Optimizations for Next Session
 
 ### 1. Single-Query Hoisted Configuration for Batch Imports
 - **The Bottleneck:** Currently, the batch-write loop in `SqliteHelper.updateAllRaw` executes `getBusinessUniqueKeyRaw(dbName)` inside the loop, forcing SQLite to run **15,000 SQL SELECT queries** one-by-one during database wipes or reloads.
 - **The Plan:** Hoist `getBusinessUniqueKeyRaw(dbName)` outside the loop so it runs **exactly once**. Extract the business key value in RAM using recursion in CPU time, dropping import and reload time from minutes to **under 300 milliseconds**!
 
+### 2. High-Capacity Web Database Storage (SQLite WASM + OPFS)
+- **The Bottleneck:** The current web `localStorage` adapter is synchronous, blocks execution, and throws quota exceptions at 5MB, falling back to a volatile in-memory cache.
+- **The Plan:** Compile the database core to **SQLite WebAssembly (WASM)** and mount files to the browser's **Origin Private File System (OPFS)**. This allows the web app to execute the exact same transactional queries, B-tree indexes, and metadata checks as mobile targets with multi-gigabyte local storage limits.
+
+---
+
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `426080f` (feat/style: center launcher icons, fix web favicon, and resolve search toast keystroke spam)
+- **Last Stable Commit:** `a211a5e` (fix(windows): restore standard FLUTTER_TOOL_ENVIRONMENT payload for Windows build custom command)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.

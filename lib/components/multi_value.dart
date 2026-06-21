@@ -87,7 +87,15 @@ class MultiValue extends GenInterface {
   }
 
   @override
-  Widget editor({required Key key, required Function(dynamic) onChanged, Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent, dynamic frefs, int? index, bool? autoFocus, bool? refresh}) {
+  Widget editor({
+    required Key key,
+    required Function(dynamic) onChanged,
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
+  }) {
     return _MultiValueEditor(
       key: key,
       multiValue: this,
@@ -97,7 +105,11 @@ class MultiValue extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     return _MultiValueDisplay(multiValue: this, onChanged: onChanged);
   }
 }
@@ -105,9 +117,15 @@ class MultiValue extends GenInterface {
 class _MultiValueEditor extends StatefulWidget {
   final MultiValue multiValue;
   final Function(dynamic) onChanged;
-  final Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent;
+  final Function(GenInterface, Map<String, dynamic>, List<dynamic>)?
+  cbNotifyParent;
 
-  const _MultiValueEditor({super.key, required this.multiValue, required this.onChanged, this.cbNotifyParent});
+  const _MultiValueEditor({
+    super.key,
+    required this.multiValue,
+    required this.onChanged,
+    this.cbNotifyParent,
+  });
 
   @override
   State<_MultiValueEditor> createState() => _MultiValueEditorState();
@@ -144,7 +162,9 @@ class _MultiValueEditorState extends State<_MultiValueEditor> {
       margin: const EdgeInsets.symmetric(vertical: 4.0),
       child: ExpansionTile(
         title: Text(widget.multiValue.name),
-        subtitle: Text("Total ${widget.multiValue.componentsArray.length} entries"),
+        subtitle: Text(
+          "Total ${widget.multiValue.componentsArray.length} entries",
+        ),
         children: [
           TextButton.icon(
             onPressed: _addRow,
@@ -156,18 +176,27 @@ class _MultiValueEditorState extends State<_MultiValueEditor> {
             List<GenInterface> components = entry.value;
             return Dismissible(
               key: ValueKey("mv_dismiss_${idx}_${components.hashCode}"),
-              background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)),
+              background: Container(
+                color: Colors.red,
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                child: const Icon(Icons.delete, color: Colors.white),
+              ),
               direction: DismissDirection.endToStart,
               onDismissed: (direction) => _deleteRow(idx),
               child: ListTile(
                 title: Column(
-                  children: components.map((c) => c.editor(
-                    key: ValueKey("mv_edit_${c.getName()}_$idx"),
-                    onChanged: (val) {
-                      widget.onChanged(val);
-                    },
-                    cbNotifyParent: widget.cbNotifyParent,
-                  )).toList(),
+                  children: components
+                      .map(
+                        (c) => c.editor(
+                          key: ValueKey("mv_edit_${c.getName()}_$idx"),
+                          onChanged: (val) {
+                            widget.onChanged(val);
+                          },
+                          cbNotifyParent: widget.cbNotifyParent,
+                        ),
+                      )
+                      .toList(),
                 ),
                 trailing: const Icon(Icons.drag_handle, color: Colors.grey),
               ),
@@ -197,7 +226,13 @@ class _MultiValueDisplay extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
-              children: components.map((c) => Expanded(child: c.display(onlyValue: true, onChanged: onChanged))).toList(),
+              children: components
+                  .map(
+                    (c) => Expanded(
+                      child: c.display(onlyValue: true, onChanged: onChanged),
+                    ),
+                  )
+                  .toList(),
             ),
           );
         }).toList(),

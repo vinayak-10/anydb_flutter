@@ -30,7 +30,7 @@ class TextAscii extends GenInterface {
     oSchema = jsonObj;
     this.repoIntf = repoIntf;
     final Map<String, dynamic> jo = jsonObj;
-    
+
     name = jo['name']?.toString() ?? "";
     id = jo['id']?.toString() ?? "";
     value = jo['defaultValue']?.toString() ?? "";
@@ -82,13 +82,13 @@ class TextAscii extends GenInterface {
 
   @override
   Widget editor({
-    required Key key, 
-    required Function(dynamic) onChanged, 
+    required Key key,
+    required Function(dynamic) onChanged,
     Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
-    dynamic frefs, 
-    int? index, 
-    bool? autoFocus, 
-    bool? refresh
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
   }) {
     return _TextAsciiEditor(
       key: key,
@@ -110,7 +110,11 @@ class TextAscii extends GenInterface {
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     if (onlyValue) return Text(value);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),

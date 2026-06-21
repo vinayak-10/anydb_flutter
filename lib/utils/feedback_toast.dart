@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class FeedbackToast {
   /// Displays a floating success toast notification with optional action
   static void success(
-    BuildContext context, 
+    BuildContext context,
     String message, {
     String? actionLabel,
     VoidCallback? onAction,
@@ -22,7 +22,7 @@ class FeedbackToast {
 
   /// Displays a floating error toast notification with optional action
   static void error(
-    BuildContext context, 
+    BuildContext context,
     String message, {
     String? actionLabel,
     VoidCallback? onAction,
@@ -41,7 +41,7 @@ class FeedbackToast {
 
   /// Displays an undoable success toast notification
   static void undoable(
-    BuildContext context, 
+    BuildContext context,
     String message, {
     required VoidCallback onUndo,
     Duration duration = const Duration(milliseconds: 4000),
@@ -59,7 +59,7 @@ class FeedbackToast {
 
   /// Displays a retryable error toast notification
   static void retryable(
-    BuildContext context, 
+    BuildContext context,
     String message, {
     required VoidCallback onRetry,
     Duration duration = const Duration(milliseconds: 5000),
@@ -87,9 +87,15 @@ class FeedbackToast {
   }) {
     ScaffoldMessenger.of(context).clearSnackBars();
 
-    final themeColor = isError ? const Color(0xFF6B1524) : const Color(0xFF6B1524);
-    final borderColor = isError ? const Color(0xFFE9967A) : const Color(0xFFE5C158);
-    final iconColor = isError ? const Color(0xFFE9967A) : const Color(0xFFE5C158);
+    final themeColor = isError
+        ? const Color(0xFF6B1524)
+        : const Color(0xFF6B1524);
+    final borderColor = isError
+        ? const Color(0xFFE9967A)
+        : const Color(0xFFE5C158);
+    final iconColor = isError
+        ? const Color(0xFFE9967A)
+        : const Color(0xFFE5C158);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -132,7 +138,10 @@ class FeedbackToast {
                 TextButton(
                   style: TextButton.styleFrom(
                     foregroundColor: borderColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),

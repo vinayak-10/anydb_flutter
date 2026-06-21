@@ -39,6 +39,7 @@ dependencies:
   sqlite3: ^2.4.3
   sqlite3_flutter_libs: ^0.5.25
   excel: ^4.0.6
+  archive: ^3.6.1
   intl: ^0.20.2
   google_sign_in: ^7.2.0
   googleapis: ^16.0.0
@@ -52,6 +53,7 @@ dependencies:
   extension_google_sign_in_as_googleapis_auth: ^3.0.0
   open_filex: ^4.5.0
   flutter_svg: ^2.0.10
+  flutter_secure_storage: ^10.3.1
 
 dev_dependencies:
   flutter_test:

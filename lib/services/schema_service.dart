@@ -24,7 +24,7 @@ class SchemaService {
   Future<void> init() async {
     debugPrint("SchemaService: init started");
     _schemas = [];
-    
+
     // 1. Load from internal storage
     final internalRoot = await _fileService.getInternalRoot();
     await _loadFromDir(internalRoot);
@@ -34,10 +34,14 @@ class SchemaService {
       final externalRoot = await _fileService.getExternalRoot();
       await _loadFromDir(externalRoot);
     } catch (e) {
-      debugPrint("SchemaService: External storage schema loading bypassed or failed: $e");
+      debugPrint(
+        "SchemaService: External storage schema loading bypassed or failed: $e",
+      );
     }
-    
-    debugPrint("SchemaService: init finished, loaded ${_schemas.length} schemas");
+
+    debugPrint(
+      "SchemaService: init finished, loaded ${_schemas.length} schemas",
+    );
   }
 
   Future<void> _loadFromDir(String path) async {
@@ -51,13 +55,14 @@ class SchemaService {
         debugPrint("SchemaService: checking schema at $filePath");
         try {
           final content = await _fileService.readJson(filePath);
-          if (content != null && content is Map && content.containsKey('name')) {
+          if (content != null &&
+              content is Map &&
+              content.containsKey('name')) {
             // Avoid duplicates by path
             if (!_schemas.any((s) => s.path == filePath)) {
-              _schemas.add(SchemaInfo(
-                name: content['name'].toString(),
-                path: filePath,
-              ));
+              _schemas.add(
+                SchemaInfo(name: content['name'].toString(), path: filePath),
+              );
             }
           }
         } catch (e) {
@@ -65,7 +70,9 @@ class SchemaService {
         }
       }
     } catch (e) {
-      debugPrint("SchemaService: Failed to load schemas from directory '$path': $e");
+      debugPrint(
+        "SchemaService: Failed to load schemas from directory '$path': $e",
+      );
     }
   }
 
@@ -75,7 +82,9 @@ class SchemaService {
       String defaultJson;
       if (kIsWeb) {
         // On Web, fetch the unbundled schema dynamically via HTTP
-        final response = await http.get(Uri.parse('assets/RKM_Physio (1).json'));
+        final response = await http.get(
+          Uri.parse('assets/RKM_Physio (1).json'),
+        );
         if (response.statusCode == 200) {
           defaultJson = response.body;
         } else {
@@ -88,11 +97,15 @@ class SchemaService {
         }
       } else {
         // On native platforms, the schema from assets folder is not bundled per request
-        debugPrint("SchemaService: default schema is not bundled on native platforms");
+        debugPrint(
+          "SchemaService: default schema is not bundled on native platforms",
+        );
         return;
       }
       final decoded = jsonDecode(defaultJson);
-      final Map<String, dynamic> content = decoded is Map ? decoded.cast<String, dynamic>() : decoded;
+      final Map<String, dynamic> content = decoded is Map
+          ? decoded.cast<String, dynamic>()
+          : decoded;
       await addSchema(content);
     } catch (e) {
       debugPrint("SchemaService Error: Failed to load default schema. $e");
@@ -107,13 +120,13 @@ class SchemaService {
     } else if (!kIsWeb) {
       // In IO mode, we expect a string path
       if (input is String) {
-         if (await io.fileExists(input)) {
-           final rawStr = await io.readString(input);
-           content = await IsolateWorker.instance.execute<Map<String, dynamic>>(
-             'parseSchema',
-             {'jsonStr': rawStr},
-           );
-         }
+        if (await io.fileExists(input)) {
+          final rawStr = await io.readString(input);
+          content = await IsolateWorker.instance.execute<Map<String, dynamic>>(
+            'parseSchema',
+            {'jsonStr': rawStr},
+          );
+        }
       }
     }
 
@@ -121,7 +134,7 @@ class SchemaService {
 
     final rootPath = await _fileService.getInternalRoot();
     final fileName = "${_fileService.sanitizeName(content['name'])}.json";
-    
+
     if (!kIsWeb && input is String) {
       final targetPath = p.join(rootPath, fileName);
       await io.copyFile(input, targetPath);
@@ -136,18 +149,30 @@ class SchemaService {
   Future<void> _initializeSchemaStructure(Map<String, dynamic> schema) async {
     final schemaName = schema['name'];
     final contents = schema['contents'] as List<dynamic>?;
-    
+
     if (contents != null) {
       for (var content in contents) {
         final name = content['name'];
         final type = content['type'];
-        
+
         if (type == 'database') {
-          await _fileService.ensureDir(await _fileService.getDatabasePath(schemaName, name));
-          await _fileService.ensureDir(await _fileService.getDatabasePath(schemaName, name, external: true));
+          await _fileService.ensureDir(
+            await _fileService.getDatabasePath(schemaName, name),
+          );
+          await _fileService.ensureDir(
+            await _fileService.getDatabasePath(
+              schemaName,
+              name,
+              external: true,
+            ),
+          );
         } else if (type == 'aggregator') {
-          await _fileService.ensureDir(await _fileService.getAggregatorPath(schemaName));
-          await _fileService.ensureDir(await _fileService.getAggregatorPath(schemaName, external: true));
+          await _fileService.ensureDir(
+            await _fileService.getAggregatorPath(schemaName),
+          );
+          await _fileService.ensureDir(
+            await _fileService.getAggregatorPath(schemaName, external: true),
+          );
         }
       }
     }
@@ -157,7 +182,7 @@ class SchemaService {
     final externalRoot = await _fileService.getExternalRoot();
     final fileName = p.basename(info.path);
     final targetPath = p.join(externalRoot, fileName);
-    
+
     if (!kIsWeb) {
       await io.copyFile(info.path, targetPath);
     } else {

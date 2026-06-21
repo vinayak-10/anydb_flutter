@@ -5,7 +5,11 @@ class ValueExtractor {
   List<dynamic> values = [];
   String type = '';
 
-  void init(Map<String, dynamic> schema, List<dynamic> dbSchema, dynamic repoIntf) {
+  void init(
+    Map<String, dynamic> schema,
+    List<dynamic> dbSchema,
+    dynamic repoIntf,
+  ) {
     type = schema['type'] ?? '';
     if (type == 'values') {
       values = schema['value'] ?? [];

@@ -9,7 +9,10 @@ import 'package:path/path.dart' as p;
 abstract class StorageInterface {
   String getType();
   Future<void> init(String dbName, Map<String, dynamic> config);
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false});
+  Future<List<Map<String, dynamic>>> fetch({
+    String filter = 'Active',
+    bool allRecords = false,
+  });
   Future<void> add(String key, Map<String, dynamic> val);
   Future<void> remove(String key);
   Future<Map<String, dynamic>?> get(String key);
@@ -30,8 +33,15 @@ class LocalStore extends StorageInterface {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async {
-    final results = await AsyncStore.getAll(_dbName, filter: filter, allRecords: allRecords);
+  Future<List<Map<String, dynamic>>> fetch({
+    String filter = 'Active',
+    bool allRecords = false,
+  }) async {
+    final results = await AsyncStore.getAll(
+      _dbName,
+      filter: filter,
+      allRecords: allRecords,
+    );
     return results.map((e) {
       final key = e.keys.first.replaceFirst('$_dbName:', '');
       return <String, dynamic>{key: e.values.first};
@@ -85,7 +95,9 @@ class LocalStore extends StorageInterface {
       'dbImportData',
       {'dbName': _dbName, 'data': data},
     );
-    debugPrint("LocalStore (Native): Imported $importedCount records (Total input: ${data.length}).");
+    debugPrint(
+      "LocalStore (Native): Imported $importedCount records (Total input: ${data.length}).",
+    );
   }
 
   @override
@@ -123,7 +135,10 @@ Map<String, dynamic> processImportLogic(Map<String, dynamic> params) {
         key = m.keys.first;
         val = Map<String, dynamic>.from(m.values.first as Map);
       } else {
-        key = m['Card Number']?.toString() ?? m['key']?.toString() ?? m['id']?.toString();
+        key =
+            m['Card Number']?.toString() ??
+            m['key']?.toString() ??
+            m['id']?.toString();
         val = m;
       }
 
@@ -165,7 +180,10 @@ int _getLatestDateStatic(Map<String, dynamic> record) {
               if (d is int) {
                 dt = d;
               } else if (d is String) {
-                dt = DateTime.tryParse(d)?.millisecondsSinceEpoch ?? int.tryParse(d) ?? 0;
+                dt =
+                    DateTime.tryParse(d)?.millisecondsSinceEpoch ??
+                    int.tryParse(d) ??
+                    0;
               }
               if (dt > maxDate) maxDate = dt;
             }
@@ -173,7 +191,7 @@ int _getLatestDateStatic(Map<String, dynamic> record) {
         }
       }
     }
-    
+
     final meta = record['__meta__'];
     if (meta is Map) {
       final time = meta['time'];
@@ -201,14 +219,21 @@ class FileStore extends StorageInterface {
     _dbName = dbName;
     if (!kIsWeb) {
       final externalRoot = await _fileService.getExternalRoot();
-      _dbPath = p.join(externalRoot, 'database', _fileService.sanitizeName(dbName));
+      _dbPath = p.join(
+        externalRoot,
+        'database',
+        _fileService.sanitizeName(dbName),
+      );
     } else {
       _dbPath = "web_dummy_path";
     }
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async {
+  Future<List<Map<String, dynamic>>> fetch({
+    String filter = 'Active',
+    bool allRecords = false,
+  }) async {
     if (kIsWeb) return [];
     final filePath = p.join(_dbPath, '$_dbName.json');
     final data = await _fileService.readJson(filePath);
@@ -265,13 +290,17 @@ class FileStore extends StorageInterface {
   Future<void> importData(List<dynamic> data) async {
     if (kIsWeb) return;
     // Asynchronously offload serialization and disk write to the background Process Isolate
-    IsolateWorker.instance.execute('bgWriteJson', {
-      'path': _dbPath,
-      'fileName': '$_dbName.json',
-      'content': data,
-    }).catchError((e) {
-      debugPrint("FileStore: Background JSON write failed in Process Isolate: $e");
-    });
+    IsolateWorker.instance
+        .execute('bgWriteJson', {
+          'path': _dbPath,
+          'fileName': '$_dbName.json',
+          'content': data,
+        })
+        .catchError((e) {
+          debugPrint(
+            "FileStore: Background JSON write failed in Process Isolate: $e",
+          );
+        });
   }
 
   @override
@@ -294,14 +323,21 @@ class RestApiStore extends StorageInterface {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async => []; 
+  Future<List<Map<String, dynamic>>> fetch({
+    String filter = 'Active',
+    bool allRecords = false,
+  }) async => [];
 
   @override
   Future<void> add(String key, Map<String, dynamic> val) async {
     if (_url.isEmpty) return;
     try {
       if (_method == 'POST') {
-        await http.post(Uri.parse(_url), body: jsonEncode({key: val}), headers: {"Content-Type": "application/json"});
+        await http.post(
+          Uri.parse(_url),
+          body: jsonEncode({key: val}),
+          headers: {"Content-Type": "application/json"},
+        );
       }
     } catch (e) {
       debugPrint("RestApiStore: Sync failed: $e");
@@ -347,7 +383,10 @@ class StorageService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetch({String filter = 'Active', bool allRecords = false}) async {
+  Future<List<Map<String, dynamic>>> fetch({
+    String filter = 'Active',
+    bool allRecords = false,
+  }) async {
     if (_storages.isEmpty) return [];
     for (var s in _storages) {
       final results = await s.fetch(filter: filter, allRecords: allRecords);

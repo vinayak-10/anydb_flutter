@@ -12,7 +12,7 @@ class DropDown extends GenInterface {
     'intf': null,
     'initialized': false,
     'initFn': null,
-    'data': {'displayKeys': [], 'store': []}
+    'data': {'displayKeys': [], 'store': []},
   };
   Map<String, dynamic>? oSchema;
   dynamic repoIntf;
@@ -32,10 +32,10 @@ class DropDown extends GenInterface {
     oSchema = Map<String, dynamic>.from(jsonObj);
     this.repoIntf = repoIntf;
     final Map<String, dynamic> jo = Map<String, dynamic>.from(jsonObj);
-    
+
     name = jo['name']?.toString() ?? "";
     id = jo['id']?.toString() ?? "";
-    
+
     final rawDefault = jo['defaultValue'];
     if (rawDefault is List) {
       values = rawDefault;
@@ -44,7 +44,7 @@ class DropDown extends GenInterface {
     } else {
       values = [];
     }
-    
+
     searchable = jo['searchable'] ?? false;
 
     if (jo.containsKey('source')) {
@@ -77,7 +77,15 @@ class DropDown extends GenInterface {
   }
 
   @override
-  Widget editor({required Key key, required Function(dynamic) onChanged, Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent, dynamic frefs, int? index, bool? autoFocus, bool? refresh}) {
+  Widget editor({
+    required Key key,
+    required Function(dynamic) onChanged,
+    Function(GenInterface, Map<String, dynamic>, List<dynamic>)? cbNotifyParent,
+    dynamic frefs,
+    int? index,
+    bool? autoFocus,
+    bool? refresh,
+  }) {
     return _DropDownEditor(
       key: key,
       label: name,
@@ -92,11 +100,15 @@ class DropDown extends GenInterface {
 
   List<String> allowedValues() {
     // This should ideally come from the source reference
-    return ["Option 1", "Option 2", "Option 3"]; 
+    return ["Option 1", "Option 2", "Option 3"];
   }
 
   @override
-  Widget display({bool onlyValue = false, List<dynamic>? displayComponent, VoidCallback? onChanged}) {
+  Widget display({
+    bool onlyValue = false,
+    List<dynamic>? displayComponent,
+    VoidCallback? onChanged,
+  }) {
     final displayValue = values.join(", ");
     if (onlyValue) return Text(displayValue);
     return Padding(
@@ -146,8 +158,13 @@ class _DropDownEditorState extends State<_DropDownEditor> {
         return Padding(
           padding: const EdgeInsets.all(8.0),
           child: DropdownButtonFormField<String>(
-            initialValue: widget.items.contains(_currentValue) ? _currentValue : null,
-            style: TextStyle(fontSize: settings.inputFontSize, color: Colors.black87),
+            initialValue: widget.items.contains(_currentValue)
+                ? _currentValue
+                : null,
+            style: TextStyle(
+              fontSize: settings.inputFontSize,
+              color: Colors.black87,
+            ),
             decoration: InputDecoration(
               labelText: widget.label,
               border: const OutlineInputBorder(),
@@ -155,10 +172,7 @@ class _DropDownEditorState extends State<_DropDownEditor> {
               fillColor: Colors.grey[100],
             ),
             items: widget.items.map((String value) {
-              return DropdownMenuItem<String>(
-                value: value,
-                child: Text(value),
-              );
+              return DropdownMenuItem<String>(value: value, child: Text(value));
             }).toList(),
             onChanged: (val) {
               setState(() => _currentValue = val);

@@ -17,7 +17,7 @@ enum TokenType {
   rightParen,
   comma,
   colon,
-  eof
+  eof,
 }
 
 class Token {
@@ -66,7 +66,8 @@ class Lexer {
 
   Token _readNumber() {
     int start = _pos;
-    while (_pos < input.length && (_isDigit(input[_pos]) || input[_pos] == '.')) {
+    while (_pos < input.length &&
+        (_isDigit(input[_pos]) || input[_pos] == '.')) {
       _pos++;
     }
     return Token(TokenType.number, input.substring(start, _pos), start);
@@ -98,12 +99,12 @@ class Lexer {
     // A reference can contain spaces if it's like $My Column.START
     // Current regex was: \$([^$.(),=<>:!]+)(?:\.START|\.END|(?=[,=\)<>:]|$))
     // It stops at . ( ) , = < > : ! or EOF
-    
+
     int contentStart = _pos;
     while (_pos < input.length && !r'$.(),=<>:!'.contains(input[_pos])) {
       _pos++;
     }
-    
+
     String colName = input.substring(contentStart, _pos).trim();
     String suffix = "";
     if (_pos < input.length && input[_pos] == '.') {
@@ -116,7 +117,7 @@ class Lexer {
         suffix = ".END";
       }
     }
-    
+
     return Token(TokenType.reference, colName + suffix, start);
   }
 
@@ -124,15 +125,24 @@ class Lexer {
     int start = _pos;
     String c = input[_pos++];
     switch (c) {
-      case '(': return Token(TokenType.leftParen, "(", start);
-      case ')': return Token(TokenType.rightParen, ")", start);
-      case ',': return Token(TokenType.comma, ",", start);
-      case ':': return Token(TokenType.colon, ":", start);
-      case '+': return Token(TokenType.plus, "+", start);
-      case '-': return Token(TokenType.minus, "-", start);
-      case '*': return Token(TokenType.star, "*", start);
-      case '/': return Token(TokenType.slash, "/", start);
-      case '=': return Token(TokenType.equal, "=", start);
+      case '(':
+        return Token(TokenType.leftParen, "(", start);
+      case ')':
+        return Token(TokenType.rightParen, ")", start);
+      case ',':
+        return Token(TokenType.comma, ",", start);
+      case ':':
+        return Token(TokenType.colon, ":", start);
+      case '+':
+        return Token(TokenType.plus, "+", start);
+      case '-':
+        return Token(TokenType.minus, "-", start);
+      case '*':
+        return Token(TokenType.star, "*", start);
+      case '/':
+        return Token(TokenType.slash, "/", start);
+      case '=':
+        return Token(TokenType.equal, "=", start);
       case '>':
         if (_pos < input.length && input[_pos] == '=') {
           _pos++;

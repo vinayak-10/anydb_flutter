@@ -34,8 +34,14 @@ class _ConfirmActionState extends State<ConfirmAction> {
         title: Text(widget.title),
         content: Text(widget.message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("CANCEL")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("PROCEED", style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("CANCEL"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("PROCEED", style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
