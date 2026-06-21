@@ -7,6 +7,7 @@ import 'meta_service.dart';
 import 'event_trigger_service.dart';
 import 'sqlite_helper.dart';
 import 'isolate_worker.dart';
+import 'workbook_service.dart';
 
 class ElementDb {
   String key = '';
@@ -544,6 +545,8 @@ class DatabaseUpdateNotifier extends Notifier<Map<String, int>> {
   Map<String, int> build() => {};
 
   void increment(String dbKey) {
+    WorkbookService().clearCache();
+    IsolateWorker.instance.execute('dbClearCache', {'dbName': dbKey});
     state = {...state, dbKey: (state[dbKey] ?? 0) + 1};
   }
 }

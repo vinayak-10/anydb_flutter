@@ -451,6 +451,11 @@ Future<dynamic> _executeDbTask(
   Map<String, Map<String, dynamic>> bgCache,
 ) async {
   switch (type) {
+    case 'dbClearCache':
+      final String dbName = params['dbName'];
+      bgCache.remove(dbName);
+      return null;
+
     case 'dbGetBusinessUniqueKey':
       final String schemaName = params['schemaName'];
       return await SqliteHelper.getBusinessUniqueKeyRaw(schemaName);
