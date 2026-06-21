@@ -10,6 +10,8 @@ import 'aggregator_service.dart';
 import 'io_helper.dart' as io;
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
+import '../core/cell_helper.dart';
+import 'package:excel/excel.dart';
 
 class IsolateWorker {
   static final IsolateWorker _instance = IsolateWorker._internal();
@@ -180,6 +182,15 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
             .map((e) => {e.key: e.value})
             .toList();
         replyPort.send(list);
+        return;
+      }
+
+      if (message['type'] == 'ipcGetLatestTimestamp') {
+        final SendPort replyPort = message['replyPort'];
+        final Map<String, dynamic> params = message['params'] ?? {};
+        final String dbName = params['dbName'] ?? "";
+        final int ts = await SqliteHelper.getLatestTimestamp(dbName);
+        replyPort.send(ts);
         return;
       }
 
@@ -726,6 +737,12 @@ Future<dynamic> _executeProcessTask(
       final String targetPath = params['targetPath'];
       final Map<String, dynamic> aggregatorJson = params['aggregatorJson'];
 
+      final DateTime targetDate = date is DateTime
+          ? date
+          : (date is String
+                ? DateTime.tryParse(date) ?? DateTime.now()
+                : DateTime.now());
+
       // B. Initialize Aggregator Service and AggregatorReport in Isolate first to resolve source schema name
       final agg = AggregatorService();
       agg.init(aggregatorJson);
@@ -738,6 +755,189 @@ Future<dynamic> _executeProcessTask(
       final String sourceType = report.extractor.isNotEmpty
           ? (report.extractor[0].extractor?.source['type'] ?? 'database')
           : 'database';
+
+      final meta = agg.getFileName({
+        "predicate": {"value": targetDate},
+      }, timestamp: targetDate);
+      final String collection = meta['collection'] ?? reportKey;
+      final String sanitizedCollection = FileService().sanitizeName(collection);
+
+      // 1. Fetch latest database update timestamp from Database Isolate via IPC
+      final ReceivePort replyPortTs = ReceivePort();
+      dbSendPort!.send({
+        'type': 'ipcGetLatestTimestamp',
+        'replyPort': replyPortTs.sendPort,
+        'params': {
+          'dbName': sourceDbName,
+        },
+      });
+      final int latestDbTs = await replyPortTs.first as int;
+      replyPortTs.close();
+
+      // 2. Discover existing workbook files for this report/date in target directory
+      final String parentDir = p.dirname(targetPath);
+      dynamic latestFile;
+      if (await io.dirExists(parentDir)) {
+        final dirFiles = io.listDir(parentDir);
+        final matches = dirFiles.where((e) {
+          final base = p.basename(e.path);
+          return base.startsWith(sanitizedCollection) && base.endsWith('.xlsx');
+        }).toList();
+
+        if (matches.isNotEmpty) {
+          matches.sort((a, b) {
+            final statA = io.getFileStatSync(a.path);
+            final statB = io.getFileStatSync(b.path);
+            return statB.modified.compareTo(statA.modified);
+          });
+          latestFile = matches.first;
+        }
+      }
+
+      // 3. Validate existing cached report on disk if database has no new changes since its modification
+      if (latestFile != null) {
+        final fileStat = io.getFileStatSync(latestFile.path);
+        final fileModifiedMs = fileStat.modified.millisecondsSinceEpoch;
+
+        if (fileModifiedMs >= latestDbTs) {
+          final fileBytes = await io.readBytes(latestFile.path);
+          if (fileBytes != null && fileBytes.isNotEmpty) {
+            try {
+              final excel = Excel.decodeBytes(fileBytes);
+              final Map<String, dynamic> predObj = report.extractor[0].extractor!.predicates.isNotEmpty
+                  ? Map<String, dynamic>.from(report.extractor[0].extractor!.predicates[0] as Map)
+                  : {};
+              String finalSheetName = FileService().sanitizeName(
+                report.extractor[0].predicatedName(
+                  predObj,
+                  targetDate.toIso8601String(),
+                ),
+              );
+              if (report.key.toLowerCase().contains('monthly')) {
+                finalSheetName = DateFormat('MMM_yyyy').format(targetDate);
+              }
+
+              final sheet = excel.tables[finalSheetName];
+              if (sheet != null && sheet.rows.length >= 9) {
+                // Parse headers (rows 1-4)
+                final List<dynamic> headerData = [];
+                for (int r = 1; r < 5; r++) {
+                  if (r < sheet.rows.length) {
+                    final cells = sheet.rows[r];
+                    final rowVals =
+                        cells
+                            .map((c) => CellHelper.unwrap(c?.value))
+                            .toList();
+                    if (rowVals.any(
+                      (v) => v != null && v.toString().isNotEmpty,
+                    )) {
+                      headerData.add(rowVals);
+                    }
+                  }
+                }
+
+                // Parse Summary (row 5-6)
+                final Map<String, dynamic> summary = {};
+                final Map<String, dynamic> summaryFormulas = {};
+                final summaryTitleCells = sheet.rows[5];
+                final summaryValueCells = sheet.rows[6];
+                for (int col = 0; col < summaryTitleCells.length; col++) {
+                  final title =
+                      CellHelper.unwrap(summaryTitleCells[col]?.value)
+                          ?.toString()
+                          .trim();
+                  if (title != null && title.isNotEmpty) {
+                    final cellVal = summaryValueCells[col]?.value;
+                    final calculatedVal = CellHelper.unwrap(cellVal);
+                    final formula = cellVal is FormulaCellValue ? cellVal.formula : null;
+                    summary[title] = calculatedVal ?? '';
+                    summaryFormulas[title] = formula ?? calculatedVal ?? '';
+                  }
+                }
+
+                // Parse Data rows (row 8 headers, row 9+ data)
+                final dataHeaderCells = sheet.rows[8];
+                final List<String> columnNames =
+                    dataHeaderCells
+                        .map((c) => CellHelper.unwrap(c?.value)?.toString() ?? '')
+                        .toList();
+
+                final List<List<dynamic>> aoa = [];
+                aoa.add(columnNames);
+
+                final List<Map<String, dynamic>> dataRows = [];
+                for (int r = 9; r < sheet.rows.length; r++) {
+                  final cells = sheet.rows[r];
+                  final rowVals =
+                      cells
+                          .map((c) => CellHelper.unwrap(c?.value))
+                          .toList();
+                  final Map<String, dynamic> record = {};
+                  for (int col = 0; col < columnNames.length; col++) {
+                    if (col < rowVals.length && columnNames[col].isNotEmpty) {
+                      record[columnNames[col]] = rowVals[col] ?? '';
+                    }
+                  }
+                  dataRows.add(record);
+                  aoa.add(
+                    columnNames.map((name) => record[name] ?? '').toList(),
+                  );
+                }
+
+                final Map<String, dynamic> metaPredicate = {
+                  if (report.extractor[0].extractor!.predicates.isNotEmpty)
+                    ...Map<String, dynamic>.from(report.extractor[0].extractor!.predicates[0] as Map),
+                  "value": targetDate.toIso8601String(),
+                };
+
+                final reportData = {
+                  "meta": {
+                    "collection": collection,
+                    "entry": report.extractor[0].predicatedName(
+                      metaPredicate,
+                      targetDate.toIso8601String(),
+                    ),
+                    "predicate": metaPredicate,
+                  },
+                  "name": reportKey,
+                  "source": report.extractor[0].extractor?.source ?? {},
+                  "header": headerData,
+                  "data": dataRows,
+                  "summary": summary,
+                  "summaryFormulas": summaryFormulas,
+                };
+
+                debugPrint(
+                  "Isolate Process Worker: Validated existing report file on disk: ${latestFile.path}. Database has no changes since file creation.",
+                );
+                return {
+                  'data': reportData,
+                  'path': latestFile.path,
+                  'aoa': aoa,
+                };
+              }
+            } catch (e) {
+              debugPrint(
+                "Isolate Process Worker: Cached report validation failed for ${latestFile.path}: $e. Regenerating...",
+              );
+            }
+          }
+        }
+      }
+
+      // 4. Regenerate: Clean up any previous matching reports to avoid version thrashing
+      if (await io.dirExists(parentDir)) {
+        final dirFiles = io.listDir(parentDir);
+        final matches = dirFiles.where((e) {
+          final base = p.basename(e.path);
+          return base.startsWith(sanitizedCollection) && base.endsWith('.xlsx');
+        }).toList();
+        for (var match in matches) {
+          try {
+            await io.deleteFile(match.path);
+          } catch (_) {}
+        }
+      }
 
       Map<String, dynamic> s;
 
@@ -759,11 +959,6 @@ Future<dynamic> _executeProcessTask(
         s = Map<String, dynamic>.from(sRaw as Map);
       } else {
         // For report-sourced extractors (like unconsolidated Monthly), read directly from files on disk
-        final DateTime targetDate = date is DateTime
-            ? date
-            : (date is String
-                  ? DateTime.tryParse(date) ?? DateTime.now()
-                  : DateTime.now());
         final extIntf = report.extractor[0];
 
         s = await extIntf.extractor!.applyPredicate(
@@ -777,11 +972,6 @@ Future<dynamic> _executeProcessTask(
       }
 
       // Inject final sheetName
-      final DateTime targetDate = date is DateTime
-          ? date
-          : (date is String
-                ? DateTime.tryParse(date) ?? DateTime.now()
-                : DateTime.now());
       final extIntf = report.extractor[0];
       final String entryName = extIntf.predicatedName(
         extIntf.extractor!.predicates[0] ?? {},
@@ -816,7 +1006,6 @@ Future<dynamic> _executeProcessTask(
         writeParams,
       );
       if (fileBytes != null) {
-        final parentDir = p.dirname(targetPath);
         await FileService().ensureDir(parentDir);
         await io.writeBytes(targetPath, Uint8List.fromList(fileBytes));
       }

@@ -143,4 +143,8 @@ class SqliteHelper {
   static Future<bool> isTableEmpty(String dbName) async {
     return true;
   }
+
+  static Future<int> getLatestTimestamp(String dbName) async {
+    return 0;
+  }
 }

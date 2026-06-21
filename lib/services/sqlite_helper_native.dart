@@ -705,4 +705,18 @@ class SqliteHelper {
     }
     return true;
   }
+
+  static Future<int> getLatestTimestamp(String dbName) async {
+    if (kIsWeb) return 0;
+    final db = await _database;
+    await initTimestampsTable();
+    final result = db.select(
+      'SELECT MAX(timestamp) as max_ts FROM "record_timestamps" WHERE db_name = ?',
+      [dbName],
+    );
+    if (result.isNotEmpty && result.first['max_ts'] != null) {
+      return result.first['max_ts'] as int;
+    }
+    return 0;
+  }
 }
