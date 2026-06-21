@@ -394,9 +394,12 @@ class AggregatorService {
           if (dailyData['data'] != null &&
               (dailyData['data'] as List).isNotEmpty) {
             final reportData = dailyReport.generateReport(dailyData);
+            // Pass dailyReport so daily sheets are written under the
+            // DAILY collection name, not the monthly report's name (Bug 6 fix).
             final result = await generateReport(
               reportData,
               timestamp: batchTimestamp,
+              sourceReport: dailyReport,
             );
             lastPath = result['path'];
             generatedDays++;
@@ -445,9 +448,15 @@ class AggregatorService {
   Future<Map<String, dynamic>> generateReport(
     Map<String, dynamic> pd, {
     DateTime? timestamp,
+    // Optionally specify which report to use for meta computation.
+    // Defaults to reports.last (monthly) when null, which is correct
+    // for the final monthly summary sheet.
+    // Pass the DAILY report when writing individual daily sheets so that
+    // they are stored under the daily collection name (Bug 6 fix).
+    AggregatorReport? sourceReport,
   }) async {
     if (reports.isEmpty) throw "No reports defined in aggregator";
-    final report = reports.last;
+    final report = sourceReport ?? reports.last;
     final Map<String, dynamic> metaObj =
         (pd['meta'] as Map<String, dynamic>?) ?? {};
     Map<String, dynamic> nmeta = report.applyMeta(metaObj);
