@@ -939,21 +939,26 @@ bool _recordMatchesDatePredicate(
     final rd = _parseDateStatic(rootVal);
     if (rd != null) {
       if (matchType == 'month') {
-        if (rd.month == targetDate.month && rd.year == targetDate.year)
+        if (rd.month == targetDate.month && rd.year == targetDate.year) {
           return true;
+        }
       } else {
         if (rd.day == targetDate.day &&
             rd.month == targetDate.month &&
-            rd.year == targetDate.year)
+            rd.year == targetDate.year) {
           return true;
+        }
       }
     }
   }
 
-  // Check simple account transactions
-  final account = record['Account'];
-  if (account is Map && account.isNotEmpty) {
-    final history = account.values.first;
+  // Check simple account transactions dynamically
+  for (var entry in record.entries) {
+    if (entry.key == '__meta__') continue;
+    var history = entry.value;
+    if (history is Map && history.isNotEmpty) {
+      history = history.values.first;
+    }
     if (history is List) {
       for (var tx in history) {
         if (tx is Map) {
@@ -962,13 +967,15 @@ bool _recordMatchesDatePredicate(
           final rd = _parseDateStatic(val);
           if (rd != null) {
             if (matchType == 'month') {
-              if (rd.month == targetDate.month && rd.year == targetDate.year)
+              if (rd.month == targetDate.month && rd.year == targetDate.year) {
                 return true;
+              }
             } else {
               if (rd.day == targetDate.day &&
                   rd.month == targetDate.month &&
-                  rd.year == targetDate.year)
+                  rd.year == targetDate.year) {
                 return true;
+              }
             }
           }
         }
