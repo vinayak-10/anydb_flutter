@@ -681,10 +681,9 @@ class GoogleDriveService {
       throw "Failed to prepare data for backup: $e";
     }
 
-    final fileName =
-        '${dbName}_backup_${DateTime.now().millisecondsSinceEpoch}.json';
+    final fileName = formatBackupFileName(dbName, DateTime.now());
     final List<String> path = schemaName != null
-        ? ['xyz.maya', 'anydb', schemaName, 'Database']
+        ? ['xyz.maya', 'anydb', 'schema', schemaName, 'database', dbName]
         : ['xyz.maya'];
     await uploadJson(jsonStr, fileName, path: path);
   }
@@ -710,3 +709,26 @@ class GoogleUserNotifier extends Notifier<GoogleUser?> {
 final googleUserProvider = NotifierProvider<GoogleUserNotifier, GoogleUser?>(
   GoogleUserNotifier.new,
 );
+
+String formatBackupFileName(String dbName, DateTime dt) {
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  final dayName = weekdays[dt.weekday - 1];
+  final monthName = months[dt.month - 1];
+  final day = dt.day;
+  final year = dt.year;
+  
+  final hour = dt.hour.toString().padLeft(2, '0');
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final second = dt.second.toString().padLeft(2, '0');
+  
+  final offset = dt.timeZoneOffset;
+  final sign = offset.isNegative ? '-' : '+';
+  final offsetHours = offset.inHours.abs().toString().padLeft(2, '0');
+  final offsetMinutes = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+  final tzString = 'GMT$sign$offsetHours$offsetMinutes';
+  
+  final formattedDate = '${dayName}_${monthName}_${day}_${year}_${hour}_${minute}_${second}_$tzString';
+  return '${dbName}_$formattedDate.json'.replaceAll('+', '_');
+}

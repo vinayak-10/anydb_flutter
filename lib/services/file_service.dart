@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'platform_check.dart';
@@ -39,17 +40,7 @@ class FileService {
 
     String? rootPath;
     if (isAndroid()) {
-      final extDir = await pp.getExtStorageDir();
-      if (extDir != null) {
-        // extDir is typically: /storage/emulated/0/Android/data/com.example.anydb_flutter/files
-        // We parse out '/Android/data' to locate the root of user-accessible storage
-        final idx = extDir.indexOf('/Android/data');
-        if (idx != -1) {
-          rootPath = p.join(extDir.substring(0, idx), 'Documents');
-        } else {
-          rootPath = extDir;
-        }
-      }
+      rootPath = await pp.getExtStorageDir();
     }
 
     rootPath ??= await pp.getAppDocsDir();
@@ -256,6 +247,38 @@ class FileService {
       await writeJson(path, fileName, {"error": error});
     } else {
       await io.writeString(p.join(path, fileName), error);
+    }
+  }
+
+  static const MethodChannel _fileSaverChannel = MethodChannel('com.example.anydb_flutter/file_saver');
+
+  Future<void> copyToPublicDocuments(String sourcePath, String displayName) async {
+    if (kIsWeb) return;
+    if (isAndroid()) {
+      try {
+        await _fileSaverChannel.invokeMethod('saveFileToDocuments', {
+          'sourcePath': sourcePath,
+          'displayName': displayName,
+          'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+      } catch (e) {
+        debugPrint("FileService: Failed to copy to public Documents via MediaStore: $e");
+      }
+    } else if (isLinux()) {
+      try {
+        final home = pp.getHomeDir();
+        if (home != null) {
+          final targetDir = p.join(home, 'Documents', 'xyz.maya', 'anydb');
+          await ensureDir(targetDir);
+          final targetPath = p.join(targetDir, displayName);
+          final bytes = await io.readBytes(sourcePath);
+          if (bytes != null) {
+            await io.writeBytes(targetPath, bytes);
+          }
+        }
+      } catch (e) {
+        debugPrint("FileService: Failed to copy to public Documents on Linux: $e");
+      }
     }
   }
 }

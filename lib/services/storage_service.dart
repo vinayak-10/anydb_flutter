@@ -102,7 +102,7 @@ class LocalStore extends StorageInterface {
 
   @override
   Future<List<dynamic>> exportData() async {
-    return await fetch();
+    return await fetch(filter: 'All', allRecords: true);
   }
 }
 

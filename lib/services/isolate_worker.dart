@@ -9,6 +9,7 @@ import 'file_service.dart';
 import 'aggregator_service.dart';
 import 'io_helper.dart' as io;
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 
 class IsolateWorker {
   static final IsolateWorker _instance = IsolateWorker._internal();
@@ -810,6 +811,8 @@ Future<dynamic> _executeProcessTask(
         writeParams,
       );
       if (fileBytes != null) {
+        final parentDir = p.dirname(targetPath);
+        await FileService().ensureDir(parentDir);
         await io.writeBytes(targetPath, Uint8List.fromList(fileBytes));
       }
 

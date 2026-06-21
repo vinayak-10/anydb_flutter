@@ -138,6 +138,7 @@ class WorkbookService {
 
     if (fileBytes != null) {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
+      await _fileService.copyToPublicDocuments(_lastReportPath!, fileName);
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 

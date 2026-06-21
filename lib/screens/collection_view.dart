@@ -371,10 +371,11 @@ class _CollectionViewState extends ConsumerState<CollectionView>
             await Future.delayed(
               const Duration(milliseconds: 150),
             ); // Yield to paint status text
+            final fileName = formatBackupFileName(db.key, DateTime.now());
             await googleDriveService.uploadJson(
               jsonStr,
-              "${db.key}_backup_${DateTime.now().millisecondsSinceEpoch}.json",
-              path: ['xyz.maya', 'anydb', widget.title, 'Database'],
+              fileName,
+              path: ['xyz.maya', 'anydb', 'schema', widget.title, 'database', db.key],
             );
           } else {
             throw "Not logged into Google Drive";
@@ -3681,11 +3682,38 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               ListTile(
                 leading: const Icon(Icons.download, color: Colors.blue),
                 title: const Text("Save to Device (Internal Storage)"),
-                onTap: () {
+                onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("File saved to: $filePath")),
-                  );
+                  if (kIsWeb) {
+                    await InvokerService.open(filePath);
+                    return;
+                  }
+                  try {
+                    final fileName = filePath.split('/').last.split('\\').last;
+                    final String? outputFile = await FilePicker.platform.saveFile(
+                      dialogTitle: 'Select where to save the report:',
+                      fileName: fileName,
+                      type: FileType.any,
+                    );
+                    if (outputFile != null) {
+                      final bytes = await io.readBytes(filePath);
+                      if (bytes != null) {
+                        await io.writeBytes(outputFile, Uint8List.fromList(bytes));
+                        messenger.showSnackBar(
+                          SnackBar(content: Text("File saved to: $outputFile")),
+                        );
+                      } else {
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text("Failed to read report source file")),
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text("Save Error: $e")),
+                    );
+                  }
                 },
               ),
               ListTile(

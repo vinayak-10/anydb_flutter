@@ -74,6 +74,21 @@ jobs:
         run: |
           flutter build appbundle --release --dart-define-from-file=secrets.json
 
+      - name: ⚙️ Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+
+      - name: 📝 Configure rclone
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+
+      - name: 📤 Upload APK to Google Drive
+        run: |
+          rclone copy -P build/app/outputs/flutter-apk/app-release.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
+
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
