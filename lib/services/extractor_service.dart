@@ -606,7 +606,8 @@ class ExtractorReport extends Extractor {
         for (var col in columns) {
           if (col is Map) {
             final String title = col['title'].toString();
-            final String formula = col['formula'].toString();
+            String formula = col['formula'].toString().trim();
+            if (formula.startsWith('=')) formula = formula.substring(1);
 
             // Pattern to match cell reference: 'Source'!A7 or Daily!B4
             // We handle optional single quotes around the sheet name
@@ -662,7 +663,10 @@ class ExtractorReport extends Extractor {
               if (foundIdx != -1 && foundIdx < values.length) {
                 row[title] = CellHelper.unwrap(values[foundIdx]);
               } else {
-                row[title] = formula.replaceAll(sourceReportName, sheetName);
+                debugPrint(
+                  "ExtractorReport: WARNING - No cell coordinate in formula for '$title'. Formula='$formula'. Defaulting to 0.",
+                );
+                row[title] = 0;
               }
             }
           }

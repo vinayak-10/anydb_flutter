@@ -4288,7 +4288,9 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              "Date: ${DateFormat.yMd().format(widget.selectedDate)}${widget.selectedRange != null ? ' (Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)})' : ''}",
+                              widget.report.key.toLowerCase().contains('monthly')
+                                  ? "Month: ${DateFormat('MMMM yyyy').format(widget.selectedDate)}"
+                                  : "Date: ${DateFormat.yMd().format(widget.selectedDate)}${widget.selectedRange != null ? ' (Range: ${DateFormat.yMd().format(widget.selectedRange!.start)} - ${DateFormat.yMd().format(widget.selectedRange!.end)})' : ''}",
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade700,
@@ -4326,7 +4328,9 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "Date: ${DateFormat.yMMMMd().format(widget.selectedDate)}",
+                                widget.report.key.toLowerCase().contains('monthly')
+                                    ? "Month: ${DateFormat('MMMM yyyy').format(widget.selectedDate)}"
+                                    : "Date: ${DateFormat.yMMMMd().format(widget.selectedDate)}",
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -4541,9 +4545,9 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                         children: [
                           ListTile(
                             leading: const Icon(Icons.calendar_today),
-                            title: const Text("Report Date"),
+                            title: const Text("Report Month"),
                             subtitle: Text(
-                              DateFormat.yMMMMd().format(widget.selectedDate),
+                              DateFormat('MMMM yyyy').format(widget.selectedDate),
                             ),
                             trailing: const Icon(Icons.edit),
                             onTap: () async {

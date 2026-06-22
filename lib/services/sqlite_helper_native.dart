@@ -23,6 +23,17 @@ class SqliteHelper {
     _db!.execute('PRAGMA cache_size = -128000;');
     _db!.execute('PRAGMA temp_store = MEMORY;');
 
+    // DLQ: Dead-letter queue for corrupted records
+    _db!.execute('''
+      CREATE TABLE IF NOT EXISTS corrupted_records (
+        id TEXT NOT NULL,
+        db_name TEXT NOT NULL,
+        raw_value TEXT,
+        error_msg TEXT,
+        captured_at INTEGER DEFAULT (strftime('%s','now'))
+      )
+    ''');
+
     // Guaranteed creation of Auxiliary Registry on app start
     _db!.execute('''
       CREATE TABLE IF NOT EXISTS "record_timestamps" (
@@ -617,7 +628,9 @@ class SqliteHelper {
                 }
               }
             }
-          } catch (_) {}
+          } catch (e) {
+            _quarantineRecord(db, dbName, id, valueStr, e.toString());
+          }
           stmt.execute([dbName, id, isActive, ts]);
         }
         stmt.dispose();
@@ -718,5 +731,24 @@ class SqliteHelper {
       return result.first['max_ts'] as int;
     }
     return 0;
+  }
+  static Future<void> _quarantineRecord(
+    sql.Database db,
+    String dbName,
+    String id,
+    String rawValue,
+    String errorMsg,
+  ) async {
+    try {
+      db.execute(
+        'INSERT OR REPLACE INTO corrupted_records (id, db_name, raw_value, error_msg) VALUES (?, ?, ?, ?)',
+        [id, dbName, rawValue, errorMsg],
+      );
+      debugPrint(
+        'SqliteHelper DLQ: Quarantined record id="$id" db="$dbName": $errorMsg',
+      );
+    } catch (e) {
+      debugPrint('SqliteHelper DLQ insert failed: $e');
+    }
   }
 }

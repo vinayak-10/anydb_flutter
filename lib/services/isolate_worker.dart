@@ -2,21 +2,88 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
-import 'workbook_service.dart';
 import 'schema_service.dart';
 import 'sqlite_helper.dart'; // Direct warm database access
 import 'file_service.dart';
+import 'path_manager.dart';
 import 'aggregator_service.dart';
 import 'io_helper.dart' as io;
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import '../core/cell_helper.dart';
 import 'package:excel/excel.dart';
+import 'excel_generation_service.dart';
+import 'excel_binary_helper.dart';
+import 'report_formula_service.dart';
 
 class IsolateWorker {
   static final IsolateWorker _instance = IsolateWorker._internal();
   static IsolateWorker get instance => _instance;
   IsolateWorker._internal();
+
+  static List<int>? writeExcelInIsolate(Map<String, dynamic> params) {
+    final List<int>? existingBytes = params['existingBytes'];
+    final Map<String, dynamic> data = params['data'];
+    final String sheetName = params['sheetName'];
+    final String targetPath = params['targetPath'] ?? "";
+
+    Excel excel;
+    if (existingBytes != null && existingBytes.isNotEmpty) {
+      excel = Excel.decodeBytes(existingBytes);
+    } else if (ExcelGenerationService.cachedExcel != null &&
+        ExcelGenerationService.cachedExcelPath == targetPath &&
+        targetPath.isNotEmpty) {
+      excel = ExcelGenerationService.cachedExcel!;
+    } else {
+      excel = Excel.createExcel();
+    }
+
+    final Sheet ws = excel[sheetName];
+
+    // 1. Calculate formulas & cache registries using the Formula Module
+    final calcResult = ReportFormulaService.calculateSummaryFormulas(
+      jo: data,
+      sheetName: sheetName,
+      summaryValRow: 6,
+      dataStartRow: 8,
+    );
+
+    // 2. Structure sheet and populate cells using the Excel Module
+    final Map<String, String> formulaRegistry = {};
+    ExcelGenerationService.populateSheet(
+      ws: ws,
+      jo: data,
+      sheetName: sheetName,
+      calcResult: calcResult,
+      formulaRegistry: formulaRegistry,
+    );
+
+    // 3. Clear placeholder Sheets
+    final List<String> sheetsToDelete = [];
+    for (var sn in excel.sheets.keys) {
+      if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
+        sheetsToDelete.add(sn);
+      }
+    }
+    if (sheetsToDelete.isNotEmpty &&
+        excel.sheets.length > sheetsToDelete.length) {
+      for (var sn in sheetsToDelete) {
+        excel.delete(sn);
+      }
+    }
+
+    final savedBytes = excel.save();
+    if (savedBytes != null) {
+      // 4. Inject static pre-calculated results & sort sheets using Binary Module
+      final processed = ExcelBinaryHelper.postProcessBytes(savedBytes, formulaRegistry);
+      if (targetPath.isNotEmpty) {
+        ExcelGenerationService.cachedExcel = Excel.decodeBytes(processed);
+        ExcelGenerationService.cachedExcelPath = targetPath;
+      }
+      return processed;
+    }
+    return savedBytes;
+  }
 
   Isolate? _dbIsolate;
   SendPort? _dbSendPort;
@@ -93,12 +160,10 @@ class IsolateWorker {
       _processSendPort!.send({'type': 'initIpc', 'dbSendPort': _dbSendPort});
 
       // 4. Resolve raw internal and external paths on main thread and establish SQLite folder mapping
-      final internalRoot = await FileService().getInternalRoot();
-      final externalRoot = await FileService().getExternalRoot();
-      final initPathsMsg = {
+      if (!PathManager.isInitialized) await PathManager.init();
+      final initPathsMsg = <String, dynamic>{
         'type': 'initPaths',
-        'internalRoot': internalRoot,
-        'externalRoot': externalRoot,
+        ...PathManager.toIsolateMessage(),
       };
 
       _dbSendPort!.send(initPathsMsg);
@@ -637,7 +702,9 @@ Future<dynamic> _executeDbTask(
           if (decoded is Map) {
             cache[key] = Map<String, dynamic>.from(decoded);
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('IsolateWorker[DB]: Record decode failed: $e');
+        }
       }
 
       // 3. Process the merge comparison in Isolate RAM
@@ -682,7 +749,9 @@ Future<dynamic> _executeDbTask(
             itemsToUpdate['$dbName:$key'] = val;
             importedCount++;
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('IsolateWorker[DB]: Import item processing error: $e');
+        }
       }
 
       // 4. Perform direct transactional batch write to SQLite inside the Database Isolate (zero IPC!)
@@ -717,11 +786,11 @@ Future<dynamic> _executeProcessTask(
 ) async {
   switch (type) {
     case 'writeExcel':
-      return WorkbookService.writeExcelInIsolate(params);
+      return IsolateWorker.writeExcelInIsolate(params);
     case 'getMatchedSheets':
-      return WorkbookService.getMatchedSheetsInIsolate(params);
+      return ExcelGenerationService.getMatchedSheetsInIsolate(params);
     case 'readSheet':
-      return WorkbookService.readSheetInIsolate(params);
+      return ExcelGenerationService.readSheetInIsolate(params);
     case 'parseSchema':
       return parseSchemaJsonInIsolate(params['jsonStr'] ?? "");
     case 'bgWriteJson':
@@ -936,7 +1005,9 @@ Future<dynamic> _executeProcessTask(
         for (var match in matches) {
           try {
             await io.deleteFile(match.path);
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('IsolateWorker[Process]: Failed to delete stale report: $e');
+          }
         }
       }
 
@@ -945,7 +1016,7 @@ Future<dynamic> _executeProcessTask(
       if (sourceType == 'database') {
         // A. Fetch filtered report data from Database Isolate via IPC (Pre-filtered in DB Isolate!)
         final ReceivePort replyPort = ReceivePort();
-        dbSendPort!.send({
+        dbSendPort.send({
           'type': 'ipcGetFilteredReportData',
           'replyPort': replyPort.sendPort,
           'params': {
@@ -994,6 +1065,7 @@ Future<dynamic> _executeProcessTask(
         'existingBytes': null,
         'data': reportData,
         'sheetName': finalSheetName,
+        'targetPath': targetPath,
       };
 
       // Check if target file exists to load existingBytes (supporting sheets appending)
@@ -1003,7 +1075,7 @@ Future<dynamic> _executeProcessTask(
         writeParams['existingBytes'] = existingBytes;
       }
 
-      final List<int>? fileBytes = WorkbookService.writeExcelInIsolate(
+      final List<int>? fileBytes = IsolateWorker.writeExcelInIsolate(
         writeParams,
       );
       if (fileBytes != null) {
@@ -1034,11 +1106,11 @@ Future<dynamic> _executeProcessTask(
 dynamic _executeTaskSync(String type, Map<String, dynamic> params) {
   switch (type) {
     case 'writeExcel':
-      return WorkbookService.writeExcelInIsolate(params);
+      return IsolateWorker.writeExcelInIsolate(params);
     case 'getMatchedSheets':
-      return WorkbookService.getMatchedSheetsInIsolate(params);
+      return ExcelGenerationService.getMatchedSheetsInIsolate(params);
     case 'readSheet':
-      return WorkbookService.readSheetInIsolate(params);
+      return ExcelGenerationService.readSheetInIsolate(params);
     case 'parseSchema':
       return parseSchemaJsonInIsolate(params['jsonStr'] ?? "");
     case 'dbImportData':
@@ -1089,7 +1161,9 @@ int _getLatestDateStaticForImport(Map<String, dynamic> record) {
         if (u is int && u > maxDate) maxDate = u;
       }
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('IsolateWorker: Date parse error in _getLatestDateStatic: $e');
+  }
   return maxDate;
 }
 
