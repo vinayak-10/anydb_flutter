@@ -4545,9 +4545,9 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
                         children: [
                           ListTile(
                             leading: const Icon(Icons.calendar_today),
-                            title: const Text("Report Month"),
+                            title: const Text("Report Date"),
                             subtitle: Text(
-                              DateFormat('MMMM yyyy').format(widget.selectedDate),
+                              DateFormat.yMMMMd().format(widget.selectedDate),
                             ),
                             trailing: const Icon(Icons.edit),
                             onTap: () async {
