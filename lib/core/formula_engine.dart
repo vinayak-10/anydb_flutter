@@ -9,6 +9,7 @@ class FormulaEngine {
     String formula,
     List<Map<String, dynamic>> data, [
     List<dynamic>? headers,
+    Map<String, String>? titleToKeyMap,
   ]) {
     if (formula.isEmpty) return "";
     String f = formula.trim();
@@ -19,7 +20,7 @@ class FormulaEngine {
       final tokens = lexer.tokenize();
       final parser = Parser(tokens);
       final expression = parser.parse();
-      final evaluator = Evaluator(data, headers);
+      final evaluator = Evaluator(data, headers, titleToKeyMap);
 
       final result = evaluator.evaluate(expression);
       logger.log("FormulaEngine: '$f' -> $result (Rows: ${data.length})");

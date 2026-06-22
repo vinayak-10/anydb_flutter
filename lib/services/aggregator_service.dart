@@ -135,6 +135,19 @@ class AggregatorReport {
       }
     }).toList();
 
+    final List<dynamic> columns = reportSchema['row']?[0]?['columns'] ?? [];
+    final Map<String, String> titleToKeyMap = {};
+    for (var col in columns) {
+      if (col is Map) {
+        final title = col['title']?.toString() ?? "";
+        final column = col['column']?.toString() ?? col['title']?.toString() ?? "";
+        if (title.isNotEmpty && column.isNotEmpty) {
+          titleToKeyMap[title] = column;
+          titleToKeyMap[column] = title;
+        }
+      }
+    }
+
     final Map<String, dynamic> calculatedSummary = {};
     final List<String> dataHeaders = records.isNotEmpty
         ? records[0].keys.toList()
@@ -145,6 +158,7 @@ class AggregatorReport {
         formula.toString(),
         records,
         dataHeaders,
+        titleToKeyMap,
       );
       calculatedSummary[title] = val;
       logger.log(

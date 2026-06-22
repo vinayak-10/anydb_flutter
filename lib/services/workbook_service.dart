@@ -246,6 +246,19 @@ class WorkbookService {
       "WorkbookService: Sheet '$sheetName' formula range sr=$sr, er=$er. Records: ${tableData.length}",
     );
 
+    final List<dynamic> columns = jo['columns'] ?? [];
+    final Map<String, String> titleToKeyMap = {};
+    for (var col in columns) {
+      if (col is Map) {
+        final title = col['title']?.toString() ?? "";
+        final column = col['column']?.toString() ?? col['title']?.toString() ?? "";
+        if (title.isNotEmpty && column.isNotEmpty) {
+          titleToKeyMap[title] = column;
+          titleToKeyMap[column] = title;
+        }
+      }
+    }
+
     for (int i = 0; i < formulaValues.length; i++) {
       final vs = CellHelper.unwrap(formulaValues[i]).toString();
       final cell = ws.cell(
@@ -260,6 +273,7 @@ class WorkbookService {
         vs,
         records,
         columnNames,
+        titleToKeyMap,
       );
 
       // 2. Format the Excel formula string
@@ -305,7 +319,7 @@ class WorkbookService {
           rowData as Map,
         );
         final rowDateVal = rowMap['Date'] ?? _findValueInsensitive(rowMap, 'Date');
-        final String rowSheetName = rowDateVal != null ? _fileService.sanitizeName(rowDateVal.toString()) : "";
+        final String rowSheetName = rowDateVal != null ? FileService().sanitizeName(rowDateVal.toString()) : "";
 
         for (int i = 0; i < columnNames.length; i++) {
           final val = CellHelper.unwrap(rowMap[columnNames[i]]);
@@ -927,7 +941,8 @@ class WorkbookService {
         }
       }
       
-      for (var file in archive.files) {
+      for (int i = 0; i < archive.files.length; i++) {
+        final file = archive.files[i];
         final sheetName = targetToSheetName[file.name];
         if (sheetName != null) {
           final xmlStr = utf8.decode(file.content);
@@ -953,8 +968,7 @@ class WorkbookService {
           
           if (modified) {
             final newContent = utf8.encode(sheetDoc.toXmlString());
-            file.content = newContent;
-            file.size = newContent.length;
+            archive.files[i] = ArchiveFile(file.name, newContent.length, newContent);
           }
         }
       }

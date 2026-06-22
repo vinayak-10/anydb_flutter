@@ -5,9 +5,10 @@ import 'ast.dart';
 class Evaluator implements ExpressionVisitor<dynamic> {
   final List<Map<String, dynamic>> data;
   final List<dynamic>? headers;
+  final Map<String, String>? titleToKeyMap;
   Map<String, dynamic>? _currentRow;
 
-  Evaluator(this.data, [this.headers]);
+  Evaluator(this.data, [this.headers, this.titleToKeyMap]);
 
   dynamic evaluate(Expression expression) {
     return expression.accept(this);
@@ -119,15 +120,24 @@ class Evaluator implements ExpressionVisitor<dynamic> {
       return val.toDouble();
     }
     if (val == null) return 0.0;
-    String s = val.toString().replaceAll(',', '').trim();
-    if (s.isEmpty || s.toLowerCase() == "nan" || s.toLowerCase() == "infinity")
-      return 0.0;
-    try {
-      return double.tryParse(s) ?? 0.0;
-    } catch (e) {
-      debugPrint("Evaluator: _toNum Format Error for '$s': $e");
+    String s = val.toString().replaceAll(',', '').replaceAll(RegExp(r'\s+'), '').trim();
+    if (s.isEmpty || s.toLowerCase() == "nan" || s.toLowerCase() == "infinity") {
       return 0.0;
     }
+    
+    // Extract first numeric-like sequence (optional leading minus, followed by digits and optional decimal part)
+    final regex = RegExp(r'-?\d+(?:\.\d+)?');
+    final match = regex.firstMatch(s);
+    if (match != null) {
+      final matchedStr = match.group(0)!;
+      try {
+        return double.tryParse(matchedStr) ?? 0.0;
+      } catch (e) {
+        debugPrint("Evaluator: _toNum Parse Error for '$matchedStr': $e");
+        return 0.0;
+      }
+    }
+    return 0.0;
   }
 
   int _compare(dynamic v1, dynamic v2) {
@@ -156,6 +166,20 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     if (data.isEmpty) return cleanName;
 
     final firstRow = data.first;
+
+    // Priority 1: Check titleToKeyMap translation
+    if (titleToKeyMap != null) {
+      final mapped = titleToKeyMap![cleanName];
+      if (mapped != null) {
+        if (firstRow.containsKey(mapped)) return mapped;
+        final cleanMapped = mapped.trim().toLowerCase();
+        for (var k in firstRow.keys) {
+          if (k.trim().toLowerCase() == cleanMapped) return k;
+        }
+      }
+    }
+
+    // Priority 2: Perform case-insensitive raw key search
     if (firstRow.containsKey(cleanName)) return cleanName;
 
     final normalizedSearch = cleanName.toLowerCase();
@@ -163,12 +187,14 @@ class Evaluator implements ExpressionVisitor<dynamic> {
       if (k.trim().toLowerCase() == normalizedSearch) return k;
     }
 
+    // Priority 3: Search the headers list
     if (headers != null) {
       for (var h in headers!) {
         if (h.toString().trim().toLowerCase() == normalizedSearch) {
           int idx = headers!.indexOf(h);
-          if (idx >= 0 && idx < firstRow.keys.length)
+          if (idx >= 0 && idx < firstRow.keys.length) {
             return firstRow.keys.elementAt(idx);
+          }
         }
       }
     }
@@ -208,9 +234,16 @@ class Evaluator implements ExpressionVisitor<dynamic> {
     if (rangeKey.isEmpty) return 0;
 
     double total = 0;
-    final criteria = criteriaExpr.accept(this);
 
     for (var row in data) {
+      dynamic criteria;
+      _currentRow = row;
+      try {
+        criteria = criteriaExpr.accept(this);
+      } finally {
+        _currentRow = null;
+      }
+
       final checkVal = _unwrap(row[rangeKey]);
       if (_compare(checkVal, criteria) == 0) {
         total += _toNum(_unwrap(row[sumKey]));
@@ -234,7 +267,7 @@ class Evaluator implements ExpressionVisitor<dynamic> {
   int _countif(List<Expression> args) {
     if (args.length < 2) return 0;
     final rangeExpr = args[0];
-    final criteria = args[1].accept(this);
+    final criteriaExpr = args[1];
 
     String rangeKey = "";
     if (rangeExpr is RangeExpression)
@@ -244,17 +277,29 @@ class Evaluator implements ExpressionVisitor<dynamic> {
 
     if (rangeKey.isEmpty) return 0;
 
-    if (criteria == "*") {
-      return data.where((row) {
-        final v = _unwrap(row[rangeKey]);
-        return v != null && v.toString().trim().isNotEmpty;
-      }).length;
-    }
+    int count = 0;
+    for (var row in data) {
+      dynamic criteria;
+      _currentRow = row;
+      try {
+        criteria = criteriaExpr.accept(this);
+      } finally {
+        _currentRow = null;
+      }
 
-    return data.where((row) {
-      final v = _unwrap(row[rangeKey]);
-      return _compare(v, criteria) == 0;
-    }).length;
+      if (criteria == "*") {
+        final v = _unwrap(row[rangeKey]);
+        if (v != null && v.toString().trim().isNotEmpty) {
+          count++;
+        }
+      } else {
+        final v = _unwrap(row[rangeKey]);
+        if (_compare(v, criteria) == 0) {
+          count++;
+        }
+      }
+    }
+    return count;
   }
 
   int _counta(List<Expression> args) {
