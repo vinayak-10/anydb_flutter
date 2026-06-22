@@ -4013,8 +4013,53 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       dataRows.add(mapped);
     }
 
+    final children = summarySchema.entries.map((e) {
+      final result = FormulaEngine.evaluate(
+        e.value.toString(),
+        dataRows,
+        headers,
+      );
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SelectableText(
+              e.key.toUpperCase(),
+              style: TextStyle(
+                color: Colors.indigo.shade900,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              _formatValue(result),
+              style: TextStyle(
+                color: Colors.indigo.shade700,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+
+    final List<Widget> row1 = [];
+    final List<Widget> row2 = [];
+    for (int i = 0; i < children.length; i++) {
+      if (i % 2 == 0) {
+        row1.add(children[i]);
+      } else {
+        row2.add(children[i]);
+      }
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -4023,44 +4068,25 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       ),
       child: SafeArea(
         bottom: true,
-        child: Wrap(
-          alignment: WrapAlignment.spaceEvenly,
-          spacing: 20,
-          runSpacing: 16,
-          children: summarySchema.entries.map((e) {
-            final result = FormulaEngine.evaluate(
-              e.value.toString(),
-              dataRows,
-              headers,
-            );
-            debugPrint(
-              "UI: Summary Evaluation for '${e.key}': formula='${e.value}', result='$result'",
-            );
-
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(
-                  e.key.toUpperCase(),
-                  style: TextStyle(
-                    color: Colors.indigo.shade900,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  _formatValue(result),
-                  style: TextStyle(
-                    color: Colors.indigo.shade700,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: row1,
+              ),
+              if (row2.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: row2,
                 ),
               ],
-            );
-          }).toList(),
+            ],
+          ),
         ),
       ),
     );

@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:archive/archive.dart';
+import 'package:xml/xml.dart';
 import 'package:excel/excel.dart';
 import 'file_service.dart';
 import '../core/cell_helper.dart';
@@ -195,11 +199,85 @@ class ExcelGenerationService {
     final sheet = excel.tables[sheetName];
     if (sheet == null) return [];
 
-    return sheet.rows
-        .map(
-          (row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList(),
-        )
-        .toList();
+    final cachedValues = _extractCachedValues(bytes, sheetName);
+
+    return sheet.rows.map((row) {
+      return row.map((cell) {
+        if (cell == null) return "";
+        final val = cell.value;
+        if (val is FormulaCellValue) {
+          final ref = _getCellRef(cell.cellIndex.columnIndex, cell.cellIndex.rowIndex);
+          final cached = cachedValues[ref];
+          if (cached != null) {
+            final n = double.tryParse(cached);
+            if (n != null) {
+              return n % 1 == 0 ? n.toInt() : n;
+            }
+            return cached;
+          }
+          return val.formula;
+        }
+        return CellHelper.unwrap(val);
+      }).toList();
+    }).toList();
+  }
+
+  static Map<String, String> _extractCachedValues(List<int> bytes, String targetSheetName) {
+    final Map<String, String> cachedValues = {};
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      ArchiveFile? workbookFile;
+      ArchiveFile? relsFile;
+      for (final f in archive.files) {
+        if (f.name == 'xl/workbook.xml') workbookFile = f;
+        if (f.name == 'xl/_rels/workbook.xml.rels') relsFile = f;
+      }
+      if (workbookFile == null || relsFile == null) return {};
+
+      final wbDoc = XmlDocument.parse(utf8.decode(workbookFile.content));
+      final relsDoc = XmlDocument.parse(utf8.decode(relsFile.content));
+
+      final Map<String, String> rIdToSheetName = {};
+      for (final sheet in wbDoc.findAllElements('sheet')) {
+        final name = sheet.getAttribute('name');
+        final rId = sheet.getAttribute('r:id');
+        if (name != null && rId != null) {
+          rIdToSheetName[rId] = name;
+        }
+      }
+
+      String? targetPath;
+      for (final rel in relsDoc.findAllElements('Relationship')) {
+        final rId = rel.getAttribute('Id');
+        final target = rel.getAttribute('Target');
+        if (rId != null && target != null) {
+          final sheetName = rIdToSheetName[rId];
+          if (sheetName != null && sheetName.toLowerCase() == targetSheetName.toLowerCase()) {
+            targetPath = 'xl/$target';
+            break;
+          }
+        }
+      }
+
+      if (targetPath != null) {
+        for (final f in archive.files) {
+          if (f.name == targetPath) {
+            final sheetDoc = XmlDocument.parse(utf8.decode(f.content));
+            for (final c in sheetDoc.findAllElements('c')) {
+              final r = c.getAttribute('r');
+              final v = c.getElement('v')?.innerText;
+              if (r != null && v != null) {
+                cachedValues[r] = v;
+              }
+            }
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("ExcelGenerationService._extractCachedValues Error: $e");
+    }
+    return cachedValues;
   }
 
   static void _setCellValue(Sheet sheet, int c, int r, dynamic val) {

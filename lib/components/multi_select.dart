@@ -137,7 +137,7 @@ class MultiSelect extends GenInterface {
           (v) => Chip(
             label: Text(
               v,
-              style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+              style: const TextStyle(fontSize: 13.3, color: Colors.blueGrey),
             ),
             backgroundColor: Colors.blue[50],
             padding: EdgeInsets.zero,
