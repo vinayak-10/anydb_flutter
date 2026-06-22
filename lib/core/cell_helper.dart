@@ -4,6 +4,9 @@ class CellHelper {
   /// Unwraps an excel CellValue into a raw Dart type (num, String, bool, etc.)
   static dynamic unwrap(dynamic val) {
     if (val == null) return "";
+    if (val is num) return val;
+    if (val is String) return val;
+    if (val is bool) return val;
 
     if (val is TextCellValue) return val.value.toString();
     if (val is DoubleCellValue) return val.value;

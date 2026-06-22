@@ -13,11 +13,14 @@ import '../core/logger.dart';
 import 'package:path/path.dart' as p;
 import 'io_helper.dart' as io;
 import 'package:archive/archive.dart';
+import 'package:xml/xml.dart';
 
 class WorkbookService {
   static final WorkbookService _instance = WorkbookService._internal();
   factory WorkbookService() => _instance;
   WorkbookService._internal();
+
+  static final Map<String, String> _formulaValues = {};
 
   final FileService _fileService = FileService();
   String? _lastReportPath;
@@ -157,6 +160,7 @@ class WorkbookService {
     Map<String, dynamic> jo,
     String sheetName,
   ) {
+    _formulaValues.clear();
     // Set default column width for the first 30 columns to prevent '###'
     for (int i = 0; i < 30; i++) {
       ws.setColumnWidth(i, 20.0);
@@ -271,17 +275,9 @@ class WorkbookService {
         formulaStr = formulaStr.substring(1);
       }
 
-      // 3. Write HYBRID cell: Formula for live updates, Static Value for immediate accuracy
-      cell.setFormula(formulaStr);
-      if (calculatedValue is num) {
-        if (calculatedValue % 1 == 0) {
-          cell.value = IntCellValue(calculatedValue.toInt());
-        } else {
-          cell.value = DoubleCellValue(calculatedValue.toDouble());
-        }
-      } else {
-        cell.value = TextCellValue(calculatedValue.toString());
-      }
+      cell.value = FormulaCellValue(formulaStr);
+      final cellRef = _getCellRef(col + i, summaryValRow);
+      _formulaValues["$sheetName!$cellRef"] = calculatedValue.toString();
     }
 
     // 3. Add Table content
@@ -302,26 +298,42 @@ class WorkbookService {
       }
       row++;
       // Table Data
+      final List<dynamic> columnsConfig = jo['columns'] ?? [];
+      // Table Data
       for (var rowData in tableData) {
         final Map<String, dynamic> rowMap = Map<String, dynamic>.from(
           rowData as Map,
         );
+        final rowDateVal = rowMap['Date'] ?? _findValueInsensitive(rowMap, 'Date');
+        final String rowSheetName = rowDateVal != null ? _fileService.sanitizeName(rowDateVal.toString()) : "";
+
         for (int i = 0; i < columnNames.length; i++) {
           final val = CellHelper.unwrap(rowMap[columnNames[i]]);
           final cell = ws.cell(
             CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: row),
           );
 
-          // Check if it's a formula reference (starts with ! or contains ! and looks like a cell ref)
-          bool isFormula =
-              val is String && (val.startsWith('=') || val.contains('!'));
+          String? colFormula;
+          if (sourceType == 'report') {
+            for (var colConf in columnsConfig) {
+              if (colConf is Map && colConf['title'] == columnNames[i]) {
+                colFormula = colConf['formula']?.toString();
+                break;
+              }
+            }
+          }
 
-          if (sourceType == 'report' && isFormula) {
-            String formulaStr = val.toString();
+          if (sourceType == 'report' && colFormula != null && rowSheetName.isNotEmpty) {
+            final sourceReportName = jo['source']?['name'] ?? 'Daily';
+            String formulaStr = colFormula
+                .replaceAll("'$sourceReportName'", "'$rowSheetName'")
+                .replaceAll(sourceReportName, rowSheetName);
             if (formulaStr.startsWith('=')) {
               formulaStr = formulaStr.substring(1);
             }
             cell.value = FormulaCellValue(formulaStr);
+            final cellRef = _getCellRef(col + i, row);
+            _formulaValues["$sheetName!$cellRef"] = val.toString();
           } else {
             _setCellValue(ws, col + i, row, val);
           }
@@ -767,6 +779,7 @@ class WorkbookService {
   static List<int> sortSheetsInBytes(List<int> bytes) {
     try {
       var archive = ZipDecoder().decodeBytes(bytes);
+      _injectCalculatedValues(archive);
 
       ArchiveFile? workbookXmlFile;
       for (var file in archive.files) {
@@ -855,5 +868,98 @@ class WorkbookService {
           (row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList(),
         )
         .toList();
+  }
+
+  static String _getCellRef(int colIdx, int rowIdx) {
+    int temp = colIdx;
+    String columnLetter = "";
+    while (temp >= 0) {
+      columnLetter = String.fromCharCode((temp % 26) + 65) + columnLetter;
+      temp = (temp ~/ 26) - 1;
+    }
+    return "$columnLetter${rowIdx + 1}";
+  }
+
+  static dynamic _findValueInsensitive(Map<String, dynamic> row, String key) {
+    if (key.isEmpty) return null;
+    for (var k in row.keys) {
+      if (k.toLowerCase() == key.toLowerCase()) return row[k];
+    }
+    return null;
+  }
+
+  static void _injectCalculatedValues(Archive archive) {
+    try {
+      ArchiveFile? workbookXmlFile;
+      ArchiveFile? relsFile;
+      
+      for (var file in archive.files) {
+        if (file.name == 'xl/workbook.xml') {
+          workbookXmlFile = file;
+        } else if (file.name == 'xl/_rels/workbook.xml.rels') {
+          relsFile = file;
+        }
+      }
+      
+      if (workbookXmlFile == null || relsFile == null) return;
+      
+      final wbDoc = XmlDocument.parse(utf8.decode(workbookXmlFile.content));
+      final relsDoc = XmlDocument.parse(utf8.decode(relsFile.content));
+      
+      final Map<String, String> rIdToSheetName = {};
+      for (final sheet in wbDoc.findAllElements('sheet')) {
+        final name = sheet.getAttribute('name');
+        final rId = sheet.getAttribute('r:id');
+        if (name != null && rId != null) {
+          rIdToSheetName[rId] = name;
+        }
+      }
+      
+      final Map<String, String> targetToSheetName = {};
+      for (final rel in relsDoc.findAllElements('Relationship')) {
+        final rId = rel.getAttribute('Id');
+        final target = rel.getAttribute('Target');
+        if (rId != null && target != null) {
+          final sheetName = rIdToSheetName[rId];
+          if (sheetName != null) {
+            targetToSheetName['xl/$target'] = sheetName;
+          }
+        }
+      }
+      
+      for (var file in archive.files) {
+        final sheetName = targetToSheetName[file.name];
+        if (sheetName != null) {
+          final xmlStr = utf8.decode(file.content);
+          final sheetDoc = XmlDocument.parse(xmlStr);
+          bool modified = false;
+          
+          for (final c in sheetDoc.findAllElements('c')) {
+            final cellRef = c.getAttribute('r');
+            if (cellRef == null) continue;
+            
+            final f = c.getElement('f');
+            final v = c.getElement('v');
+            if (f != null && v != null) {
+              final lookupKey = "$sheetName!$cellRef";
+              final calculatedVal = _formulaValues[lookupKey];
+              if (calculatedVal != null) {
+                v.children.clear();
+                v.children.add(XmlText(calculatedVal));
+                modified = true;
+              }
+            }
+          }
+          
+          if (modified) {
+            final newContent = utf8.encode(sheetDoc.toXmlString());
+            file.content = newContent;
+            file.size = newContent.length;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("WorkbookService._injectCalculatedValues Error: $e");
+    }
   }
 }

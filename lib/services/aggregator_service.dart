@@ -16,8 +16,10 @@ class AggregatorReport {
   late List<dynamic> rows;
   final List<ExtractorIntf> extractor = [];
   dynamic pIntf;
+  late Map<String, dynamic> reportSchema;
 
   void init(Map<String, dynamic> jo, dynamic pintf) {
+    reportSchema = jo;
     key = jo['name'] ?? '';
     pIntf = pintf;
     header = jo.containsKey("header") ? _prepareHeader(jo['header']) : [];
@@ -160,6 +162,7 @@ class AggregatorReport {
       "data": records,
       "summary": calculatedSummary,
       "summaryFormulas": summary,
+      "columns": reportSchema['row']?[0]?['columns'] ?? [],
     };
   }
 
@@ -205,9 +208,9 @@ class AggregatorService {
           final report = AggregatorReport();
           report.init(Map<String, dynamic>.from(element), {
             'generate': (pd, {DateTime? timestamp}) =>
-                generateReport(pd, timestamp: timestamp),
+                generateReport(pd, timestamp: timestamp, sourceReport: report),
             'getFileName': (meta, {DateTime? timestamp}) =>
-                getFileName(meta, timestamp: timestamp),
+                getFileName(meta, timestamp: timestamp, sourceReport: report),
           });
           reports.add(report);
         }
@@ -221,9 +224,9 @@ class AggregatorService {
           final report = AggregatorReport();
           report.init(Map<String, dynamic>.from(element), {
             'generate': (pd, {DateTime? timestamp}) =>
-                generateReport(pd, timestamp: timestamp),
+                generateReport(pd, timestamp: timestamp, sourceReport: report),
             'getFileName': (meta, {DateTime? timestamp}) =>
-                getFileName(meta, timestamp: timestamp),
+                getFileName(meta, timestamp: timestamp, sourceReport: report),
           });
           reports.add(report);
         }
@@ -269,7 +272,7 @@ class AggregatorService {
       report.extractor[0].extractor!.predicates[0],
       data: targetDate,
       getFileName: (meta, {DateTime? timestamp}) =>
-          getFileName(meta, timestamp: timestamp),
+          getFileName(meta, timestamp: timestamp, sourceReport: report),
       timestamp: timestamp,
       force: force,
     );
@@ -387,19 +390,18 @@ class AggregatorService {
                 dailyReport.extractor[0].extractor!.predicates[0],
                 data: date,
                 getFileName: (meta, {DateTime? timestamp}) =>
-                    getFileName(meta, timestamp: timestamp ?? batchTimestamp),
+                    getFileName(meta, timestamp: timestamp ?? batchTimestamp, sourceReport: monthlyReport),
                 force: force,
               );
 
           if (dailyData['data'] != null &&
               (dailyData['data'] as List).isNotEmpty) {
             final reportData = dailyReport.generateReport(dailyData);
-            // Pass dailyReport so daily sheets are written under the
-            // DAILY collection name, not the monthly report's name (Bug 6 fix).
+            // Consolidated batch sheets must be written in the same monthly report file
             final result = await generateReport(
               reportData,
               timestamp: batchTimestamp,
-              sourceReport: dailyReport,
+              sourceReport: monthlyReport,
             );
             lastPath = result['path'];
             generatedDays++;
@@ -477,9 +479,10 @@ class AggregatorService {
   Map<String, dynamic> getFileName(
     Map<String, dynamic> meta, {
     DateTime? timestamp,
+    AggregatorReport? sourceReport,
   }) {
     if (reports.isEmpty) return {"aggregator": key, "collection": key};
-    final report = reports.last;
+    final report = sourceReport ?? reports.last;
     Map<String, dynamic> nmeta = report.applyMeta(meta);
     final String collection = nmeta['collection'] ?? key;
 
