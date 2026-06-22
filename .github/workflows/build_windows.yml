@@ -21,10 +21,16 @@ jobs:
       - name: 🔑 Inject Secrets
         shell: pwsh
         run: |
-          # Reconstructs compile-time secrets.json from GitHub secrets
-          @"
+          $secretContent = @"
           ${{ secrets.SECRETS_JSON }}
-          "@ > secrets.json
+          "@.Trim()
+          
+          if ([string]::IsNullOrWhiteSpace($secretContent)) {
+            Write-Host "Signing Secrets: No custom SECRETS_JSON secret detected. Injecting template..."
+            $secretContent = '{"GOOGLE_CLIENT_SECRET": "your-secret-here"}'
+          }
+          
+          $secretContent | Out-File -FilePath secrets.json -Encoding utf8
 
       - name: 📦 Fetch Packages
         run: flutter pub get

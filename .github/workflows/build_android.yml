@@ -26,8 +26,13 @@ jobs:
 
       - name: 🔑 Inject Secrets
         run: |
-          # Reconstructs compile-time secrets.json from GitHub secrets
-          echo '${{ secrets.SECRETS_JSON }}' > secrets.json
+          SECRET_CONTENT='${{ secrets.SECRETS_JSON }}'
+          if [ -z "$SECRET_CONTENT" ] || [ "$SECRET_CONTENT" = "null" ]; then
+            echo "Signing Secrets: No custom SECRETS_JSON secret detected. Injecting template..."
+            echo '{"GOOGLE_CLIENT_SECRET": "your-secret-here"}' > secrets.json
+          else
+            echo "$SECRET_CONTENT" > secrets.json
+          fi
 
       - name: 📝 Configure Android Signing Key
         env:
