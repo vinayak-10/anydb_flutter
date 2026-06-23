@@ -57,6 +57,8 @@ class WorkbookService {
     final sheetName = _fileService.sanitizeName(entryName);
     logger.log("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
 
+    // Track formula registry for post-processing
+    Map<String, String> formulaRegistry = {};
     List<int>? fileBytes;
 
     if (kIsWeb) {
@@ -79,14 +81,18 @@ class WorkbookService {
       }
 
       if (IsolateWorker.isInsideWorkerIsolate) {
-        fileBytes = IsolateWorker.writeExcelInIsolate({
+        final result = IsolateWorker.writeExcelInIsolate({
           'existingBytes': existingBytes,
           'data': data,
           'sheetName': sheetName,
           'targetPath': targetPath,
         });
+        fileBytes = result is Map ? result['bytes'] as List<int>? : result as List<int>?;
+        if (result is Map && result.containsKey('formulaRegistry')) {
+          formulaRegistry = result['formulaRegistry'] as Map<String, String>? ?? {};
+        }
       } else {
-        fileBytes = await IsolateWorker.instance.execute<List<int>?>(
+        final result = await IsolateWorker.instance.execute<dynamic>(
           'writeExcel',
           {
             'existingBytes': existingBytes,
@@ -95,10 +101,19 @@ class WorkbookService {
             'targetPath': targetPath,
           },
         );
+        fileBytes = result is Map ? result['bytes'] as List<int>? : result as List<int>?;
+        if (result is Map && result.containsKey('formulaRegistry')) {
+          formulaRegistry = result['formulaRegistry'] as Map<String, String>? ?? {};
+        }
       }
     }
 
     _lastReportPath = targetPath;
+
+    // Apply formula value injection if formula registry is populated
+    if (fileBytes != null && formulaRegistry.isNotEmpty) {
+      fileBytes = ExcelGenerationService.injectCalculatedValues(fileBytes, formulaRegistry);
+    }
 
     if (kIsWeb) {
       if (fileBytes != null) {
