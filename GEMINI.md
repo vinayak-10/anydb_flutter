@@ -203,3 +203,6 @@
 - **Last Stable Commit:** `a211a5e` (fix(windows): restore standard FLUTTER_TOOL_ENVIRONMENT payload for Windows build custom command)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
 
+## Session History
+- [.chat_context/session_20260623_1.md](.chat_context/session_20260623_1.md) — Fix for Empty Monthly Report extraction logic.
+- [.chat_context/session_20260623_report_generation_analysis.md](.chat_context/session_20260623_report_generation_analysis.md) — Root cause analysis: Monthly report empty bug (wrong sourceReport in batch), date picker month-only display, Documents hierarchy not maintained on Android.

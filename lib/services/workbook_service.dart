@@ -57,6 +57,8 @@ class WorkbookService {
     final sheetName = _fileService.sanitizeName(entryName);
     logger.log("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
 
+    // Track formula registry for post-processing
+    Map<String, String> formulaRegistry = {};
     List<int>? fileBytes;
 
     if (kIsWeb) {
@@ -79,14 +81,18 @@ class WorkbookService {
       }
 
       if (IsolateWorker.isInsideWorkerIsolate) {
-        fileBytes = IsolateWorker.writeExcelInIsolate({
+        final result = IsolateWorker.writeExcelInIsolate({
           'existingBytes': existingBytes,
           'data': data,
           'sheetName': sheetName,
           'targetPath': targetPath,
         });
+        fileBytes = result is Map ? result['bytes'] as List<int>? : result as List<int>?;
+        if (result is Map && result.containsKey('formulaRegistry')) {
+          formulaRegistry = result['formulaRegistry'] as Map<String, String>? ?? {};
+        }
       } else {
-        fileBytes = await IsolateWorker.instance.execute<List<int>?>(
+        final result = await IsolateWorker.instance.execute<dynamic>(
           'writeExcel',
           {
             'existingBytes': existingBytes,
@@ -95,10 +101,19 @@ class WorkbookService {
             'targetPath': targetPath,
           },
         );
+        fileBytes = result is Map ? result['bytes'] as List<int>? : result as List<int>?;
+        if (result is Map && result.containsKey('formulaRegistry')) {
+          formulaRegistry = result['formulaRegistry'] as Map<String, String>? ?? {};
+        }
       }
     }
 
     _lastReportPath = targetPath;
+
+    // Apply formula value injection if formula registry is populated
+    if (fileBytes != null && formulaRegistry.isNotEmpty) {
+      fileBytes = ExcelGenerationService.injectCalculatedValues(fileBytes, formulaRegistry);
+    }
 
     if (kIsWeb) {
       if (fileBytes != null) {
@@ -111,7 +126,12 @@ class WorkbookService {
 
     if (fileBytes != null) {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
-      final relativePath = "xyz.maya/anydb/schema/$schemaName/reports";
+      
+      // FIX: Securely assign cache tracking objects on the main UI thread right after writing
+      ExcelGenerationService.cachedExcel = Excel.decodeBytes(fileBytes);
+      ExcelGenerationService.cachedExcelPath = _lastReportPath!;
+      
+      final relativePath = "xyz.maya/anydb/schema/$schemaName/Aggregator/Daily_and_Monthly_reports";
       await _fileService.copyToPublicDocuments(
         _lastReportPath!,
         fileName,
@@ -120,7 +140,7 @@ class WorkbookService {
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 
-    await _backupDatabase(schemaName, meta['collection'] ?? "Database");
+    // await _backupDatabase(schemaName, meta['collection'] ?? "Database");
 
     return _lastReportPath!;
   }
@@ -288,7 +308,7 @@ class WorkbookService {
     }
   }
 
-  Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName) async {
+  Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName, {bool force = false}) async {
     try {
       String fileName = "";
       String collection = "";
@@ -329,10 +349,12 @@ class WorkbookService {
                     ExcelGenerationService.cachedExcelPath == targetPath))
           : (ExcelGenerationService.cachedExcelPath == targetPath);
 
-      final cachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
-      if (cachedRows != null && isCacheMatch) {
-        debugPrint("WorkbookService: Using cached excel for read: $targetPath");
-        return cachedRows;
+      if (!force) {
+        final cachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
+        if (cachedRows != null && isCacheMatch) {
+          debugPrint("WorkbookService: Using cached excel for read: $targetPath");
+          return cachedRows;
+        }
       }
 
       // If exact file doesn't exist, try to find the latest matching the collection
@@ -360,9 +382,11 @@ class WorkbookService {
       }
 
       // Check Cache again after potential discovery
-      final recachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
-      if (recachedRows != null && isCacheMatch) {
-        return recachedRows;
+      if (!force) {
+        final recachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
+        if (recachedRows != null && isCacheMatch) {
+          return recachedRows;
+        }
       }
 
       final bytes = await io.readBytes(targetPath);

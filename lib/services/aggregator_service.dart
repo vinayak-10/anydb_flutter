@@ -404,7 +404,7 @@ class AggregatorService {
                 dailyReport.extractor[0].extractor!.predicates[0],
                 data: date,
                 getFileName: (meta, {DateTime? timestamp}) =>
-                    getFileName(meta, timestamp: timestamp ?? batchTimestamp, sourceReport: monthlyReport),
+                    getFileName(meta, timestamp: timestamp ?? batchTimestamp, sourceReport: dailyReport),
                 force: force,
               );
 
@@ -412,10 +412,11 @@ class AggregatorService {
               (dailyData['data'] as List).isNotEmpty) {
             final reportData = dailyReport.generateReport(dailyData);
             // Consolidated batch sheets must be written in the same monthly report file
+            // Use dailyReport as sourceReport so daily sheets get correct daily metadata (Bug 6 fix)
             final result = await generateReport(
               reportData,
               timestamp: batchTimestamp,
-              sourceReport: monthlyReport,
+              sourceReport: dailyReport,
             );
             lastPath = result['path'];
             generatedDays++;
@@ -439,6 +440,7 @@ class AggregatorService {
         final result = await generateReport(
           monthlyDataFull,
           timestamp: batchTimestamp,
+          sourceReport: dailyReport, // FIX 1C: Force monthly summary into the same daily file container
         );
         lastPath = result['path'];
         logger.log(
