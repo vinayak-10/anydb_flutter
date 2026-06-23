@@ -111,9 +111,9 @@ class WorkbookService {
     _lastReportPath = targetPath;
 
     // Apply formula value injection if formula registry is populated
-    if (fileBytes != null && formulaRegistry.isNotEmpty) {
-      fileBytes = ExcelGenerationService.injectCalculatedValues(fileBytes, formulaRegistry);
-    }
+    // if (fileBytes != null && formulaRegistry.isNotEmpty) {
+    //  fileBytes = ExcelGenerationService.injectCalculatedValues(fileBytes, formulaRegistry);
+    // }
 
     if (kIsWeb) {
       if (fileBytes != null) {
