@@ -597,6 +597,7 @@ class ExtractorReport extends Extractor {
       final List<List<dynamic>> sheetData = await _workbookService.read(
         fileMeta,
         sheetName,
+        force: force,
       );
       if (sheetData.isNotEmpty) {
         logger.log(

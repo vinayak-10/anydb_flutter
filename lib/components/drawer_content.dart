@@ -13,14 +13,31 @@ import '../services/schema_service.dart';
 import '../screens/schema_field_editor.dart';
 import '../screens/collection_view.dart';
 import '../services/file_service.dart';
+import '../services/collection_service.dart';
 
-class DrawerContent extends ConsumerWidget {
+class DrawerContent extends ConsumerStatefulWidget {
   final String? currentSchemaName;
   final VoidCallback? onBackToHome;
   const DrawerContent({super.key, this.currentSchemaName, this.onBackToHome});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DrawerContent> createState() => _DrawerContentState();
+}
+
+class _DrawerContentState extends ConsumerState<DrawerContent> {
+  // Store service instances at build time - these survive widget disposal
+  late final FileService _fileService;
+  late final CollectionService _collectionService;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _fileService = ref.read(fileServiceProvider);
+    _collectionService = ref.read(collectionServiceProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final googleDriveService = ref.watch(googleDriveServiceProvider);
     final user = ref.watch(googleUserProvider);
@@ -326,7 +343,8 @@ class DrawerContent extends ConsumerWidget {
                         Navigator.pop(context); // Close the drawer first
                         _showAdvancedModal(
                           context,
-                          ref,
+                          _fileService,
+                          _collectionService,
                           activeSchema,
                           resolvedSchemaName,
                           onBackToHome: onBackToHome,
@@ -551,7 +569,8 @@ List<String> getPrioritizedFields(List<String> allSchemaFields) {
 
 void _showAdvancedModal(
   BuildContext context,
-  WidgetRef ref,
+  FileService fileService,
+  CollectionService collectionService,
   SchemaInfo? activeSchema,
   String? resolvedSchemaName, {
   VoidCallback? onBackToHome,
@@ -604,9 +623,7 @@ void _showAdvancedModal(
                 ),
                 Builder(
                   builder: (context) {
-                    final collectionService = ref.read(
-                      collectionServiceProvider,
-                    );
+                    // Use passed collectionService instead of ref.read()
                     final contents = collectionService.contents;
 
                     ElementDb? activeDb;
@@ -864,7 +881,7 @@ void _showAdvancedModal(
                   ),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    final fileService = ref.read(fileServiceProvider);
+                    // Use passed fileService instead of ref.read()
                     try {
                       await fileService.purgeWorkspaceCache(resolvedSchemaName);
                       if (context.mounted) {
@@ -900,7 +917,7 @@ void _showAdvancedModal(
                   ),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    final fileService = ref.read(fileServiceProvider);
+                    // Use passed fileService instead of ref.read()
                     try {
                       final count = await fileService.pruneExportedFiles(30);
                       if (context.mounted) {

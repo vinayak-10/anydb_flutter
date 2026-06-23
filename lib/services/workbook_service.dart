@@ -120,7 +120,7 @@ class WorkbookService {
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 
-    await _backupDatabase(schemaName, meta['collection'] ?? "Database");
+    // await _backupDatabase(schemaName, meta['collection'] ?? "Database");
 
     return _lastReportPath!;
   }
@@ -288,7 +288,7 @@ class WorkbookService {
     }
   }
 
-  Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName) async {
+  Future<List<List<dynamic>>> read(dynamic fileMeta, String sheetName, {bool force = false}) async {
     try {
       String fileName = "";
       String collection = "";
@@ -329,10 +329,12 @@ class WorkbookService {
                     ExcelGenerationService.cachedExcelPath == targetPath))
           : (ExcelGenerationService.cachedExcelPath == targetPath);
 
-      final cachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
-      if (cachedRows != null && isCacheMatch) {
-        debugPrint("WorkbookService: Using cached excel for read: $targetPath");
-        return cachedRows;
+      if (!force) {
+        final cachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
+        if (cachedRows != null && isCacheMatch) {
+          debugPrint("WorkbookService: Using cached excel for read: $targetPath");
+          return cachedRows;
+        }
       }
 
       // If exact file doesn't exist, try to find the latest matching the collection
@@ -360,9 +362,11 @@ class WorkbookService {
       }
 
       // Check Cache again after potential discovery
-      final recachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
-      if (recachedRows != null && isCacheMatch) {
-        return recachedRows;
+      if (!force) {
+        final recachedRows = ExcelGenerationService.readSheetFromCache(targetPath, sheetName);
+        if (recachedRows != null && isCacheMatch) {
+          return recachedRows;
+        }
       }
 
       final bytes = await io.readBytes(targetPath);
