@@ -75,12 +75,8 @@ class IsolateWorker {
     final savedBytes = excel.save();
     if (savedBytes != null) {
       // 4. Inject static pre-calculated results & sort sheets using Binary Module
-      final processed = ExcelBinaryHelper.postProcessBytes(savedBytes, formulaRegistry);
-      if (targetPath.isNotEmpty) {
-        ExcelGenerationService.cachedExcel = Excel.decodeBytes(processed);
-        ExcelGenerationService.cachedExcelPath = targetPath;
-      }
-      return processed;
+      // FIX: Do not mutate static variables inside a background isolate memory pool.
+      return ExcelBinaryHelper.postProcessBytes(savedBytes, formulaRegistry);
     }
     return savedBytes;
   }
@@ -1070,10 +1066,12 @@ Future<dynamic> _executeProcessTask(
 
       // Check if target file exists to load existingBytes (supporting sheets appending)
       List<int>? existingBytes;
-      if (await io.fileExists(targetPath)) {
+      // FIX 1B: Prevent reading corrupt/stale files from disk when forceRebuild is true
+      if (!forceRebuild && await io.fileExists(targetPath)) {
         existingBytes = await io.readBytes(targetPath);
         writeParams['existingBytes'] = existingBytes;
       }
+
 
       final List<int>? fileBytes = IsolateWorker.writeExcelInIsolate(
         writeParams,
