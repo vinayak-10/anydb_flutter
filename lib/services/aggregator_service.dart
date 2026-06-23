@@ -440,6 +440,7 @@ class AggregatorService {
         final result = await generateReport(
           monthlyDataFull,
           timestamp: batchTimestamp,
+          sourceReport: dailyReport, // FIX 1C: Force monthly summary into the same daily file container
         );
         lastPath = result['path'];
         logger.log(
