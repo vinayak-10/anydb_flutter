@@ -71,12 +71,10 @@ class WorkbookService {
           'targetPath': targetPath,
         },
       );
-    } else {
+     } else {
       List<int>? existingBytes;
-      if (ExcelGenerationService.cachedExcel != null &&
-          ExcelGenerationService.cachedExcelPath == targetPath) {
-        // Cache matches, we let the isolate worker pull it directly from the cache helper
-      } else if (await io.fileExists(targetPath)) {
+      // FIX: Always read the current file state from disk to safely append sheets across isolate boundaries
+      if (await io.fileExists(targetPath)) {
         existingBytes = await io.readBytes(targetPath);
       }
 
