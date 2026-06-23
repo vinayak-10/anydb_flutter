@@ -1,4 +1,4 @@
-name: 🤖 Android Release Build
+Name: 🤖 Android Release Build
 
 on:
   push:
@@ -37,11 +37,10 @@ jobs:
       - name: 📝 Configure Android Signing Key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASS_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          STORE_PASS_SECRET: ${{ secrets.ANDROID_KEYRE_PASSWORD }}
           KEY_PASS_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
           KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          # Define defaults matching the standard setup
           DEFAULT_PASS="and_any"
           DEFAULT_ALIAS="anydb-alias"
 
@@ -60,13 +59,10 @@ jobs:
               -dname "CN=AnyDb, OU=Development, O=AnyDb, L=Unknown, S=Unknown, C=US"
           fi
 
-          # Write key.properties
           echo "storePassword=$STORE_PASS" > android/key.properties
           echo "keyPassword=$KEY_PASS" >> android/key.properties
           echo "keyAlias=$KEY_ALIAS" >> android/key.properties
           echo "storeFile=upload-keystore.jks" >> android/key.properties
-
-          echo "Signing Key: Configuration successfully generated in android/key.properties"
 
       - name: 📦 Fetch Packages
         run: flutter pub get
@@ -90,15 +86,20 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
 
+      # NEW STEP: Pre-stage a uniquely named file copy to guarantee Google Drive isolation
+      - name: 🏷️ Prepare Unique Release Artifact Name
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/anydb_build_${{ github.run_number }}.apk
+
       - name: 📤 Upload APK to Google Drive
         run: |
-          rclone copy -P build/app/outputs/flutter-apk/app-release.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
+          rclone copy -P build/app/outputs/flutter-apk/anydb_build_${{ github.run_number }}.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: anydb-android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: anydb-android-apk-build-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/anydb_build_${{ github.run_number }}.apk
           retention-days: 5
 
       - name: 📤 Upload AAB Artifact
