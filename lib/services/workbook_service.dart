@@ -81,18 +81,16 @@ class WorkbookService {
       }
 
       if (IsolateWorker.isInsideWorkerIsolate) {
-        final result = IsolateWorker.writeExcelInIsolate({
+        // FIX: Directly assign the clean byte array returned from the isolate helper
+        fileBytes = IsolateWorker.writeExcelInIsolate({
           'existingBytes': existingBytes,
           'data': data,
           'sheetName': sheetName,
           'targetPath': targetPath,
         });
-        fileBytes = result is Map ? result['bytes'] as List<int>? : result as List<int>?;
-        if (result is Map && result.containsKey('formulaRegistry')) {
-          formulaRegistry = result['formulaRegistry'] as Map<String, String>? ?? {};
-        }
       } else {
-        final result = await IsolateWorker.instance.execute<dynamic>(
+        // FIX: Change execute target from <dynamic> to <List<int>?> and remove the Map unpacking entirely
+        fileBytes = await IsolateWorker.instance.execute<List<int>?>(
           'writeExcel',
           {
             'existingBytes': existingBytes,
@@ -101,12 +99,9 @@ class WorkbookService {
             'targetPath': targetPath,
           },
         );
-        fileBytes = result is Map ? result['bytes'] as List<int>? : result as List<int>?;
-        if (result is Map && result.containsKey('formulaRegistry')) {
-          formulaRegistry = result['formulaRegistry'] as Map<String, String>? ?? {};
-        }
       }
     }
+
 
     _lastReportPath = targetPath;
 
@@ -128,7 +123,8 @@ class WorkbookService {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
       
       // FIX: Securely assign cache tracking objects on the main UI thread right after writing
-      ExcelGenerationService.cachedExcel = Excel.decodeBytes(fileBytes);
+      // Uses the decoupled bridge method to set the cache without importing package:excel
+      ExcelGenerationService.setCacheFromBytes(fileBytes, _lastReportPath!);
       ExcelGenerationService.cachedExcelPath = _lastReportPath!;
       
       final relativePath = "xyz.maya/anydb/schema/$schemaName/Aggregator/Daily_and_Monthly_reports";
