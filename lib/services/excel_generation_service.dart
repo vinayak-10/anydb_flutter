@@ -18,6 +18,18 @@ class ExcelGenerationService {
     cachedExcelPath = null;
   }
 
+  /// Safe bridge method to backfill the static workspace cache memory map from 
+  /// raw bytes without leaking 'package:excel' class structures downstream.
+  static void setCacheFromBytes(List<int> bytes, String targetPath) {
+    try {
+      cachedExcel = Excel.decodeBytes(bytes);
+      cachedExcelPath = targetPath;
+    } catch (e) {
+      debugPrint("ExcelGenerationService.setCacheFromBytes Error: $e");
+    }
+  }
+
+
   /// Returns matched sheet names from the memory cache if available and path matches.
   static List<String>? getMatchedSheetsFromCache(String targetPath, String type) {
     if (cachedExcel != null && cachedExcelPath == targetPath) {
