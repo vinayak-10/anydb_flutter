@@ -126,7 +126,12 @@ class WorkbookService {
 
     if (fileBytes != null) {
       await io.writeBytes(_lastReportPath!, Uint8List.fromList(fileBytes));
-      final relativePath = "xyz.maya/anydb/schema/$schemaName/reports";
+      
+      // FIX: Securely assign cache tracking objects on the main UI thread right after writing
+      ExcelGenerationService.cachedExcel = Excel.decodeBytes(fileBytes);
+      ExcelGenerationService.cachedExcelPath = _lastReportPath!;
+      
+      final relativePath = "xyz.maya/anydb/schema/$schemaName/Aggregator/Daily_and_Monthly_reports";
       await _fileService.copyToPublicDocuments(
         _lastReportPath!,
         fileName,
