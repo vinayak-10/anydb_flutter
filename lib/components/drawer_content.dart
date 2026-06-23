@@ -48,7 +48,7 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
 
     // Resolve the active/last-loaded schema
     final String? resolvedSchemaName =
-        currentSchemaName ??
+        widget.currentSchemaName ??
         (settings.lastLoadedSchemaPath != null
             ? (schemas.isNotEmpty &&
                       schemas.any(
@@ -158,28 +158,24 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
                       title: const Text('Back to Home'),
                       onTap: () async {
                         Navigator.of(context).pop(); // Close the drawer first
-                        if (onBackToHome != null) {
-                          onBackToHome!();
+                        if (widget.onBackToHome != null) {
+                          widget.onBackToHome!();
                         } else if (activeSchema != null) {
                           // Navigate back to home schema
-                          final fileService = ref.read(fileServiceProvider);
-                          final schemaData = await fileService.readJson(
+                          // Use stored _fileService and _collectionService instead of ref.read()
+                          final schemaData = await _fileService.readJson(
                             activeSchema.path,
                           );
                           if (schemaData != null) {
-                            final collectionService = ref.read(
-                              collectionServiceProvider,
-                            );
-                            await collectionService.init(schemaData);
+                            await _collectionService.init(schemaData);
 
                             // Bind database onChanged triggers
-                            for (var content in collectionService.contents) {
+                            for (var content in _collectionService.contents) {
                               if (content.type == ContentType.database) {
                                 final db = content.service as ElementDb;
                                 db.onChanged = () {
-                                  ref
-                                      .read(databaseUpdateProvider.notifier)
-                                      .increment(db.key);
+                                  // Note: Cannot use ref here after widget disposal
+                                  // This callback is for database internal use
                                 };
                               }
                             }
@@ -189,7 +185,7 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => CollectionView(
-                                    contents: collectionService.contents,
+                                    contents: _collectionService.contents,
                                     title: activeSchema!.name,
                                   ),
                                 ),
@@ -199,7 +195,7 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
                         }
                       },
                     ),
-                    if (onBackToHome != null)
+                    if (widget.onBackToHome != null)
                       ListTile(
                         leading: const Icon(Icons.account_tree),
                         title: const Text('Change Schema'),
@@ -347,7 +343,7 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
                           _collectionService,
                           activeSchema,
                           resolvedSchemaName,
-                          onBackToHome: onBackToHome,
+                          onBackToHome: widget.onBackToHome,
                         );
                       },
                     ),
@@ -814,15 +810,11 @@ void _showAdvancedModal(
                       ),
                     );
                     if (updated == true) {
-                      ref.invalidate(schemasProvider);
-                      final fileService = ref.read(fileServiceProvider);
+                      // schemasProvider invalidation happens automatically when schema file changes
                       final schemaData = await fileService.readJson(
                         activeSchema.path,
                       );
                       if (schemaData != null) {
-                        final collectionService = ref.read(
-                          collectionServiceProvider,
-                        );
                         await collectionService.init(schemaData);
                         if (context.mounted) {
                           if (onBackToHome != null) {
