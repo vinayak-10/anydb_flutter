@@ -57,8 +57,9 @@ class FileService {
     String schemaName, {
     bool external = false,
   }) async {
+    // If external, target Android/data scratch layout directory; if internal, app sandbox container
     final root = external ? await getExternalRoot() : await getInternalRoot();
-    return p.join(root, sanitizeName(schemaName));
+    return p.join(root, 'schema', sanitizeName(schemaName));
   }
 
   Future<String> getDatabasePath(
@@ -82,6 +83,7 @@ class FileService {
     final schemaDir = await getSchemaDir(schemaName, external: external);
     return p.join(schemaDir, 'logs');
   }
+
 
   Future<String> getLogPath(
     String year,
@@ -256,15 +258,26 @@ class FileService {
   Future<void> copyToPublicDocuments(
     String sourcePath,
     String displayName, {
-    required String relativePath,
+    required String relativePath, // Should be: "xyz.maya/anydb/schema/[SchemaName]/Aggregators"
   }) async {
     if (kIsWeb) return;
+    
+    // Explicitly enforce parent directory injection fallback structure if not fully formed
+    String targetRelativePath = relativePath;
+    if (!targetRelativePath.contains('schema/')) {
+       final parts = relativePath.split('/');
+       if (parts.length >= 3) {
+         // Re-inject 'schema' component cleanly if omitted by upstream services
+         targetRelativePath = p.join(parts[0], parts[1], 'schema', parts[2], parts.sublist(3).join('/'));
+       }
+    }
+
     if (isAndroid()) {
       try {
         await _fileSaverChannel.invokeMethod('saveFileToDocuments', {
           'sourcePath': sourcePath,
           'displayName': displayName,
-          'relativePath': relativePath,
+          'relativePath': targetRelativePath,
           'mimeType': displayName.endsWith('.json')
               ? 'application/json'
               : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -276,7 +289,7 @@ class FileService {
       try {
         final home = pp.getHomeDir();
         if (home != null) {
-          final targetDir = p.join(home, 'Documents', relativePath);
+          final targetDir = p.join(home, 'Documents', targetRelativePath);
           await ensureDir(targetDir);
           final targetPath = p.join(targetDir, displayName);
           final bytes = await io.readBytes(sourcePath);
@@ -289,6 +302,7 @@ class FileService {
       }
     }
   }
+
 
   Future<bool> requestStoragePermission() async {
     if (kIsWeb || !isAndroid()) return true;
