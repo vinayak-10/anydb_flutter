@@ -1,10 +1,10 @@
 import java.util.Properties
+import java.io.File
 
 plugins {
     id("com.android.application")
     id("kotlin-android")
     id("com.google.gms.google-services")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -13,7 +13,7 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // Load keystore properties from key.properties file safely
+    // Securely resolve and load keystore properties
     val keystoreProperties = Properties()
     val keystorePropertiesFile = rootProject.file("key.properties")
     if (keystorePropertiesFile.exists()) {
@@ -27,47 +27,48 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // COMPATIBILITY FIX: Using the universally supported string assignment 
-    // to bypass Kotlin version mismatch errors on the compiler options DSL
     kotlinOptions {
         jvmTarget = "17"
     }
 
     signingConfigs {
         create("release") {
-            // Defensive validation check: If key.properties loaded values, apply them strictly
+            // CRITICAL SIGNING PROTECTION: Force absolute validation on the CI runner
             if (!keystoreProperties.isEmpty) {
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
-                storePassword = keystoreProperties.getProperty("storePassword")
-                
+                val alias = keystoreProperties.getProperty("keyAlias")
+                val keyPass = keystoreProperties.getProperty("keyPassword")
+                val storePass = keystoreProperties.getProperty("storePassword")
                 val storePath = keystoreProperties.getProperty("storeFile")
-                if (!storePath.isNullOrEmpty()) {
-                    storeFile = file(storePath)
+
+                if (alias.isNullOrEmpty() || keyPass.isNullOrEmpty() || storePass.isNullOrEmpty() || storePath.isNullOrEmpty()) {
+                    throw GradleException("Signing Error: key.properties contains null or empty credentials!")
                 }
-                
-                // Explicitly enforce modern cryptographic signature blocks required by Android 11+
+
+                // Resolve keystore file relative to the app project module directory
+                val keystoreFile = file(storePath)
+                if (!keystoreFile.exists()) {
+                    throw GradleException("Signing Error: Keystore file not found at path: ${keystoreFile.absolutePath}")
+                }
+
+                keyAlias = alias
+                keyPassword = keyPass
+                storeFile = keystoreFile
+                storePassword = storePass
+
+                // Strictly enforce modern signature block tables
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
             } else {
-                // Fallback debug parameters if key.properties configuration isn't supplied
-                logger.warn("WARNING: key.properties is empty or missing! App will sign with debug keys.")
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
-                storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
-                storePassword = "android"
+                throw GradleException("Signing Error: key.properties file was not found or could not be loaded by Gradle!")
             }
         }
     }
 
     defaultConfig {
         applicationId = "com.example.anydb_flutter"
-        
-        // Explicitly declare safe baselines to resolve any internal manifest merge conflicts
-        minSdk = 24 // Enforces Android 7.0 Nougat as the absolute minimum baseline
+        minSdk = 24 // Safe baseline for all modern package parsing parameters
         targetSdk = 34
-        
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
