@@ -90,19 +90,15 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
 
-      - name: 🏷️ Prepare Unique Release Artifact Name
-        run: |
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/anydb_build_${{ github.run_number }}.apk
-
       - name: 📤 Upload APK to Google Drive
         run: |
-          rclone copy -P build/app/outputs/flutter-apk/anydb_build_${{ github.run_number }}.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
+          rclone copy -P build/app/outputs/flutter-apk/app-release.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: anydb-android-apk-build-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/anydb_build_${{ github.run_number }}.apk
+          name: anydb-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 5
 
       - name: 📤 Upload AAB Artifact
