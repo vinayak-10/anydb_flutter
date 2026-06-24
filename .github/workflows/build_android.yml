@@ -41,7 +41,6 @@ jobs:
           KEY_PASS_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
           KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          # Define defaults matching the standard setup
           DEFAULT_PASS="and_any"
           DEFAULT_ALIAS="anydb-alias"
 
@@ -60,8 +59,6 @@ jobs:
               -dname "CN=AnyDb, OU=Development, O=AnyDb, L=Unknown, S=Unknown, C=US"
           fi
 
-          # Write key.properties
-          # CRITICAL HIERARCHY FIX: storeFile points cleanly to app subfolder module scope
           echo "storePassword=$STORE_PASS" > android/key.properties
           echo "keyPassword=$KEY_PASS" >> android/key.properties
           echo "keyAlias=$KEY_ALIAS" >> android/key.properties
@@ -75,6 +72,16 @@ jobs:
       - name: ⚙️ Build Android APK
         run: |
           flutter build apk --release --dart-define-from-file=secrets.json
+
+      # CRITICAL FIX STEP: Move and isolate the clean APK binary before the App Bundle build alters the build cache directory
+      - name: 🛡️ Secure and Isolate APK Output
+        run: |
+          mkdir -p final_apk_output/
+          cp build/app/outputs/flutter-apk/app-release.apk final_apk_output/anydb-release-build-${{ github.run_number }}.apk
+          echo "✅ Clean APK successfully secured outside the build cache workspace."
+
+      - name: 🧹 Clean Cache Between Builds
+        run: flutter clean && flutter pub get
 
       - name: ⚙️ Build Android App Bundle (AAB)
         run: |
@@ -91,18 +98,16 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
 
+      # CRITICAL FIX STEP: Upload the APK from our isolated storage layer instead of the corrupted intermediate folder
       - name: 📤 Upload APK to Google Drive
         run: |
-          # DYNAMIC CACHE ELIMINATION: Appends run counter suffix to break local installer cache tables
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/anydb-release-build-${{ github.run_number }}.apk
-          
-          rclone copy -P build/app/outputs/flutter-apk/anydb-release-build-${{ github.run_number }}.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
+          rclone copy -P final_apk_output/anydb-release-build-${{ github.run_number }}.apk "gdrive:RKM Indore App/apks/flutter_apk/" --drive-shared-with-me
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: anydb-android-apk-build-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: final_apk_output/anydb-release-build-${{ github.run_number }}.apk
           retention-days: 5
 
       - name: 📤 Upload AAB Artifact
