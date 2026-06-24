@@ -37,16 +37,21 @@ android {
                 storeFile = file(storePath)
             }
             storePassword = keystoreProperties["storePassword"] as? String
+            
+            // CRITICAL ADDITION: Force the runner engine to output strict modern v2 & v3 signatures
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
+
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.anydb_flutter"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 24
+        targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
