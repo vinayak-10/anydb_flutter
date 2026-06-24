@@ -37,8 +37,13 @@ android {
                 storeFile = file(storePath)
             }
             storePassword = keystoreProperties["storePassword"] as? String
+            
+            // CRITICAL ADDITION: Force the runner engine to output strict modern v2 & v3 signatures
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
+
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
