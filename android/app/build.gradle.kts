@@ -27,8 +27,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // MODERN FIX: Replaced deprecated jvmTarget with compilerOptions DSL
     kotlinOptions {
-        jvmTarget = "17"
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     signingConfigs {
@@ -49,11 +52,11 @@ android {
                 enableV2Signing = true
                 enableV3Signing = true
             } else {
-                // Fail-safe diagnostic fallback if keys are missing in the build environment
+                // CLEAN FIX: Removed unresolved 'wallet' fallback reference
                 logger.warn("WARNING: key.properties is empty or missing! App will sign with debug keys.")
                 keyAlias = "androiddebugkey"
                 keyPassword = "android"
-                storeFile = wallet?.let { file(System.getProperty("user.home") + "/.android/debug.keystore") }
+                storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
                 storePassword = "android"
             }
         }
