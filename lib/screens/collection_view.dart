@@ -9,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:path/path.dart' as p;
 import '../core/formula_engine.dart';
 import '../services/collection_service.dart';
 import '../services/element_db.dart';
@@ -489,9 +490,21 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           "Export downloaded to default browser location.",
         );
     } else {
-      final path = await fileService.getExternalRoot();
+      final path = await fileService.getDatabasePath(
+        widget.title,
+        db.key,
+        external: false,
+      );
+      await fileService.ensureDir(path);
       await fileService.writeJson(path, fileName, data);
-      if (mounted) FeedbackToast.success(context, "Exported to $path");
+      
+      final relativePath = "xyz.maya/anydb/schema/${widget.title}/Database";
+      await fileService.copyToPublicDocuments(
+        p.join(path, fileName),
+        fileName,
+        relativePath: relativePath,
+      );
+      if (mounted) FeedbackToast.success(context, "Exported to $path and public Documents/$relativePath");
     }
   }
 

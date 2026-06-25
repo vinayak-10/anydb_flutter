@@ -8,6 +8,7 @@
 - **Aggregation:** Refined `ExtractorDatabase` to include **Active, Archived, and Deleted** records for historical accuracy, while adding row-refinement to exclude placeholder dates during flattening.
 - **Workflow:** Automated the "Done" button sequence on the Home screen to switch to the Reports tab and pre-load the Daily report for immediate verification.
 - **Report Search Bar:** Added a beautiful report search bar to both the in-tab viewer and dedicated spreadsheet report views, dynamically filtering rows based on a 16pt font input search query with live matching counts.
+- **Monthly Report Resolution:** Realigned the monthly batch generator to ensure the final summary sheet uses `monthlyReport` as its source, restoring proper monthly formulas and totals. Removed the daily data emptiness check to guarantee all daily sheets are written to the workbook, keeping all sheet-to-sheet formula references fully intact.
 
 ### 2. SQLite Global Overhaul & Mobile Performance
 - **Cross-Platform SQLite Integration:** Ported `SqliteHelper` globally to mobile via `sqlite3_flutter_libs` to utilize B-tree key-value JSON string storage with transactional writes, speeding up batch-imports to **under 300ms** and startup loading to **under 50ms**.
@@ -200,9 +201,10 @@
 
 ## Current State
 - **Branch:** `dev`
-- **Last Stable Commit:** `a211a5e` (fix(windows): restore standard FLUTTER_TOOL_ENVIRONMENT payload for Windows build custom command)
+- **Last Stable Commit:** `dc9ecf5` (Update aggregator_service.dart: fixed missing rows and formula errors)
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
 
 ## Session History
+- [.chat_context/session_20260625_1.md](.chat_context/session_20260625_1.md) — Resolution of Monthly Report blank sheets and formula errors, validation of date picker behavior, and analysis of Android backup directory hierarchy.
 - [.chat_context/session_20260623_1.md](.chat_context/session_20260623_1.md) — Fix for Empty Monthly Report extraction logic.
 - [.chat_context/session_20260623_report_generation_analysis.md](.chat_context/session_20260623_report_generation_analysis.md) — Root cause analysis: Monthly report empty bug (wrong sourceReport in batch), date picker month-only display, Documents hierarchy not maintained on Android.

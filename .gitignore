@@ -86,3 +86,10 @@ assets/*.jpg
 
 # iOS packaging configuration template
 ios/ExportOptions.plist
+android/app/anydb-release-build-33.apk
+android/app/keystore2john.py
+android/app/keystore_base64.txt
+android/app/keystore_base64_old.txt
+android/app/keystore_hash.txt
+android/app/pfx2john.py
+android/app/pkcs12_hash.txt

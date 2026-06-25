@@ -61,7 +61,7 @@ class IsolateWorker {
     // 3. Clear placeholder Sheets
     final List<String> sheetsToDelete = [];
     for (var sn in excel.sheets.keys) {
-      if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1')) {
+      if (sn != sheetName && (sn == 'Sheet1' || sn == 'Sheet 1' || sn == 'Default')) {
         sheetsToDelete.add(sn);
       }
     }
@@ -360,7 +360,7 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
           extIntf.extractor!.predicates[0],
           data: targetDate,
           getFileName: (meta, {DateTime? timestamp}) =>
-              agg.getFileName(meta, timestamp: timestamp),
+              agg.getFileName(meta, timestamp: timestamp, sourceReport: report),
           timestamp: null,
           force: true,
         );
@@ -824,7 +824,7 @@ Future<dynamic> _executeProcessTask(
 
       final meta = agg.getFileName({
         "predicate": {"value": targetDate},
-      }, timestamp: targetDate);
+      }, timestamp: targetDate, sourceReport: report);
       final String collection = meta['collection'] ?? reportKey;
       final String sanitizedCollection = FileService().sanitizeName(collection);
 
@@ -1033,7 +1033,7 @@ Future<dynamic> _executeProcessTask(
           extIntf.extractor!.predicates[0],
           data: targetDate,
           getFileName: (meta, {DateTime? timestamp}) =>
-              agg.getFileName(meta, timestamp: timestamp),
+              agg.getFileName(meta, timestamp: timestamp, sourceReport: report),
           timestamp: null,
           force: true,
         );

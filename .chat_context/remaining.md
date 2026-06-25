@@ -42,3 +42,14 @@ The file has:
 2. Run `flutter test` - all tests pass
 3. Manual test: Generate monthly report → verify totals show calculated values (not 0)
 4. Manual test: Open drawer → no Riverpod disposal errors
+
+## New Backlog Items
+
+### 1. Consolidated Monthly Workbook & Default Sheet Cleanup
+* **Requirement:** Only one report file for a month should exist, named `Monthly_[month_name].xlsx`.
+* **Structure:** This single workbook must contain all the individual daily sheets for that month, with the monthly summary sheet positioned at the very top (first tab).
+* **Fix:** Prevent the creation of the default placeholder sheet (e.g., "Sheet1" or "Sheet 1") or ensure it is completely removed during compilation, as it should not exist in the final output.
+
+### 2. External Documents Directory Structure Review
+* **Requirement:** Review the directory structure used in the external `Documents` folder.
+* **Fix:** Identify and resolve any errors or deviations from the proper directory layout to ensure backups and reports are saved to their correct paths.

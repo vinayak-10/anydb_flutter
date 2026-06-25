@@ -350,20 +350,51 @@ class AggregatorService {
       String lastPath = "";
       final DateTime batchTimestamp = DateTime.now();
 
-      final initialMeta = getFileName({
-        "predicate": {"value": monthDate},
-      }, timestamp: batchTimestamp);
-
       final aggregatorDir = await _fileService.getAggregatorPath(
         key,
         external: true,
       );
       await _fileService.ensureDir(aggregatorDir);
 
+      final Set<String> existingDailySheets = {};
       if (aggregatorDir.isNotEmpty) {
-        final fullPath = p.join(aggregatorDir, initialMeta['fileName']);
-        if (force) {
-          await io.deleteFile(fullPath);
+        final collectionName = "${key}_${DateFormat('MMM_yyyy').format(monthDate)}";
+        final sanitizedCollection = collectionName.replaceAll(' ', '_');
+        final dirFiles = io.listDir(aggregatorDir);
+        final matches = dirFiles.where((e) {
+          final base = p.basename(e.path);
+          return (base.startsWith(collectionName) ||
+                  base.startsWith(sanitizedCollection)) &&
+              base.endsWith('.xlsx');
+        }).toList();
+
+        if (matches.isNotEmpty) {
+          matches.sort((a, b) {
+            final statA = io.getFileStatSync(a.path);
+            final statB = io.getFileStatSync(b.path);
+            return statB.modified.compareTo(statA.modified);
+          });
+          final existingPath = matches.first.path;
+          try {
+            final metaForDiscovery = {
+              "collection": collectionName,
+              "fileName": p.basename(existingPath),
+            };
+            final sheetNames = await workbook.getSheetNames(metaForDiscovery, 'Daily');
+            existingDailySheets.addAll(sheetNames);
+          } catch (e) {
+            debugPrint("AggregatorService: Error reading existing sheets: $e");
+          }
+
+          if (force) {
+            for (final match in matches) {
+              try {
+                await io.deleteFile(match.path);
+              } catch (e) {
+                debugPrint("AggregatorService: Error deleting old workbook ${match.path}: $e");
+              }
+            }
+          }
         }
       }
 
@@ -387,16 +418,23 @@ class AggregatorService {
       }, timestamp: batchTimestamp);
 
       await workbook.write(
-        placeholderMeta,
+        {...placeholderMeta, 'entry': DateFormat('MMM_yyyy').format(monthDate)},
         initialSummaryData,
         timestamp: batchTimestamp,
       );
+
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
 
       for (int d = 1; d <= daysInMonth; d++) {
         if (kIsWeb) {
           await Future.delayed(const Duration(milliseconds: 50));
         }
         final date = DateTime(year, month, d);
+        if (date.isAfter(todayStart)) {
+          continue;
+        }
+
         try {
           logger.log("AggregatorService: Processing day $d of $daysInMonth...");
           final dailyData = await dailyReport.extractor[0].extractor!
@@ -408,7 +446,18 @@ class AggregatorService {
                 force: force,
               );
 
-          // REMOVED: The check for .isNotEmpty to ensure empty sheets are still generated
+          final List<dynamic> records = dailyData['data'] ?? [];
+          final String entryName = dailyReport.extractor[0].predicatedName(
+            dailyReport.extractor[0].extractor!.predicates[0] ?? {},
+            date.toIso8601String(),
+          );
+          final String targetSheetName = _fileService.sanitizeName("${dailyReport.key}_$entryName");
+          final bool alreadyExists = existingDailySheets.contains(targetSheetName);
+
+          if (records.isEmpty && !alreadyExists) {
+            continue;
+          }
+
           final reportData = dailyReport.generateReport(dailyData);
           
           reportData['meta'] ??= {};
