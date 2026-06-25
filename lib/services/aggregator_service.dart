@@ -408,19 +408,20 @@ class AggregatorService {
                 force: force,
               );
 
-          if (dailyData['data'] != null &&
-              (dailyData['data'] as List).isNotEmpty) {
-            final reportData = dailyReport.generateReport(dailyData);
-            // Consolidated batch sheets must be written in the same monthly report file
-            // Use dailyReport as sourceReport so daily sheets get correct daily metadata (Bug 6 fix)
-            final result = await generateReport(
-              reportData,
-              timestamp: batchTimestamp,
-              sourceReport: dailyReport,
-            );
-            lastPath = result['path'];
-            generatedDays++;
-          }
+          // REMOVED: The check for .isNotEmpty to ensure empty sheets are still generated
+          final reportData = dailyReport.generateReport(dailyData);
+          
+          reportData['meta'] ??= {};
+          reportData['meta']['fileName'] = placeholderMeta['fileName'];
+
+          final result = await generateReport(
+            reportData,
+            timestamp: batchTimestamp,
+            sourceReport: dailyReport,
+          );
+          lastPath = result['path'];
+          generatedDays++;
+          
         } catch (e, stack) {
           debugPrint("AggregatorService: Error processing day $d: $e");
           debugPrint("Stack Trace: $stack");
