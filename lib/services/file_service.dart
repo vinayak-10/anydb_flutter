@@ -249,7 +249,13 @@ class FileService {
     if (kIsWeb) {
       await writeJson(path, fileName, {"error": error});
     } else {
-      await io.writeString(p.join(path, fileName), error);
+      final logFilePath = p.join(path, fileName);
+      await io.writeString(logFilePath, error);
+      await copyToPublicDocuments(
+        logFilePath,
+        fileName,
+        relativePath: "xyz.maya/anydb/schema/$schemaName/logs",
+      );
     }
   }
 

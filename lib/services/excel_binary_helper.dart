@@ -111,13 +111,15 @@ class ExcelBinaryHelper {
             if (cellRef == null) continue;
 
             final f = c.getElement('f');
-            final v = c.getElement('v');
-            if (f != null && v != null) {
+            if (f != null) {
               final lookupKey = "$sheetName!$cellRef";
               final calculatedVal = formulaValues[lookupKey];
               if (calculatedVal != null) {
-                // xml v6.x: use innerText setter for text-only elements like <v>
-                // v.children returns UnmodifiableListView, so clear()/add() fails
+                var v = c.getElement('v');
+                if (v == null) {
+                  v = XmlElement(XmlName('v'));
+                  c.children.add(v);
+                }
                 v.innerText = calculatedVal;
                 modified = true;
               }

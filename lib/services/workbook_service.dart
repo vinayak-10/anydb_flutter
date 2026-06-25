@@ -57,8 +57,6 @@ class WorkbookService {
     final sheetName = _fileService.sanitizeName(entryName);
     logger.log("WorkbookService: Writing to sheet '$sheetName' in file '$fileName'");
 
-    // Track formula registry for post-processing
-    Map<String, String> formulaRegistry = {};
     List<int>? fileBytes;
 
     if (kIsWeb) {
@@ -125,7 +123,7 @@ class WorkbookService {
       ExcelGenerationService.setCacheFromBytes(fileBytes, _lastReportPath!);
       ExcelGenerationService.cachedExcelPath = _lastReportPath!;
       
-      final relativePath = "xyz.maya/anydb/schema/$schemaName/Aggregator/Daily_and_Monthly_reports";
+      final relativePath = "xyz.maya/anydb/schema/$schemaName/Aggregators/Daily_and_Monthly_Reports";
       await _fileService.copyToPublicDocuments(
         _lastReportPath!,
         fileName,
@@ -134,7 +132,7 @@ class WorkbookService {
       _triggerRemoteShares(meta['share'] ?? [], _lastReportPath!, fileName);
     }
 
-    // await _backupDatabase(schemaName, meta['collection'] ?? "Database");
+    await _backupDatabase(schemaName, meta['collection'] ?? "Database");
 
     return _lastReportPath!;
   }
@@ -187,7 +185,7 @@ class WorkbookService {
       );
       if (!await io.dirExists(dbDir)) return;
 
-      final relativePath = 'xyz.maya/anydb/schema/$schemaName/Database/$dbName';
+      final relativePath = 'xyz.maya/anydb/schema/$schemaName/Database';
 
       final entities = io.listDir(dbDir);
       for (final entity in entities) {
