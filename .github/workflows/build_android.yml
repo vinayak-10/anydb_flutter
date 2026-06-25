@@ -50,6 +50,7 @@ jobs:
 
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Signing Key: Custom keystore secret detected. Decoding..."
+            # Save directly into the app module directory
             echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
           else
             echo "Signing Key: No custom keystore secret found. Generating temporary dummy keystore..."
@@ -59,9 +60,12 @@ jobs:
               -dname "CN=AnyDb, OU=Development, O=AnyDb, L=Unknown, S=Unknown, C=US"
           fi
 
+          # Write key.properties into the directory build.gradle.kts targets
           echo "storePassword=$STORE_PASS" > android/key.properties
           echo "keyPassword=$KEY_PASS" >> android/key.properties
           echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+          
+          # Fixed path alignment for the Gradle app-level context
           echo "storeFile=upload-keystore.jks" >> android/key.properties
 
           echo "Signing Key: Configuration successfully generated in android/key.properties"
@@ -116,3 +120,11 @@ jobs:
           name: anydb-android-aab-build-${{ github.run_number }}
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 5
+
+      - name: 🧹 Shred and Clean Signing Assets
+        if: always()
+        run: |
+          # Securely purge generated files from the runner storage instance
+          rm -f android/app/upload-keystore.jks
+          rm -f android/key.properties
+          rm -f secrets.json
