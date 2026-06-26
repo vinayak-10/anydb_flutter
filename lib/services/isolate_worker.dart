@@ -74,9 +74,18 @@ class IsolateWorker {
 
     final savedBytes = excel.save();
     if (savedBytes != null) {
-      // 4. Inject static pre-calculated results & sort sheets using Binary Module
+      // 4. Inject static pre-calculated results & sort sheets using Binary Module.
+      // Pass existingBytes as previousBytes so that <v> cached values injected by
+      // prior postProcessBytes calls (for earlier sheets in the same workbook) are
+      // recovered and re-injected. excel.save() strips ALL <v> tags on every write,
+      // so without this every sheet except the most recently written one loses its
+      // cached values, causing the monthly extractor to read raw formula strings.
       // FIX: Do not mutate static variables inside a background isolate memory pool.
-      return ExcelBinaryHelper.postProcessBytes(savedBytes, formulaRegistry);
+      return ExcelBinaryHelper.postProcessBytes(
+        savedBytes,
+        formulaRegistry,
+        previousBytes: existingBytes,
+      );
     }
     return savedBytes;
   }
