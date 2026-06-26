@@ -15,54 +15,7 @@ class ExcelBinaryHelper {
   static List<int> postProcessBytes(List<int> bytes, Map<String, String> formulaValues) {
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
-      _injectCalculatedValues(archive, formulaValues);
       
-      ArchiveFile? workbookXmlFile;
-      for (var file in archive.files) {
-        if (file.name == 'xl/workbook.xml') {
-          workbookXmlFile = file;
-          break;
-        }
-      }
-      if (workbookXmlFile == null) return bytes;
-
-      var xmlContent = utf8.decode(workbookXmlFile.content);
-      var sheetsMatch = RegExp(r'<sheets>(.*?)</sheets>').firstMatch(xmlContent);
-      if (sheetsMatch == null) return bytes;
-
-      var sheetsInner = sheetsMatch.group(1)!;
-      var sheetRegex = RegExp(r'(<sheet\s+[^>]*name="([^"]+)"[^>]*>)');
-      var matches = sheetRegex.allMatches(sheetsInner).toList();
-
-      // Sort sheets chronologically (newest first, monthly first)
-      matches.sort((m1, m2) {
-        var name1 = m1.group(2)!;
-        var name2 = m2.group(2)!;
-        return _compareSheetNames(name1, name2);
-      });
-
-      var sortedSheetsStr = matches.map((m) => m.group(1)!).join('');
-      var newXmlContent = xmlContent.replaceFirst(sheetsInner, sortedSheetsStr);
-      var newContent = utf8.encode(newXmlContent);
-
-      var newArchive = Archive();
-      for (var file in archive.files) {
-        if (file.name == 'xl/workbook.xml') {
-          newArchive.addFile(ArchiveFile('xl/workbook.xml', newContent.length, newContent));
-        } else {
-          newArchive.addFile(file);
-        }
-      }
-
-      return ZipEncoder().encode(newArchive) ?? bytes;
-    } catch (e) {
-      debugPrint("ExcelBinaryHelper Error: $e");
-      return bytes;
-    }
-  }
-
-  static void _injectCalculatedValues(Archive archive, Map<String, String> formulaValues) {
-    try {
       ArchiveFile? workbookXmlFile;
       ArchiveFile? relsFile;
       for (var file in archive.files) {
@@ -72,7 +25,7 @@ class ExcelBinaryHelper {
           relsFile = file;
         }
       }
-      if (workbookXmlFile == null || relsFile == null) return;
+      if (workbookXmlFile == null || relsFile == null) return bytes;
       
       final wbDoc = XmlDocument.parse(utf8.decode(workbookXmlFile.content));
       final relsDoc = XmlDocument.parse(utf8.decode(relsFile.content));
@@ -97,42 +50,73 @@ class ExcelBinaryHelper {
           }
         }
       }
-      
-      for (int i = 0; i < archive.files.length; i++) {
-        final file = archive.files[i];
-        final sheetName = targetToSheetName[file.name];
-        if (sheetName != null) {
-          final xmlStr = utf8.decode(file.content);
-          final sheetDoc = XmlDocument.parse(xmlStr);
-          bool modified = false;
-          
-          for (final c in sheetDoc.findAllElements('c')) {
-            final cellRef = c.getAttribute('r');
-            if (cellRef == null) continue;
 
-            final f = c.getElement('f');
-            if (f != null) {
-              final lookupKey = "$sheetName!$cellRef";
-              final calculatedVal = formulaValues[lookupKey];
-              if (calculatedVal != null) {
-                var v = c.getElement('v');
-                if (v == null) {
-                  v = XmlElement(XmlName('v'));
-                  c.children.add(v);
+      // Sort sheets inside xl/workbook.xml
+      var xmlContent = utf8.decode(workbookXmlFile.content);
+      var sheetsMatch = RegExp(r'<sheets>(.*?)</sheets>').firstMatch(xmlContent);
+      if (sheetsMatch == null) return bytes;
+
+      var sheetsInner = sheetsMatch.group(1)!;
+      var sheetRegex = RegExp(r'(<sheet\s+[^>]*name="([^"]+)"[^>]*>)');
+      var matches = sheetRegex.allMatches(sheetsInner).toList();
+
+      matches.sort((m1, m2) {
+        var name1 = m1.group(2)!;
+        var name2 = m2.group(2)!;
+        return _compareSheetNames(name1, name2);
+      });
+
+      var sortedSheetsStr = matches.map((m) => m.group(1)!).join('');
+      var newXmlContent = xmlContent.replaceFirst(sheetsInner, sortedSheetsStr);
+      var newWorkbookContent = utf8.encode(newXmlContent);
+
+      final newArchive = Archive();
+      for (final file in archive.files) {
+        if (file.name == 'xl/workbook.xml') {
+          newArchive.addFile(ArchiveFile('xl/workbook.xml', newWorkbookContent.length, newWorkbookContent));
+        } else {
+          final sheetName = targetToSheetName[file.name];
+          if (sheetName != null) {
+            final xmlStr = utf8.decode(file.content);
+            final sheetDoc = XmlDocument.parse(xmlStr);
+            bool modified = false;
+            
+            for (final c in sheetDoc.findAllElements('c')) {
+              final cellRef = c.getAttribute('r');
+              if (cellRef == null) continue;
+
+              final f = c.getElement('f');
+              if (f != null) {
+                final lookupKey = "$sheetName!$cellRef";
+                final calculatedVal = formulaValues[lookupKey];
+                if (calculatedVal != null) {
+                  var v = c.getElement('v');
+                  if (v == null) {
+                    v = XmlElement(XmlName('v'));
+                    c.children.add(v);
+                  }
+                  v.innerText = calculatedVal;
+                  modified = true;
                 }
-                v.innerText = calculatedVal;
-                modified = true;
               }
             }
-          }
-          if (modified) {
-            final newContent = utf8.encode(sheetDoc.toXmlString());
-            archive.files[i] = ArchiveFile(file.name, newContent.length, newContent);
+            if (modified) {
+              final newContent = utf8.encode(sheetDoc.toXmlString());
+              newArchive.addFile(ArchiveFile(file.name, newContent.length, newContent));
+            } else {
+              newArchive.addFile(file);
+            }
+          } else {
+            newArchive.addFile(file);
           }
         }
       }
-    } catch (e) {
-      debugPrint("ExcelBinaryHelper._injectCalculatedValues Error: $e");
+
+      return ZipEncoder().encode(newArchive) ?? bytes;
+    } catch (e, stack) {
+      debugPrint("ExcelBinaryHelper Error: $e");
+      debugPrint(stack.toString());
+      return bytes;
     }
   }
 
