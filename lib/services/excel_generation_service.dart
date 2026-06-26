@@ -285,9 +285,16 @@ class ExcelGenerationService {
             final sheetDoc = XmlDocument.parse(utf8.decode(f.content));
             for (final c in sheetDoc.findAllElements('c')) {
               final r = c.getAttribute('r');
-              final v = c.getElement('v')?.innerText;
-              if (r != null && v != null) {
-                cachedValues[r] = v;
+              XmlElement? v;
+              for (var child in c.children) {
+                if (child is XmlElement && child.name.local == 'v') {
+                  v = child;
+                  break;
+                }
+              }
+              final vText = v?.innerText;
+              if (r != null && vText != null) {
+                cachedValues[r] = vText;
               }
             }
             break;
