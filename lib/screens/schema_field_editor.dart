@@ -1664,11 +1664,14 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                     label: "Default Value (comma-separated or single, optional)",
                     initialValue: field['defaultValue']?.toString() ?? "",
                     onChanged: (val) {
-                      if (val.trim().isEmpty) {
-                        field.remove('defaultValue');
-                      } else {
-                        field['defaultValue'] = val;
-                      }
+                      setStateModal(() {
+                        if (val.trim().isEmpty) {
+                          field.remove('defaultValue');
+                        } else {
+                          field['defaultValue'] = val;
+                        }
+                      });
+                      setState(() {});
                     },
                   ),
                   const SizedBox(height: 12),
@@ -1735,7 +1738,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                   _buildModalTextField(
                     label: "Default String Value",
                     initialValue: field['defaultValue']?.toString() ?? "",
-                    onChanged: (val) => field['defaultValue'] = val,
+                    onChanged: (val) {
+                      setStateModal(() {
+                        field['defaultValue'] = val;
+                      });
+                      setState(() {});
+                    },
                   ),
                 ] else if (type == 'number') ...[
                   _buildModalTextField(
@@ -1756,7 +1764,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                   _buildModalTextField(
                     label: "Default String Value",
                     initialValue: field['defaultValue']?.toString() ?? "",
-                    onChanged: (val) => field['defaultValue'] = val,
+                    onChanged: (val) {
+                      setStateModal(() {
+                        field['defaultValue'] = val;
+                      });
+                      setState(() {});
+                    },
                   ),
                 ] else if (type == 'dateTime') ...[
                   _buildModalTextField(
@@ -1781,7 +1794,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                   _buildModalTextField(
                     label: "Default String Value",
                     initialValue: field['defaultValue']?.toString() ?? "",
-                    onChanged: (val) => field['defaultValue'] = val,
+                    onChanged: (val) {
+                      setStateModal(() {
+                        field['defaultValue'] = val;
+                      });
+                      setState(() {});
+                    },
                   ),
                 ] else if (type == 'reminder') ...[
                   const Text(
@@ -1801,9 +1819,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                           initialValue: (field['defaultValue'] as Map?)?['days']?.toString() ?? "30",
                           keyboardType: TextInputType.number,
                           onChanged: (val) {
-                            final def = Map<String, dynamic>.from(field['defaultValue'] as Map? ?? {});
-                            def['days'] = val;
-                            field['defaultValue'] = def;
+                            setStateModal(() {
+                              final def = Map<String, dynamic>.from(field['defaultValue'] as Map? ?? {});
+                              def['days'] = val;
+                              field['defaultValue'] = def;
+                            });
+                            setState(() {});
                           },
                         ),
                       ),
@@ -1814,9 +1835,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                           initialValue: (field['defaultValue'] as Map?)?['month']?.toString() ?? "0",
                           keyboardType: TextInputType.number,
                           onChanged: (val) {
-                            final def = Map<String, dynamic>.from(field['defaultValue'] as Map? ?? {});
-                            def['month'] = val;
-                            field['defaultValue'] = def;
+                            setStateModal(() {
+                              final def = Map<String, dynamic>.from(field['defaultValue'] as Map? ?? {});
+                              def['month'] = val;
+                              field['defaultValue'] = def;
+                            });
+                            setState(() {});
                           },
                         ),
                       ),
@@ -1827,9 +1851,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                           initialValue: (field['defaultValue'] as Map?)?['year']?.toString() ?? "0",
                           keyboardType: TextInputType.number,
                           onChanged: (val) {
-                            final def = Map<String, dynamic>.from(field['defaultValue'] as Map? ?? {});
-                            def['year'] = val;
-                            field['defaultValue'] = def;
+                            setStateModal(() {
+                              final def = Map<String, dynamic>.from(field['defaultValue'] as Map? ?? {});
+                              def['year'] = val;
+                              field['defaultValue'] = def;
+                            });
+                            setState(() {});
                           },
                         ),
                       ),
@@ -1839,7 +1866,12 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                   _buildModalTextField(
                     label: "Default String Value",
                     initialValue: field['defaultValue']?.toString() ?? "",
-                    onChanged: (val) => field['defaultValue'] = val,
+                    onChanged: (val) {
+                      setStateModal(() {
+                        field['defaultValue'] = val;
+                      });
+                      setState(() {});
+                    },
                   ),
                 ],
               ],
@@ -2232,7 +2264,11 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                       label: "Default Value",
                       initialValue: elem['defaultValue']?.toString() ?? "",
                       onChanged: (val) {
-                        elem['defaultValue'] = val;
+                        parentSetStateModal(() {
+                          elem['defaultValue'] = val;
+                        });
+                        setStateDialog(() {});
+                        setState(() {});
                       },
                     ),
                   ] else if (type == 'number') ...[
@@ -2256,7 +2292,11 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                       label: "Default Value",
                       initialValue: elem['defaultValue']?.toString() ?? "",
                       onChanged: (val) {
-                        elem['defaultValue'] = val;
+                        parentSetStateModal(() {
+                          elem['defaultValue'] = val;
+                        });
+                        setStateDialog(() {});
+                        setState(() {});
                       },
                     ),
                   ] else if (type == 'dateTime') ...[
@@ -2284,7 +2324,11 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                       label: "Default Value",
                       initialValue: elem['defaultValue']?.toString() ?? "",
                       onChanged: (val) {
-                        elem['defaultValue'] = val;
+                        parentSetStateModal(() {
+                          elem['defaultValue'] = val;
+                        });
+                        setStateDialog(() {});
+                        setState(() {});
                       },
                     ),
                   ] else if (type == 'reminder') ...[
@@ -2305,9 +2349,13 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                             initialValue: (elem['defaultValue'] as Map?)?['days']?.toString() ?? "30",
                             keyboardType: TextInputType.number,
                             onChanged: (val) {
-                              final def = Map<String, dynamic>.from(elem['defaultValue'] as Map? ?? {});
-                              def['days'] = val;
-                              elem['defaultValue'] = def;
+                              parentSetStateModal(() {
+                                final def = Map<String, dynamic>.from(elem['defaultValue'] as Map? ?? {});
+                                def['days'] = val;
+                                elem['defaultValue'] = def;
+                              });
+                              setStateDialog(() {});
+                              setState(() {});
                             },
                           ),
                         ),
@@ -2318,9 +2366,13 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                             initialValue: (elem['defaultValue'] as Map?)?['month']?.toString() ?? "0",
                             keyboardType: TextInputType.number,
                             onChanged: (val) {
-                              final def = Map<String, dynamic>.from(elem['defaultValue'] as Map? ?? {});
-                              def['month'] = val;
-                              elem['defaultValue'] = def;
+                              parentSetStateModal(() {
+                                final def = Map<String, dynamic>.from(elem['defaultValue'] as Map? ?? {});
+                                def['month'] = val;
+                                elem['defaultValue'] = def;
+                              });
+                              setStateDialog(() {});
+                              setState(() {});
                             },
                           ),
                         ),
@@ -2331,9 +2383,13 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                             initialValue: (elem['defaultValue'] as Map?)?['year']?.toString() ?? "0",
                             keyboardType: TextInputType.number,
                             onChanged: (val) {
-                              final def = Map<String, dynamic>.from(elem['defaultValue'] as Map? ?? {});
-                              def['year'] = val;
-                              elem['defaultValue'] = def;
+                              parentSetStateModal(() {
+                                final def = Map<String, dynamic>.from(elem['defaultValue'] as Map? ?? {});
+                                def['year'] = val;
+                                elem['defaultValue'] = def;
+                              });
+                              setStateDialog(() {});
+                              setState(() {});
                             },
                           ),
                         ),
@@ -2344,7 +2400,11 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
                       label: "Default Value",
                       initialValue: elem['defaultValue']?.toString() ?? "",
                       onChanged: (val) {
-                        elem['defaultValue'] = val;
+                        parentSetStateModal(() {
+                          elem['defaultValue'] = val;
+                        });
+                        setStateDialog(() {});
+                        setState(() {});
                       },
                     ),
                   ],

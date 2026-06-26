@@ -32,7 +32,7 @@ class EmptyStateView extends StatelessWidget {
       icon: Icons.delete_sweep_outlined,
       title: "Clean Slate",
       subtitle:
-          "Deleted files stay here for 72 hours before being permanently purged.",
+          "Deleted files stay here for 5 days before being permanently purged.",
     );
   }
 

@@ -817,17 +817,15 @@ void _showAdvancedModal(
                       if (schemaData != null) {
                         await collectionService.init(schemaData);
                         if (context.mounted) {
-                          if (onBackToHome != null) {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => CollectionView(
-                                  contents: collectionService.contents,
-                                  title: activeSchema.name,
-                                ),
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => CollectionView(
+                                contents: collectionService.contents,
+                                title: activeSchema.name,
                               ),
-                            );
-                          }
+                            ),
+                          );
                         }
                       }
                     }

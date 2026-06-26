@@ -1777,14 +1777,16 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                   value: 'delete',
                                   child: Text("Mark for Delete"),
                                 ),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(
-                                value: 'permanent',
-                                child: Text(
-                                  "PURGE DATA",
-                                  style: TextStyle(color: Colors.red),
+                              if (isDeleted) ...[
+                                const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                  value: 'permanent',
+                                  child: Text(
+                                    "PURGE DATA",
+                                    style: TextStyle(color: Colors.red),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ],
                           ),
                         ],
@@ -2177,7 +2179,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
     } else if (action == 'delete') {
       final confirmed = await _showConfirm(
         "Mark for Delete",
-        "This will move the record to the 'Deleted' bin for 72 hours before it is permanently purged.",
+        "This will move the record to the 'Deleted' bin for 5 days before it is permanently purged.",
       );
       if (confirmed) {
         await widget.db.markDelete(element);
@@ -2623,16 +2625,18 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                                             "Mark for Delete",
                                                           ),
                                                         ),
-                                                      const PopupMenuDivider(),
-                                                      const PopupMenuItem(
-                                                        value: 'permanent',
-                                                        child: Text(
-                                                          "PURGE DATA",
-                                                          style: TextStyle(
-                                                            color: Colors.red,
+                                                      if (isDeleted) ...[
+                                                        const PopupMenuDivider(),
+                                                        const PopupMenuItem(
+                                                          value: 'permanent',
+                                                          child: Text(
+                                                            "PURGE DATA",
+                                                            style: TextStyle(
+                                                              color: Colors.red,
+                                                            ),
                                                           ),
                                                         ),
-                                                      ),
+                                                      ],
                                                     ],
                                                   ),
                                                 ],
@@ -3057,16 +3061,18 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                                     "Mark for Delete",
                                                   ),
                                                 ),
-                                              const PopupMenuDivider(),
-                                              const PopupMenuItem(
-                                                value: 'permanent',
-                                                child: Text(
-                                                  "PURGE DATA",
-                                                  style: TextStyle(
-                                                    color: Colors.red,
+                                              if (isDeleted) ...[
+                                                const PopupMenuDivider(),
+                                                const PopupMenuItem(
+                                                  value: 'permanent',
+                                                  child: Text(
+                                                    "PURGE DATA",
+                                                    style: TextStyle(
+                                                      color: Colors.red,
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
+                                              ],
                                             ],
                                           ),
                                         ],
@@ -3533,11 +3539,6 @@ class _ElementViewState extends State<ElementView> {
                           fontSize: 16,
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.edit_note, color: Colors.blue),
-                        onPressed: () => _editComponent(c),
-                        tooltip: "Edit ${c.getName()}",
-                      ),
                     ],
                   ),
                   const Divider(color: Colors.black12),
@@ -3550,6 +3551,25 @@ class _ElementViewState extends State<ElementView> {
                         setState(() {});
                         widget.onChanged?.call();
                       },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FloatingActionButton.extended(
+                      heroTag: "edit_fab_${c.getName()}_$index",
+                      mini: true,
+                      backgroundColor: const Color(0xFF6B1524),
+                      icon: const Icon(Icons.edit_note, color: Colors.white, size: 18),
+                      label: const Text(
+                        "EDIT",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onPressed: () => _editComponent(c),
                     ),
                   ),
                 ],
