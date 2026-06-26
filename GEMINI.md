@@ -9,6 +9,7 @@
 - **Workflow:** Automated the "Done" button sequence on the Home screen to switch to the Reports tab and pre-load the Daily report for immediate verification.
 - **Report Search Bar:** Added a beautiful report search bar to both the in-tab viewer and dedicated spreadsheet report views, dynamically filtering rows based on a 16pt font input search query with live matching counts.
 - **Monthly Report Resolution:** Realigned the monthly batch generator to ensure the final summary sheet uses `monthlyReport` as its source, restoring proper monthly formulas and totals. Removed the daily data emptiness check to guarantee all daily sheets are written to the workbook, keeping all sheet-to-sheet formula references fully intact.
+- **Formula Value Cache & Binary Copy Fix:** Resolved empty monthly reports by fixing a silent `UnsupportedError: Cannot modify an unmodifiable list` during XML post-processing. Overhauled `ExcelBinaryHelper.postProcessBytes` to cleanly copy and build a new mutable `Archive` from scratch, enabling the successful injection of daily summary pre-calculated values (A7, B7, C7...) into daily sheets' `<v>` XML tags so they are correctly parsed as numbers during monthly report generation.
 
 ### 2. SQLite Global Overhaul & Mobile Performance
 - **Cross-Platform SQLite Integration:** Ported `SqliteHelper` globally to mobile via `sqlite3_flutter_libs` to utilize B-tree key-value JSON string storage with transactional writes, speeding up batch-imports to **under 300ms** and startup loading to **under 50ms**.
@@ -205,6 +206,7 @@
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
 
 ## Session History
+- **June 26, 2026 (Part 2) — Resolution of Empty Monthly Report & Unmodifiable List Error:** Fixed a silent unmodifiable list crash in `ExcelBinaryHelper._injectCalculatedValues` by adopting a copy-based `Archive` creation approach. This successfully restores daily summary pre-calculated values injection in the XML, allowing the monthly report to aggregate daily totals correctly without coming up empty. All tests passed.
 - [.chat_context/session_20260626_remediation_complete.md](.chat_context/session_20260626_remediation_complete.md) — Full remediation of report generation: sibling directory layout (`Database/`, `logs/`), `sourceReport` fix in isolate `getFileName` calls, `Default` sheet pruning, `copyToPublicDocuments` for DB exports and error logs. Flutter analyze clean (0 errors).
 - [.chat_context/session_20260625_1.md](.chat_context/session_20260625_1.md) — Resolution of Monthly Report blank sheets and formula errors, validation of date picker behavior, and analysis of Android backup directory hierarchy.
 - [.chat_context/session_20260623_1.md](.chat_context/session_20260623_1.md) — Fix for Empty Monthly Report extraction logic.
