@@ -3558,7 +3558,7 @@ class _ElementViewState extends State<ElementView> {
                     alignment: Alignment.centerRight,
                     child: FloatingActionButton.extended(
                       heroTag: "edit_fab_${c.getName()}_$index",
-                      mini: true,
+                      extendedPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0), // Shrinks the button size,
                       backgroundColor: const Color(0xFF6B1524),
                       icon: const Icon(Icons.edit_note, color: Colors.white, size: 18),
                       label: const Text(
