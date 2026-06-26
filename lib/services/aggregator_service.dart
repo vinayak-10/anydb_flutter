@@ -257,6 +257,33 @@ class AggregatorService {
     final DateTime targetDate = date is DateTime
         ? date
         : (date is DateTimeRange ? date.start : DateTime.now());
+
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final currentMonthStart = DateTime(today.year, today.month, 1);
+
+    bool isFuture = false;
+    if (report.key.toLowerCase().contains('monthly')) {
+      final targetMonthStart = DateTime(targetDate.year, targetDate.month, 1);
+      isFuture = targetMonthStart.isAfter(currentMonthStart);
+    } else {
+      isFuture = targetDate.isAfter(todayStart);
+    }
+
+    if (isFuture) {
+      logger.log("AggregatorService: Skipping future date/month report generation: $targetDate");
+      return {
+        "data": [],
+        "summary": {},
+        "summaryFormulas": {},
+        "meta": {"collection": key, "entry": "Future", "predicate": {"value": targetDate.toIso8601String()}},
+        "name": report.key,
+        "source": report.extractor.isNotEmpty ? (report.extractor[0].extractor?.source ?? {}) : {},
+        "header": [],
+        "columns": report.reportSchema['row']?[0]?['columns'] ?? [],
+      };
+    }
+
     logger.log(
       "AggregatorService: Generating report '${report.key}' for date ${targetDate.toIso8601String()}",
     );
@@ -321,6 +348,15 @@ class AggregatorService {
     try {
       workbook.clearCache();
       final monthStr = DateFormat('MMM yyyy').format(monthDate);
+
+      final today = DateTime.now();
+      final currentMonthStart = DateTime(today.year, today.month, 1);
+      final targetMonthStart = DateTime(monthDate.year, monthDate.month, 1);
+      if (targetMonthStart.isAfter(currentMonthStart)) {
+        logger.log("AggregatorService: Skipping future month batch for $monthStr");
+        return "";
+      }
+
       logger.log(
         "AggregatorService: Starting monthly batch for $monthStr (force: $force)",
       );
@@ -423,7 +459,6 @@ class AggregatorService {
         timestamp: batchTimestamp,
       );
 
-      final today = DateTime.now();
       final todayStart = DateTime(today.year, today.month, today.day);
 
       for (int d = 1; d <= daysInMonth; d++) {

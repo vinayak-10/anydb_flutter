@@ -480,7 +480,7 @@ class _CollectionViewState extends ConsumerState<CollectionView>
   Future<void> _exportDb(ElementDb db) async {
     final data = await db.exportDb();
     final fileService = FileService();
-    final fileName = "${db.key}_export.json";
+    final fileName = formatBackupFileName(db.key, DateTime.now());
 
     if (kIsWeb) {
       downloadWebData(fileName, jsonEncode(data));
@@ -3710,6 +3710,25 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                   Navigator.pop(context);
                   if (kIsWeb) {
                     await InvokerService.open(filePath);
+                    return;
+                  }
+                  if (!kIsWeb && Platform.isAndroid) {
+                    try {
+                      final fileName = filePath.split('/').last.split('\\').last;
+                      final relativePath = "xyz.maya/anydb/schema/${widget.schemaTitle}/Aggregators/Daily_and_Monthly_Reports";
+                      await FileService().copyToPublicDocuments(
+                        filePath,
+                        fileName,
+                        relativePath: relativePath,
+                      );
+                      messenger.showSnackBar(
+                        SnackBar(content: Text("File saved to Documents/$relativePath/$fileName")),
+                      );
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text("Save Error: $e")),
+                      );
+                    }
                     return;
                   }
                   try {

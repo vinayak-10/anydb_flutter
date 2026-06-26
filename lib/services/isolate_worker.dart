@@ -814,6 +814,40 @@ Future<dynamic> _executeProcessTask(
       agg.init(aggregatorJson);
 
       final report = agg.reports.firstWhere((r) => r.key == reportKey);
+
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+      final currentMonthStart = DateTime(today.year, today.month, 1);
+
+      bool isFuture = false;
+      if (report.key.toLowerCase().contains('monthly')) {
+        final targetMonthStart = DateTime(targetDate.year, targetDate.month, 1);
+        isFuture = targetMonthStart.isAfter(currentMonthStart);
+      } else {
+        isFuture = targetDate.isAfter(todayStart);
+      }
+
+      if (isFuture) {
+        debugPrint("IsolateWorker: Skipping report generation for future date/month: $targetDate");
+        return {
+          'data': {
+            'meta': {
+              'collection': reportKey,
+              'entry': 'Future',
+              'predicate': {'value': targetDate.toIso8601String()},
+            },
+            'name': reportKey,
+            'source': report.extractor.isNotEmpty ? (report.extractor[0].extractor?.source ?? {}) : {},
+            'header': [],
+            'data': [],
+            'summary': {},
+            'summaryFormulas': {},
+          },
+          'path': '',
+          'aoa': []
+        };
+      }
+
       final String sourceDbName = report.extractor.isNotEmpty
           ? (report.extractor[0].extractor?.source['name'] ?? dbName)
           : dbName;
@@ -885,6 +919,26 @@ Future<dynamic> _executeProcessTask(
 
               final sheet = excel.tables[finalSheetName];
               if (sheet != null && sheet.rows.length >= 9) {
+                final cachedValues = ExcelGenerationService.extractCachedValues(fileBytes, finalSheetName);
+
+                dynamic getCellValue(Data? cell) {
+                  if (cell == null) return "";
+                  final val = cell.value;
+                  if (val is FormulaCellValue) {
+                    final ref = ExcelGenerationService.getCellRef(cell.cellIndex.columnIndex, cell.cellIndex.rowIndex);
+                    final cached = cachedValues[ref];
+                    if (cached != null) {
+                      final n = double.tryParse(cached);
+                      if (n != null) {
+                        return n % 1 == 0 ? n.toInt() : n;
+                      }
+                      return cached;
+                    }
+                    return val.formula;
+                  }
+                  return CellHelper.unwrap(val);
+                }
+
                 // Parse headers (rows 1-4)
                 final List<dynamic> headerData = [];
                 for (int r = 1; r < 5; r++) {
@@ -892,7 +946,7 @@ Future<dynamic> _executeProcessTask(
                     final cells = sheet.rows[r];
                     final rowVals =
                         cells
-                            .map((c) => CellHelper.unwrap(c?.value))
+                            .map((c) => getCellValue(c))
                             .toList();
                     if (rowVals.any(
                       (v) => v != null && v.toString().isNotEmpty,
@@ -909,12 +963,13 @@ Future<dynamic> _executeProcessTask(
                 final summaryValueCells = sheet.rows[6];
                 for (int col = 0; col < summaryTitleCells.length; col++) {
                   final title =
-                      CellHelper.unwrap(summaryTitleCells[col]?.value)
+                      getCellValue(summaryTitleCells[col])
                           ?.toString()
                           .trim();
                   if (title != null && title.isNotEmpty) {
-                    final cellVal = summaryValueCells[col]?.value;
-                    final calculatedVal = CellHelper.unwrap(cellVal);
+                    final cell = summaryValueCells[col];
+                    final calculatedVal = getCellValue(cell);
+                    final cellVal = cell?.value;
                     final formula = cellVal is FormulaCellValue ? cellVal.formula : null;
                     summary[title] = calculatedVal ?? '';
                     summaryFormulas[title] = formula ?? calculatedVal ?? '';
@@ -925,7 +980,7 @@ Future<dynamic> _executeProcessTask(
                 final dataHeaderCells = sheet.rows[8];
                 final List<String> columnNames =
                     dataHeaderCells
-                        .map((c) => CellHelper.unwrap(c?.value)?.toString() ?? '')
+                        .map((c) => getCellValue(c)?.toString() ?? '')
                         .toList();
 
                 final List<List<dynamic>> aoa = [];
@@ -936,7 +991,7 @@ Future<dynamic> _executeProcessTask(
                   final cells = sheet.rows[r];
                   final rowVals =
                       cells
-                          .map((c) => CellHelper.unwrap(c?.value))
+                          .map((c) => getCellValue(c))
                           .toList();
                   final Map<String, dynamic> record = {};
                   for (int col = 0; col < columnNames.length; col++) {
