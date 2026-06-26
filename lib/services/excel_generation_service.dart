@@ -171,7 +171,7 @@ class ExcelGenerationService {
             }
             cell.value = FormulaCellValue(formulaStr);
             
-            final cellRef = _getCellRef(col + i, row);
+            final cellRef = getCellRef(col + i, row);
             formulaRegistry["$sheetName!$cellRef"] = val.toString();
           } else {
             _setCellValue(ws, col + i, row, val);
@@ -211,14 +211,14 @@ class ExcelGenerationService {
     final sheet = excel.tables[sheetName];
     if (sheet == null) return [];
 
-    final cachedValues = _extractCachedValues(bytes, sheetName);
+    final cachedValues = extractCachedValues(bytes, sheetName);
 
     return sheet.rows.map((row) {
       return row.map((cell) {
         if (cell == null) return "";
         final val = cell.value;
         if (val is FormulaCellValue) {
-          final ref = _getCellRef(cell.cellIndex.columnIndex, cell.cellIndex.rowIndex);
+          final ref = getCellRef(cell.cellIndex.columnIndex, cell.cellIndex.rowIndex);
           final cached = cachedValues[ref];
           if (cached != null) {
             final n = double.tryParse(cached);
@@ -234,7 +234,7 @@ class ExcelGenerationService {
     }).toList();
   }
 
-  static Map<String, String> _extractCachedValues(List<int> bytes, String targetSheetName) {
+  static Map<String, String> extractCachedValues(List<int> bytes, String targetSheetName) {
     final Map<String, String> cachedValues = {};
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
@@ -332,7 +332,7 @@ class ExcelGenerationService {
     return null;
   }
 
-  static String _getCellRef(int colIdx, int rowIdx) {
+  static String getCellRef(int colIdx, int rowIdx) {
     int temp = colIdx;
     String columnLetter = "";
     while (temp >= 0) {

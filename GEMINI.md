@@ -205,6 +205,7 @@
 - **Analysis:** Clean `flutter analyze` with 0 compilation errors.
 
 ## Session History
+- [.chat_context/session_20260626_remediation_complete.md](.chat_context/session_20260626_remediation_complete.md) — Full remediation of report generation: sibling directory layout (`Database/`, `logs/`), `sourceReport` fix in isolate `getFileName` calls, `Default` sheet pruning, `copyToPublicDocuments` for DB exports and error logs. Flutter analyze clean (0 errors).
 - [.chat_context/session_20260625_1.md](.chat_context/session_20260625_1.md) — Resolution of Monthly Report blank sheets and formula errors, validation of date picker behavior, and analysis of Android backup directory hierarchy.
 - [.chat_context/session_20260623_1.md](.chat_context/session_20260623_1.md) — Fix for Empty Monthly Report extraction logic.
 - [.chat_context/session_20260623_report_generation_analysis.md](.chat_context/session_20260623_report_generation_analysis.md) — Root cause analysis: Monthly report empty bug (wrong sourceReport in batch), date picker month-only display, Documents hierarchy not maintained on Android.
