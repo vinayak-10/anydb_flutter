@@ -113,7 +113,14 @@ class ExcelGenerationService {
       final cell = ws.cell(
         CellIndex.indexByColumnRow(columnIndex: col + i, rowIndex: summaryValRow),
       );
-      cell.value = FormulaCellValue(calcResult.compiledFormulas[i]);
+      cell.setFormula(calcResult.compiledFormulas[i]);
+      
+      final cellRef = getCellRef(col + i, summaryValRow);
+      final lookupKey = "$sheetName!$cellRef";
+      final calculatedValStr = calcResult.formulaValuesCache[lookupKey];
+      if (calculatedValStr != null) {
+        _setCellValue(ws, col + i, summaryValRow, calculatedValStr);
+      }
     }
     
     // Register pre-calculated results for global inject post-processing
@@ -169,7 +176,8 @@ class ExcelGenerationService {
             if (formulaStr.startsWith('=')) {
               formulaStr = formulaStr.substring(1);
             }
-            cell.value = FormulaCellValue(formulaStr);
+            cell.setFormula(formulaStr);
+            _setCellValue(ws, col + i, row, val);
             
             final cellRef = getCellRef(col + i, row);
             formulaRegistry["$sheetName!$cellRef"] = val.toString();
