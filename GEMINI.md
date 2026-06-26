@@ -1,5 +1,10 @@
 # Project Context: anydb_flutter (June 2026 Checkpoint)
 
+> [!CAUTION]
+> **CRITICAL STABILITY RULE - REPORTING ENGINE IS HARD-LOCKED:**
+> 1. Under no circumstances should any changes be made to the reporting engine, formula parsing, aggregation database, XML post-processing, or any related files (including `aggregator_service.dart`, `excel_binary_helper.dart`, `excel_generation_service.dart`, `extractor_service.dart`, `report_formula_service.dart`, `workbook_service.dart`, and related models/services).
+> 2. If any planned feature or modification has a potential cascading effect on the reporting engine or its data structures, the user **must be explicitly notified**, and all execution must immediately stop at the nearest safe code state before any changes are made.
+
 ## Core Accomplishments & Stabilized Features
 
 ### 1. High-Performance Report Engine

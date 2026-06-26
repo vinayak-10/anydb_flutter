@@ -182,7 +182,7 @@ class ElementDb {
     final filteredData = segregate(allData, types: filter);
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    const purgeThreshold = 72 * 60 * 60 * 1000; // 72 hours in ms
+    const purgeThreshold = 120 * 60 * 60 * 1000; // 120 hours (5 days) in ms
 
     for (var data in filteredData) {
       final key = data.keys.first;

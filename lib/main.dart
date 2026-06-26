@@ -326,6 +326,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                               );
                               if (updated == true) {
                                 ref.invalidate(schemasProvider);
+                                _loadSchema(schema);
                               }
                             },
                           ),
