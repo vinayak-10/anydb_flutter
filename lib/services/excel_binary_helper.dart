@@ -85,12 +85,24 @@ class ExcelBinaryHelper {
               final cellRef = c.getAttribute('r');
               if (cellRef == null) continue;
 
-              final f = c.getElement('f');
+              XmlElement? f;
+              for (var child in c.children) {
+                if (child is XmlElement && child.name.local == 'f') {
+                  f = child;
+                  break;
+                }
+              }
               if (f != null) {
                 final lookupKey = "$sheetName!$cellRef";
                 final calculatedVal = formulaValues[lookupKey];
                 if (calculatedVal != null) {
-                  var v = c.getElement('v');
+                  XmlElement? v;
+                  for (var child in c.children) {
+                    if (child is XmlElement && child.name.local == 'v') {
+                      v = child;
+                      break;
+                    }
+                  }
                   if (v == null) {
                     v = XmlElement(XmlName('v'));
                     c.children.add(v);
