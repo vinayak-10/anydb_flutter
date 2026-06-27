@@ -549,7 +549,11 @@ class SqliteHelper {
         }
       }
     } catch (_) {}
-    return maxDate;
+    // Fallback: if no domain timestamp resolved (no Account history, no __meta__.time),
+    // return the current wall-clock time instead of 0. A zero timestamp causes
+    // the report cache check (fileModifiedMs >= latestDbTs) to always evaluate as
+    // true, permanently locking the pipeline into serving stale cached reports.
+    return maxDate > 0 ? maxDate : DateTime.now().millisecondsSinceEpoch;
   }
 
   static Future<void> initTimestampsTable() async {

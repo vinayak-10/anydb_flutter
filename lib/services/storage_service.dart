@@ -203,7 +203,9 @@ int _getLatestDateStatic(Map<String, dynamic> record) {
   } catch (e) {
     // ignore
   }
-  return maxDate;
+  // Fallback: if no domain timestamp resolved, return the current wall-clock time
+  // so this record is never silently ignored during import deduplication.
+  return maxDate > 0 ? maxDate : DateTime.now().millisecondsSinceEpoch;
 }
 
 class FileStore extends StorageInterface {

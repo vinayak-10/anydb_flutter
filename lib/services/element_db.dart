@@ -365,7 +365,22 @@ class ElementDb {
       }
     }
 
-    // Save the new record as active
+    // Save the new record as active.
+    // Inject wall-clock timestamps into __meta__.time so that
+    // SqliteHelper._getLatestDateStatic() always resolves a real epoch ms value.
+    // Without this, record_timestamps.timestamp is written as 0, causing the
+    // report cache check (fileModifiedMs >= latestDbTs) to always pass and serve
+    // a stale cached Excel file that omits the just-added record.
+    // This mirrors the same pattern used by markArchive, markDelete, and restore.
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (recordVal is Map) {
+      final rv = recordVal as Map<String, dynamic>;
+      rv['__meta__'] ??= <String, dynamic>{};
+      rv['__meta__']['time'] ??= <String, dynamic>{};
+      final timeMap = rv['__meta__']['time'] as Map<String, dynamic>;
+      if (!timeMap.containsKey('c')) timeMap['c'] = nowMs; // creation — set once
+      timeMap['u'] = nowMs; // modification — always update
+    }
     await storage.add(recordKey, recordVal);
 
     // Check if record already exists in local list to prevent duplicates
