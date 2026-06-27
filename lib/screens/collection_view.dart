@@ -130,8 +130,23 @@ final reportDataProvider = FutureProvider.family<Map<String, dynamic>, ReportPar
   ref,
   params,
 ) async {
-  // Watch database mutations for this database key to auto-regenerate report reactively
-  ref.watch(databaseUpdateProvider.select((m) => m[params.dbKey]));
+  // Watch database mutations for all source databases this report extracts from
+  final report = params.report;
+  final Set<String> sourceDbKeys = {};
+  if (report.extractor.isNotEmpty) {
+    for (var extIntf in report.extractor) {
+      final name = extIntf.extractor?.source['name'];
+      if (name != null) {
+        sourceDbKeys.add(name);
+      }
+    }
+  }
+  if (sourceDbKeys.isEmpty) {
+    sourceDbKeys.add(params.dbKey);
+  }
+  for (final sourceKey in sourceDbKeys) {
+    ref.watch(databaseUpdateProvider.select((m) => m[sourceKey]));
+  }
 
   // Yield to event loop to allow route transition to paint the circular loader
   await Future.delayed(const Duration(milliseconds: 100));

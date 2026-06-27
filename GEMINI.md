@@ -36,6 +36,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
+| 2026-06-27 (Part 3) | [session_20260627_report_reactive_invalidation_fix.md](.chat_context/session_20260627_report_reactive_invalidation_fix.md) | Report reactive updates/invalidations key mismatch fix. Watches correct database names in `databaseUpdateProvider`. |
 | 2026-06-27 (Part 2) | [session_20260627_report_cache_write_timestamp_fix.md](.chat_context/session_20260627_report_cache_write_timestamp_fix.md) | Report cache staleness write-time mismatch fix. Decoupled cache check from domain dates using new `database_metadata` table. |
 | 2026-06-27 (Part 1) | [session_20260627_report_cache_fix.md](.chat_context/session_20260627_report_cache_fix.md) | Report cache staleness root cause analysis (4 bugs) + 3-file fix. Five UI features: purge → deleted tab only, schema `defaultValue` fix, 5-day delete grace period, edit FAB on record cards, schema auto-reload. |
 | 2026-06-26 (Part 4) | Inline in GEMINI.md (old) | Batch `<v>` tag preservation fix — `previousBytes` registry merge in `ExcelBinaryHelper`. Committed `3c7087c`. |
@@ -81,6 +82,7 @@ Full details for each feature are in the session files above. This table is a qu
 | 26 | **[2026-06-27]** Report cache staleness fix (4-bug root cause, 3-file fix) | `element_db.dart` · `sqlite_helper_native.dart` · `storage_service.dart` | 2026-06-27 (Part 1) |
 | 27 | **[2026-06-27]** Edit FAB on record cards, schema `defaultValue` fix, purge → deleted only, 5-day grace, schema auto-reload | Various UI/schema files | 2026-06-27 (Part 1) |
 | 28 | **[2026-06-27]** Wall-clock write timestamps for report cache invalidation | `sqlite_helper_native.dart` · `sqlite_helper_web.dart` | 2026-06-27 (Part 2) |
+| 29 | **[2026-06-27]** Report reactive invalidations key mismatch fix | `collection_view.dart` | 2026-06-27 (Part 3) |
 
 ⚠️ = Hard-locked file (never modify without explicit user approval and notification)
 
