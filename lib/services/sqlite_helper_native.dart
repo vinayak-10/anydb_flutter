@@ -45,6 +45,13 @@ class SqliteHelper {
       )
     ''');
 
+    _db!.execute('''
+      CREATE TABLE IF NOT EXISTS "database_metadata" (
+        db_name TEXT PRIMARY KEY,
+        latest_write_ts INTEGER
+      )
+    ''');
+
     // Add is_active column to record_timestamps if not present
     final columns = _db!.select('PRAGMA table_info("record_timestamps")');
     final columnNames = columns.map((c) => c['name'] as String).toSet();
@@ -256,6 +263,7 @@ class SqliteHelper {
     // Update Auxiliary timestamp table
     final int ts = _getLatestDateStatic(recordVal);
     await updateRecordTimestamp(dbName, key, isActive, ts);
+    await updateLatestWriteTimestamp(dbName);
   }
 
   static Future<void> updateAll(
@@ -294,6 +302,7 @@ class SqliteHelper {
       dbName,
       key,
     ]);
+    await updateLatestWriteTimestamp(dbName);
   }
 
   static Future<void> clear(String dbName) async {
@@ -303,6 +312,7 @@ class SqliteHelper {
     db.execute('DROP TABLE IF EXISTS "$tableName"');
     db.execute('DELETE FROM "record_timestamps" WHERE db_name = ?', [dbName]);
     await initTable(dbName);
+    await updateLatestWriteTimestamp(dbName);
   }
 
   static Future<Map<String, dynamic>?> getActiveByBusinessKey(
@@ -507,6 +517,7 @@ class SqliteHelper {
       stmt.dispose();
       stmtTs.dispose();
       db.execute('COMMIT');
+      await updateLatestWriteTimestamp(dbName);
     } catch (e) {
       db.execute('ROLLBACK');
       rethrow;
@@ -566,6 +577,13 @@ class SqliteHelper {
         is_active INTEGER DEFAULT 1,
         timestamp INTEGER,
         PRIMARY KEY (db_name, id)
+      )
+    ''');
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS "database_metadata" (
+        db_name TEXT PRIMARY KEY,
+        latest_write_ts INTEGER
       )
     ''');
 
@@ -727,6 +745,17 @@ class SqliteHelper {
     if (kIsWeb) return 0;
     final db = await _database;
     await initTimestampsTable();
+
+    // Query database_metadata for the wall-clock write timestamp
+    final metaResult = db.select(
+      'SELECT latest_write_ts FROM "database_metadata" WHERE db_name = ?',
+      [dbName],
+    );
+    if (metaResult.isNotEmpty && metaResult.first['latest_write_ts'] != null) {
+      return metaResult.first['latest_write_ts'] as int;
+    }
+
+    // Fallback to record_timestamps MAX(timestamp) if metadata table has not been populated
     final result = db.select(
       'SELECT MAX(timestamp) as max_ts FROM "record_timestamps" WHERE db_name = ?',
       [dbName],
@@ -735,6 +764,15 @@ class SqliteHelper {
       return result.first['max_ts'] as int;
     }
     return 0;
+  }
+
+  static Future<void> updateLatestWriteTimestamp(String dbName) async {
+    if (kIsWeb) return;
+    final db = await _database;
+    db.execute(
+      'INSERT OR REPLACE INTO "database_metadata" (db_name, latest_write_ts) VALUES (?, ?)',
+      [dbName, DateTime.now().millisecondsSinceEpoch],
+    );
   }
   static Future<void> _quarantineRecord(
     sql.Database db,
