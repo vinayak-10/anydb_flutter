@@ -159,11 +159,12 @@ final reportDataProvider = FutureProvider.family<Map<String, dynamic>, ReportPar
     return {'data': result, 'path': null, 'aoa': aoa};
   } else {
     // Generate Target File Path
-    final DateTime targetDate = params.date is DateTime
+    final DateTime targetDateRaw = params.date is DateTime
         ? params.date
         : (params.date is DateTimeRange
               ? (params.date as DateTimeRange).start
               : DateTime.now());
+    final DateTime targetDate = DateTime(targetDateRaw.year, targetDateRaw.month, targetDateRaw.day);
 
     final ts = DateTime.now();
     final meta = params.agg.getFileName({
@@ -415,9 +416,10 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           (r) => r.key.toLowerCase().contains("daily"),
           orElse: () => agg.reports.first,
         );
+        final today = DateTime.now();
         await agg.generateWorkbook(
           dailyReport,
-          date: DateTime.now(),
+          date: DateTime(today.year, today.month, today.day),
           force: true,
         );
 

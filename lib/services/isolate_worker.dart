@@ -326,11 +326,12 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
         final agg = AggregatorService();
         agg.init(aggregatorJson);
         final report = agg.reports.firstWhere((r) => r.key == reportKey);
-        final DateTime targetDate = date is DateTime
+        final DateTime targetRaw = date is DateTime
             ? date
             : (date is String
                   ? DateTime.tryParse(date) ?? DateTime.now()
                   : DateTime.now());
+        final DateTime targetDate = DateTime(targetRaw.year, targetRaw.month, targetRaw.day);
 
         final extIntf = report.extractor[0];
 
@@ -812,11 +813,12 @@ Future<dynamic> _executeProcessTask(
       final Map<String, dynamic> aggregatorJson = params['aggregatorJson'];
       final bool forceRebuild = params['forceRebuild'] ?? false;
 
-      final DateTime targetDate = date is DateTime
+      final DateTime targetRaw = date is DateTime
           ? date
           : (date is String
                 ? DateTime.tryParse(date) ?? DateTime.now()
                 : DateTime.now());
+      final DateTime targetDate = DateTime(targetRaw.year, targetRaw.month, targetRaw.day);
 
       // B. Initialize Aggregator Service and AggregatorReport in Isolate first to resolve source schema name
       final agg = AggregatorService();
