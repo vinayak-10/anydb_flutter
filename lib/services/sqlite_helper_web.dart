@@ -147,4 +147,8 @@ class SqliteHelper {
   static Future<int> getLatestTimestamp(String dbName) async {
     return 0;
   }
+
+  static Future<void> updateLatestWriteTimestamp(String dbName) async {
+    return;
+  }
 }
