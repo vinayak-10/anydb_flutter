@@ -102,3 +102,6 @@ android/app/google-services.json
 
 # Android build reports — generated artifacts, not source
 android/build/reports/
+
+# Temporary logs folder
+.logs/
