@@ -93,3 +93,12 @@ android/app/keystore_base64_old.txt
 android/app/keystore_hash.txt
 android/app/pfx2john.py
 android/app/pkcs12_hash.txt
+
+# Firebase project config (contains project ID)
+.firebaserc
+
+# Firebase google-services — contains live API keys and OAuth client IDs
+android/app/google-services.json
+
+# Android build reports — generated artifacts, not source
+android/build/reports/
