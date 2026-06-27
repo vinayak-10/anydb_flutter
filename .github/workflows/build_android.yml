@@ -34,6 +34,17 @@ jobs:
             echo "$SECRET_CONTENT" > secrets.json
           fi
 
+      - name: 🔑 Inject Firebase Config (google-services.json)
+        env:
+          GOOGLE_SERVICES_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_BASE64" ]; then
+            echo "Firebase Config: Decoding google-services.json..."
+            echo "$GOOGLE_SERVICES_BASE64" | base64 --decode > android/app/google-services.json
+          else
+            echo "Firebase Config: Warning! No GOOGLE_SERVICES_JSON_BASE64 secret found."
+          fi
+
       - name: 📝 Configure Android Signing Key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -128,3 +139,4 @@ jobs:
           rm -f android/app/upload-keystore.jks
           rm -f android/key.properties
           rm -f secrets.json
+          rm -f android/app/google-services.json
