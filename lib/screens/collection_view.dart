@@ -1722,6 +1722,14 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
               headerType: 'elements',
               allComponents: element.components,
               onChanged: () async {
+                final validation = element.validate();
+                if (validation['valid'] == false) {
+                  FeedbackToast.error(
+                    context,
+                    "Validation error: ${validation['constraint']}",
+                  );
+                  return;
+                }
                 await widget.db.addRecord(element);
                 setState(() {});
               },
@@ -2527,6 +2535,14 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                       headerType: 'elements',
                                       allComponents: element.components,
                                       onChanged: () async {
+                                        final validation = element.validate();
+                                        if (validation['valid'] == false) {
+                                          FeedbackToast.error(
+                                            context,
+                                            "Validation error: ${validation['constraint']}",
+                                          );
+                                          return;
+                                        }
                                         await widget.db.addRecord(element);
                                         setState(() {});
                                       },
@@ -2965,6 +2981,14 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                               headerType: 'elements',
                               allComponents: element.components,
                               onChanged: () async {
+                                final validation = element.validate();
+                                if (validation['valid'] == false) {
+                                  FeedbackToast.error(
+                                    context,
+                                    "Validation error: ${validation['constraint']}",
+                                  );
+                                  return;
+                                }
                                 await widget.db.addRecord(element);
                                 setState(() {});
                               },
@@ -3564,6 +3588,14 @@ class _ElementViewState extends State<ElementView> {
                     child: c.display(
                       onlyValue: false,
                       onChanged: () async {
+                        final validation = widget.element.validate();
+                        if (validation['valid'] == false) {
+                          FeedbackToast.error(
+                            context,
+                            "Validation error: ${validation['constraint']}",
+                          );
+                          return;
+                        }
                         await widget.db.addRecord(widget.element);
                         setState(() {});
                         widget.onChanged?.call();
@@ -3642,6 +3674,14 @@ class _ElementViewState extends State<ElementView> {
 
     if (result == true) {
       c.populate(cClone.fetch());
+      final validation = widget.element.validate();
+      if (validation['valid'] == false) {
+        FeedbackToast.error(
+          context,
+          "Validation error: ${validation['constraint']}",
+        );
+        return;
+      }
       await widget.db.addRecord(widget.element);
       setState(() {});
       widget.onChanged?.call();
@@ -4071,6 +4111,29 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     final summarySchema = widget.report.summary;
     if (summarySchema.isEmpty || aoa.length < 2) return const SizedBox.shrink();
 
+    // 1. Build a mapping of summary titles to their custom ribbonOrder from the raw schema
+    final rawSummaryList = widget.report.reportSchema['summary'] as List<dynamic>? ?? [];
+    final Map<String, int> ribbonOrderMap = {};
+    for (var s in rawSummaryList) {
+      if (s is Map && s.containsKey('title')) {
+        final title = s['title'].toString();
+        final order = s['ribbonOrder'] ?? s['ribbonIndex'];
+        if (order is int) {
+          ribbonOrderMap[title] = order;
+        } else if (order is String) {
+          ribbonOrderMap[title] = int.tryParse(order) ?? 999;
+        }
+      }
+    }
+
+    // 2. Sort the entries list by ribbonOrder, falling back to original order
+    final sortedEntries = summarySchema.entries.toList()
+      ..sort((a, b) {
+        final orderA = ribbonOrderMap[a.key] ?? 999;
+        final orderB = ribbonOrderMap[b.key] ?? 999;
+        return orderA.compareTo(orderB);
+      });
+
     final headers = aoa[0] as List<dynamic>;
     final List<Map<String, dynamic>> dataRows = [];
     for (int i = 1; i < aoa.length; i++) {
@@ -4082,7 +4145,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       dataRows.add(mapped);
     }
 
-    final children = summarySchema.entries.map((e) {
+    final children = sortedEntries.map((e) {
       final result = FormulaEngine.evaluate(
         e.value.toString(),
         dataRows,
@@ -4117,47 +4180,116 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       );
     }).toList();
 
-    final List<Widget> row1 = [];
-    final List<Widget> row2 = [];
-    for (int i = 0; i < children.length; i++) {
-      if (i % 2 == 0) {
-        row1.add(children[i]);
-      } else {
-        row2.add(children[i]);
-      }
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double maxWidth = constraints.maxWidth;
+        // Conservative average item width (including horizontal padding)
+        const double avgItemWidth = 140.0;
+        final double singleRowWidth = children.length * avgItemWidth;
+        final double twoRowWidth = ((children.length + 1) ~/ 2) * avgItemWidth;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Colors.indigo.shade200, width: 1),
-        ),
-      ),
-      child: SafeArea(
-        bottom: true,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: row1,
+        if (singleRowWidth <= maxWidth) {
+          // Case A: Everything fits in a single row without scrolling
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: Colors.indigo.shade200, width: 1),
               ),
-              if (row2.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Row(
+            ),
+            child: SafeArea(
+              bottom: true,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: children,
+              ),
+            ),
+          );
+        } else if (twoRowWidth <= maxWidth) {
+          // Case B: Fits in two rows without scrolling, space evenly to fit
+          final List<Widget> columns = [];
+          for (int i = 0; i < children.length; i += 2) {
+            final top = children[i];
+            final bottom = (i + 1 < children.length) ? children[i + 1] : null;
+
+            columns.add(
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  top,
+                  if (bottom != null) ...[
+                    const SizedBox(height: 12),
+                    bottom,
+                  ],
+                ],
+              ),
+            );
+          }
+
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: Colors.indigo.shade200, width: 1),
+              ),
+            ),
+            child: SafeArea(
+              bottom: true,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: columns,
+              ),
+            ),
+          );
+        } else {
+          // Case C: Exceeds space even in two rows, make scrollable
+          final List<Widget> columns = [];
+          for (int i = 0; i < children.length; i += 2) {
+            final top = children[i];
+            final bottom = (i + 1 < children.length) ? children[i + 1] : null;
+
+            columns.add(
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  top,
+                  if (bottom != null) ...[
+                    const SizedBox(height: 12),
+                    bottom,
+                  ],
+                ],
+              ),
+            );
+          }
+
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: Colors.indigo.shade200, width: 1),
+              ),
+            ),
+            child: SafeArea(
+              bottom: true,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.start,
-                  children: row2,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: columns,
                 ),
-              ],
-            ],
-          ),
-        ),
-      ),
+              ),
+            ),
+          );
+        }
+      },
     );
   }
 

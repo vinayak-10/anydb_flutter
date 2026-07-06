@@ -105,3 +105,8 @@ android/build/reports/
 
 # Temporary logs folder
 .logs/
+
+# Temporary folders
+assets/tmp
+.tmp
+tmp

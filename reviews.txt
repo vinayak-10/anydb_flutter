@@ -1,0 +1,8 @@
+When keyboard opens it should open with Capital letter, currently opening with small letter
+keyboard autofocus not off in new entry page
+After changing schema from schema builder, need to reload app. It should reload automatically, why is that not implemented.
+Remove back to home button from drawer
+App is still taking cached monthly report, the need for ignore cache should not be there at all.
+Reduce default font size of card title in list view.
+Reports should come under <schema_name>/Aggregators/Daily_and_Monthly_Reports. Currently it creates a sibling folder to <schema_name>
+There was an instance where an entry got recorded without payment mode, investigate why that happened.
