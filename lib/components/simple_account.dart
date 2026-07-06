@@ -341,7 +341,10 @@ class SimpleAccount extends GenInterface {
       for (int i = 0; ; i++) {
         final c = component.getComponentAtIndex(i);
         if (c == null) break;
-        if (c.getName().toLowerCase() == "mode") {
+        final nameLower = c.getName().toLowerCase();
+        if (nameLower == "mode" ||
+            nameLower == "payment mode" ||
+            nameLower == "payment-mode") {
           modeComp = c;
           break;
         }
