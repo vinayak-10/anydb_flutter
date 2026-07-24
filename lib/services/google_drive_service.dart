@@ -41,6 +41,40 @@ class GoogleUser {
 class GoogleDriveService {
   GoogleUser? _currentUser;
   http.Client? _httpClient;
+  Timer? _autoRetryTimer;
+  void Function(GoogleUser?)? onUserChanged;
+
+  void _startAutoRetryIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final wasLoggedIn = prefs.getBool('was_logged_in') ?? false;
+    if (!wasLoggedIn || _currentUser != null) {
+      _autoRetryTimer?.cancel();
+      _autoRetryTimer = null;
+      return;
+    }
+
+    if (_autoRetryTimer != null && _autoRetryTimer!.isActive) return;
+
+    logger.log(
+      "GoogleDriveService: User was previously logged in. Starting background auto-reconnect timer...",
+    );
+    _autoRetryTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      if (_currentUser != null) {
+        timer.cancel();
+        _autoRetryTimer = null;
+        return;
+      }
+      final user = await restoreSession();
+      if (user != null) {
+        logger.log(
+          "GoogleDriveService: Session auto-restored on internet connection for ${user.email}!",
+        );
+        timer.cancel();
+        _autoRetryTimer = null;
+        onUserChanged?.call(user);
+      }
+    });
+  }
 
   static Completer<void>? _initCompleter;
 
@@ -73,7 +107,7 @@ class GoogleDriveService {
       );
 
       if (isLinux()) {
-        await _restoreLinuxSession();
+        await _restoreSavedCredentialsSession();
       }
 
       _initCompleter!.complete();
@@ -114,6 +148,14 @@ class GoogleDriveService {
         return null;
       }
 
+      // Priority 1: Check saved cached credentials (100% silent, 0 Play Services bottom sheets!)
+      final cachedUser = await _restoreSavedCredentialsSession();
+      if (cachedUser != null) {
+        _autoRetryTimer?.cancel();
+        _autoRetryTimer = null;
+        return cachedUser;
+      }
+
       if (isLinux()) return _currentUser;
 
       if (kIsWeb) {
@@ -121,7 +163,7 @@ class GoogleDriveService {
       }
 
       logger.log(
-        "GoogleDriveService: Attempting silent session restoration...",
+        "GoogleDriveService: Attempting silent session restoration via SDK...",
       );
       final official = await GoogleSignIn.instance
           .attemptLightweightAuthentication();
@@ -141,16 +183,41 @@ class GoogleDriveService {
         );
         if (authz != null) {
           _httpClient = authz.authClient(scopes: scopes);
+          final accessToken = AccessToken(
+            'Bearer',
+            authz.accessToken,
+            DateTime.now().toUtc().add(const Duration(hours: 1)),
+          );
+          final creds = AccessCredentials(accessToken, null, scopes);
+          await _saveAccessCredentials(creds);
         }
+      }
+
+      if (_currentUser != null) {
+        _autoRetryTimer?.cancel();
+        _autoRetryTimer = null;
+      } else if (wasLoggedIn) {
+        _startAutoRetryIfNeeded();
       }
       return _currentUser;
     } catch (e) {
       logger.log("GoogleDriveService: Session restoration skip: $e");
+      _startAutoRetryIfNeeded();
       return null;
     }
   }
 
-  Future<void> _restoreLinuxSession() async {
+  Future<void> _saveAccessCredentials(AccessCredentials creds) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('google_drive_creds', jsonEncode(creds.toJson()));
+      await prefs.setBool('was_logged_in', true);
+    } catch (e) {
+      logger.log("GoogleDriveService: Error saving access credentials: $e");
+    }
+  }
+
+  Future<GoogleUser?> _restoreSavedCredentialsSession() async {
     final prefs = await SharedPreferences.getInstance();
     final credsJson = prefs.getString('google_drive_creds');
     if (credsJson != null) {
@@ -160,8 +227,13 @@ class GoogleDriveService {
 
         if (creds.refreshToken != null) {
           _httpClient = autoRefreshingClient(id, creds, http.Client());
-        } else {
+        } else if (creds.accessToken.expiry.isAfter(DateTime.now().toUtc())) {
           _httpClient = authenticatedClient(http.Client(), creds);
+        } else {
+          logger.log(
+            "GoogleDriveService: Saved access token expired and no refresh token available.",
+          );
+          return null;
         }
 
         // Fetch user info to populate _currentUser
@@ -176,11 +248,18 @@ class GoogleDriveService {
             displayName: data['name'],
             photoUrl: data['picture'],
           );
+          logger.log(
+            "GoogleDriveService: Session silently restored for ${_currentUser?.email} via cached credentials.",
+          );
+          return _currentUser;
         }
       } catch (e) {
-        debugPrint("GoogleDriveService: Linux session restoration failed: $e");
+        logger.log(
+          "GoogleDriveService: Saved credentials restoration check error: $e",
+        );
       }
     }
+    return null;
   }
 
   Completer<GoogleUser?>? _webLoginCompleter;
@@ -261,8 +340,13 @@ class GoogleDriveService {
           authz ?? await authClientManager.authorizeScopes(scopes);
       _httpClient = finalAuthz.authClient(scopes: scopes);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('was_logged_in', true);
+      final accessToken = AccessToken(
+        'Bearer',
+        finalAuthz.accessToken,
+        DateTime.now().toUtc().add(const Duration(hours: 1)),
+      );
+      final creds = AccessCredentials(accessToken, null, scopes);
+      await _saveAccessCredentials(creds);
 
       logger.log("GoogleDriveService: Authorization successful.");
       return _currentUser;
@@ -480,8 +564,11 @@ class GoogleDriveService {
     } catch (e) {
       debugPrint("GoogleDriveService: Logout error: $e");
     }
+    _autoRetryTimer?.cancel();
+    _autoRetryTimer = null;
     _currentUser = null;
     _httpClient = null;
+    onUserChanged?.call(null);
   }
 
   bool get isLoggedIn => _httpClient != null || _currentUser != null;

@@ -67,8 +67,12 @@ class _LogsPageState extends ConsumerState<LogsPage> {
       appBar: AppBar(
         title: const Text("System Logs"),
         actions: [
-          IconButton(
+          TextButton.icon(
             icon: const Icon(Icons.refresh),
+            label: const Text(
+              "REFRESH",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             onPressed: () {
               setState(() => _loading = true);
               _loadLogs();
