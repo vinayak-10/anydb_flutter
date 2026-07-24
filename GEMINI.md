@@ -36,16 +36,8 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
+| 2026-07-23 | [session_20260723_feedback_fixes.md](.chat_context/session_20260723_feedback_fixes.md) | Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on internet reconnect. |
 | 2026-07-06 | [session_20260704_payment_mode_validation_analysis.md](.chat_context/session_20260704_payment_mode_validation_analysis.md) | Payment mode validation, custom ribbon ordering, and adaptive spacing layout. Implemented. |
-| 2026-06-27 (Part 3) | [session_20260627_report_reactive_invalidation_fix.md](.chat_context/session_20260627_report_reactive_invalidation_fix.md) | Report reactive updates/invalidations key mismatch fix. Watches correct database names in `databaseUpdateProvider`. |
-| 2026-06-27 (Part 2) | [session_20260627_report_cache_write_timestamp_fix.md](.chat_context/session_20260627_report_cache_write_timestamp_fix.md) | Report cache staleness write-time mismatch fix. Decoupled cache check from domain dates using new `database_metadata` table. |
-| 2026-06-27 (Part 1) | [session_20260627_report_cache_fix.md](.chat_context/session_20260627_report_cache_fix.md) | Report cache staleness root cause analysis (4 bugs) + 3-file fix. Five UI features: purge → deleted tab only, schema `defaultValue` fix, 5-day delete grace period, edit FAB on record cards, schema auto-reload. |
-| 2026-06-26 (Part 4) | Inline in GEMINI.md (old) | Batch `<v>` tag preservation fix — `previousBytes` registry merge in `ExcelBinaryHelper`. Committed `3c7087c`. |
-| 2026-06-26 (Part 3) | [session_20260626_remediation_complete.md](.chat_context/session_20260626_remediation_complete.md) | Namespace-insensitive XML lookup fix (`name.local`). Sibling directory layout fix. `sourceReport` fix in isolate `getFileName`. `Default` sheet pruning. |
-| 2026-06-26 (Parts 1–2) | [session_20260626_remediation_complete.md](.chat_context/session_20260626_remediation_complete.md) | Empty monthly report fix — `UnsupportedError` in `_injectCalculatedValues`. `generateMonthlyBatch` date clamping and sheet skipping. |
-| 2026-06-25 | [session_20260625_1.md](.chat_context/session_20260625_1.md) | Monthly report blank sheets and formula error resolution. Android backup directory analysis. |
-| 2026-06-23 | [session_20260623_report_generation_analysis.md](.chat_context/session_20260623_report_generation_analysis.md) | Root cause: monthly report empty (wrong `sourceReport`). Date picker month-only display. Documents hierarchy on Android. |
-| 2026-06-23 | [session_20260623_1.md](.chat_context/session_20260623_1.md) | Empty monthly report extraction logic fix. |
 
 ---
 
@@ -85,6 +77,7 @@ Full details for each feature are in the session files above. This table is a qu
 | 28 | **[2026-06-27]** Wall-clock write timestamps for report cache invalidation | `sqlite_helper_native.dart` · `sqlite_helper_web.dart` | 2026-06-27 (Part 2) |
 | 29 | **[2026-06-27]** Report reactive invalidations key mismatch fix | `collection_view.dart` | 2026-06-27 (Part 3) |
 | 30 | **[2026-07-06]** Transaction validation, custom ribbon ordering, and responsive layout spacing | `simple_account.dart` · `collection_view.dart` | 2026-07-04/06 |
+| 31 | **[2026-07-23]** Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on reconnect | `element_editor.dart` · `collection_view.dart` · `google_drive_service.dart` | 2026-07-23 |
 
 ⚠️ = Hard-locked file (never modify without explicit user approval and notification)
 

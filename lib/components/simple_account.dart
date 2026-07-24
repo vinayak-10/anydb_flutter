@@ -720,11 +720,17 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          IconButton(
-                            iconSize: 36,
+                          TextButton.icon(
                             icon: const Icon(
                               Icons.delete_outline,
                               color: Colors.red,
+                            ),
+                            label: const Text(
+                              "DELETE",
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             onPressed: () async {
                               final confirm = await showDialog<bool>(
@@ -988,11 +994,17 @@ class _SimpleAccountEditorState extends State<_SimpleAccountEditor> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                IconButton(
-                                  iconSize: 36,
+                                TextButton.icon(
                                   icon: const Icon(
                                     Icons.delete_forever,
                                     color: Colors.red,
+                                  ),
+                                  label: const Text(
+                                    "DELETE",
+                                    style: TextStyle(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   onPressed: () async {
                                     final confirm = await showDialog<bool>(

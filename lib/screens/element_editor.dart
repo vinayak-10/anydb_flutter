@@ -63,7 +63,13 @@ class _ElementEditorState extends State<ElementEditor> {
         title: Text(
           widget.isNew ? "New ${widget.db.key}" : "Edit ${widget.element.key}",
         ),
-        actions: [IconButton(icon: const Icon(Icons.save), onPressed: _save)],
+        actions: [
+          TextButton.icon(
+            onPressed: _save,
+            icon: const Icon(Icons.save),
+            label: const Text("SAVE", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Padding(

@@ -3657,10 +3657,16 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
-          IconButton(
+          TextButton.icon(
             icon: const Icon(Icons.save, color: Color(0xFF6B1524)),
+            label: const Text(
+              "SAVE SCHEMA",
+              style: TextStyle(
+                color: Color(0xFF6B1524),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             onPressed: _save,
-            tooltip: "Save Schema",
           ),
         ],
       ),

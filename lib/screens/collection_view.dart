@@ -739,8 +739,15 @@ class _CollectionViewState extends ConsumerState<CollectionView>
                   onPressed: () => setState(() => _selectedKeys.clear()),
                 ),
                 actions: [
-                  IconButton(
+                  TextButton.icon(
                     icon: const Icon(Icons.delete, color: Colors.red),
+                    label: const Text(
+                      "DELETE",
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     onPressed: () => _handleBatchDelete(),
                   ),
                 ],
@@ -3532,8 +3539,12 @@ class _ElementViewState extends State<ElementView> {
               )
             : null,
         actions: [
-          IconButton(
+          TextButton.icon(
             icon: const Icon(Icons.edit),
+            label: const Text(
+              "EDIT",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             onPressed: () async {
               await Navigator.push(
                 context,
@@ -3545,7 +3556,6 @@ class _ElementViewState extends State<ElementView> {
               setState(() {});
               widget.onChanged?.call();
             },
-            tooltip: "Edit Full Record",
           ),
         ],
       ),
@@ -4189,7 +4199,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
         final double twoRowWidth = ((children.length + 1) ~/ 2) * avgItemWidth;
 
         if (singleRowWidth <= maxWidth) {
-          // Case A: Everything fits in a single row without scrolling
+          // Case A: Everything fits in a single row without scrolling (with fallback scroll if items are extra wide)
           return Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
@@ -4200,15 +4210,22 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
             ),
             child: SafeArea(
               bottom: true,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: maxWidth - 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: children,
+                  ),
+                ),
               ),
             ),
           );
         } else if (twoRowWidth <= maxWidth) {
-          // Case B: Fits in two rows without scrolling, space evenly to fit
+          // Case B: Fits in two rows without scrolling, space evenly to fit (with fallback scroll)
           final List<Widget> columns = [];
           for (int i = 0; i < children.length; i += 2) {
             final top = children[i];
@@ -4239,10 +4256,17 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
             ),
             child: SafeArea(
               bottom: true,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: columns,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: maxWidth - 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: columns,
+                  ),
+                ),
               ),
             ),
           );
@@ -4280,6 +4304,7 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
               bottom: true,
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.start,
