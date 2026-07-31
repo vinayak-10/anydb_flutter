@@ -25,8 +25,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 | Item | Value |
 |------|-------|
 | **Branch** | `dev` |
-| **Last stable commit** | `3c7087c` (batch `<v>` tag preservation fix) → merged to `master` via `ccb61da` |
-| **Pending commit** | Session 2026-06-27: `element_db.dart`, `sqlite_helper_native.dart`, `storage_service.dart` (report cache fix + UI features) |
+| **Last stable commit** | `922ff7b` (monthly summary cache-clear fix) |
 | **Flutter analyze** | 0 errors |
 | **Git remotes** | `local-server` (local) + `origin` (`git@github.com:vinayak-10/anydb_flutter.git`) |
 
@@ -36,6 +35,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
+| 2026-07-31 | [session_20260731_monthly_report_fix.md](.chat_context/session_20260731_monthly_report_fix.md) | Root-cause analysis of wrong monthly totals in viewer; fix: `workbook.clearCache()` before monthly summary step in `generateMonthlyBatch`. |
 | 2026-07-23 | [session_20260723_feedback_fixes.md](.chat_context/session_20260723_feedback_fixes.md) | Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on internet reconnect. |
 | 2026-07-06 | [session_20260704_payment_mode_validation_analysis.md](.chat_context/session_20260704_payment_mode_validation_analysis.md) | Payment mode validation, custom ribbon ordering, and adaptive spacing layout. Implemented. |
 

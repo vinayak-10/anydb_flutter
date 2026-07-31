@@ -92,3 +92,70 @@ To restore functional monthly report generation without breaking the background 
    getFileName: (meta, {DateTime? timestamp}) =>
        agg.getFileName(meta, timestamp: timestamp, sourceReport: report),
    ```
+
+---
+
+## 4. Root Cause 3: Warm In-Memory Cache Returns Formula Strings Instead of Numbers (2026-07-31)
+
+### Symptom
+Monthly report totals in the app viewer are **wrong numbers** (not zero/empty), even though
+all daily reports were generated correctly each day via "Finalize Day." Force-rebuilding with
+"Consolidate All Days" produces correct results.
+
+### Root Cause
+
+`generateMonthlyBatch` writes all daily sheets sequentially via `workbook.write`, which
+keeps `ExcelGenerationService.cachedExcel` warm (the live in-memory Excel object).
+
+When `generate(monthlyReport, ...)` runs immediately after, `ExtractorReport._prepare` calls
+`workbook.read` for each daily sheet to extract the per-day summary total. Because the cache
+is warm and `cachedExcelPath == targetPath`, `WorkbookService.read` returns via
+`readSheetFromCache`:
+
+```dart
+// ExcelGenerationService.readSheetFromCache (LOCKED file)
+return sheet.rows
+    .map((row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList())
+    .toList();
+```
+
+`CellHelper.unwrap` for a `FormulaCellValue` (line 14 of `cell_helper.dart`) returns:
+```dart
+if (val is FormulaCellValue) return val.formula;  // e.g. "SUM(I10:I45)"
+```
+
+The in-memory Excel object holds formula cells as `FormulaCellValue` objects — there is no
+pre-calculated numeric result stored on them (that lives only in the `<v>` XML tags in the
+raw file bytes). So every daily sheet's summary total is extracted as a formula string.
+
+`ExtractorReport._prepare` stores these strings as row values. `FormulaEngine` then tries
+to sum them → wrong/zero totals. These wrong totals get baked into the monthly summary
+sheet's `<v>` tags by `postProcessBytes`. The viewer reads those `<v>` tags and faithfully
+displays the wrong numbers.
+
+The non-cache path (`readSheetInIsolate → extractCachedValues`) correctly reads `<v>` tags
+from raw bytes and returns real numbers — which is why Force Rebuild worked.
+
+### Fix Applied (commit `922ff7b`)
+
+Added `workbook.clearCache()` in `aggregator_service.dart` immediately before
+`generate(monthlyReport, ...)`. Clearing the cache forces `WorkbookService.read` to fall
+through to `readSheetInIsolate` → `extractCachedValues`, which correctly parses the `<v>`
+XML tags from the file bytes and returns numeric values.
+
+```dart
+// aggregator_service.dart — inside generateMonthlyBatch, before monthly summary step
+workbook.clearCache();  // ← FIX: force disk path so formula cells resolve to numbers
+final monthlyDataFull = await generate(monthlyReport, date: monthDate, ...);
+```
+
+This is safe: the cache is repopulated correctly by the subsequent `generateReport` write
+of the monthly summary sheet, and is cleared again at the end of the batch.
+
+### Why It Wasn't Caught Earlier
+
+The bug is session-state dependent. In dev/test, the monthly report was typically viewed
+after an app restart (cold cache) or via the isolate pipeline (always reads from disk).
+Both paths use `readSheetInIsolate` which correctly resolves formula cells. The warm-cache
+path only triggers when the batch runs and the report is viewed in the same session —
+exactly the production usage pattern ("Finalize Day" then check the monthly summary).
