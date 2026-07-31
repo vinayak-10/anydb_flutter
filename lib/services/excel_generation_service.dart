@@ -12,10 +12,15 @@ import 'report_formula_service.dart';
 class ExcelGenerationService {
   static Excel? cachedExcel;
   static String? cachedExcelPath;
+  // Raw bytes stored alongside the decoded Excel object so that readSheetFromCache
+  // can resolve FormulaCellValue cells via extractCachedValues — identical to
+  // the disk path used by readSheetInIsolate.
+  static List<int>? cachedBytes;
 
   static void clearCache() {
     cachedExcel = null;
     cachedExcelPath = null;
+    cachedBytes = null;
   }
 
   /// Safe bridge method to backfill the static workspace cache memory map from 
@@ -24,6 +29,7 @@ class ExcelGenerationService {
     try {
       cachedExcel = Excel.decodeBytes(bytes);
       cachedExcelPath = targetPath;
+      cachedBytes = bytes;
     } catch (e) {
       debugPrint("ExcelGenerationService.setCacheFromBytes Error: $e");
     }
@@ -42,13 +48,39 @@ class ExcelGenerationService {
   }
 
   /// Reads sheet rows from the memory cache if available and path matches.
+  /// Formula cells are resolved via extractCachedValues on the stored raw bytes,
+  /// identical to the behaviour of readSheetInIsolate — ensuring the cache path
+  /// returns the same computed numeric values as the disk path.
   static List<List<dynamic>>? readSheetFromCache(String targetPath, String sheetName) {
     if (cachedExcel != null && cachedExcelPath == targetPath) {
       final sheet = cachedExcel!.tables[sheetName];
       if (sheet != null) {
-        return sheet.rows
-            .map((row) => row.map((cell) => CellHelper.unwrap(cell?.value)).toList())
-            .toList();
+        // Extract <v> tag values from raw bytes so FormulaCellValue cells resolve
+        // to numbers rather than formula strings.
+        final Map<String, String> formulaValues = cachedBytes != null
+            ? extractCachedValues(cachedBytes!, sheetName)
+            : <String, String>{};
+
+        return sheet.rows.map((row) {
+          return row.map((cell) {
+            if (cell == null) return '';
+            final val = cell.value;
+            if (val is FormulaCellValue) {
+              final ref = getCellRef(
+                cell.cellIndex.columnIndex,
+                cell.cellIndex.rowIndex,
+              );
+              final cached = formulaValues[ref];
+              if (cached != null) {
+                final n = double.tryParse(cached);
+                if (n != null) return n % 1 == 0 ? n.toInt() : n;
+                return cached;
+              }
+              return val.formula;
+            }
+            return CellHelper.unwrap(val);
+          }).toList();
+        }).toList();
       }
     }
     return null;

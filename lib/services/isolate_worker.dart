@@ -11,6 +11,7 @@ import 'io_helper.dart' as io;
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import '../core/cell_helper.dart';
+import '../core/formula_engine.dart';
 import 'package:excel/excel.dart';
 import 'excel_generation_service.dart';
 import 'excel_binary_helper.dart';
@@ -1092,17 +1093,162 @@ Future<dynamic> _executeProcessTask(
         replyPort.close();
         s = Map<String, dynamic>.from(sRaw as Map);
       } else {
-        // For report-sourced extractors (like unconsolidated Monthly), read directly from files on disk
-        final extIntf = report.extractor[0];
+        // Monthly report regeneration: compute per-day summaries directly from the
+        // DB isolate via IPC rather than reading stale Excel <v> tags from disk.
+        // This mirrors the daily report path (ipcGetFilteredReportData) so both
+        // report types derive their values from live DB data on regeneration.
 
-        s = await extIntf.extractor!.applyPredicate(
-          extIntf.extractor!.predicates[0],
-          data: targetDate,
-          getFileName: (meta, {DateTime? timestamp}) =>
-              agg.getFileName(meta, timestamp: timestamp, sourceReport: report),
-          timestamp: null,
-          force: true,
-        );
+        // 1. Find the daily (database-sourced) report in the schema
+        AggregatorReport? dailyReport;
+        for (final r in agg.reports) {
+          final rSourceType = r.extractor.isNotEmpty
+              ? (r.extractor[0].extractor?.source['type'] ?? '')
+              : '';
+          if (rSourceType == 'database') {
+            dailyReport = r;
+            break;
+          }
+        }
+
+        final List<Map<String, dynamic>> monthlyRows = [];
+
+        if (dailyReport != null) {
+          final String dailyDbName = dailyReport.extractor.isNotEmpty
+              ? (dailyReport.extractor[0].extractor?.source['name'] ?? dbName)
+              : dbName;
+
+          final int year = targetDate.year;
+          final int month = targetDate.month;
+          final int daysInMonth = DateTime(year, month + 1, 0).day;
+          final DateTime today = DateTime.now();
+          final DateTime todayStart =
+              DateTime(today.year, today.month, today.day);
+
+          // Monthly columns declare which daily summary cell to read, e.g. "='Daily'!B7"
+          // Column letter (A=0, B=1, …) maps to the position in dailyReport.summary.keys.
+          final List<dynamic> monthlyColumns =
+              report.reportSchema['row']?[0]?['columns'] ?? [];
+          final List<String> dailySummaryKeys =
+              dailyReport.summary.keys.toList();
+
+          // Build titleToKeyMap for FormulaEngine (mirrors AggregatorReport.generateData)
+          final List<dynamic> dailyColumns =
+              dailyReport.reportSchema['row']?[0]?['columns'] ?? [];
+          final Map<String, String> titleToKeyMap = {};
+          for (final col in dailyColumns) {
+            if (col is Map) {
+              final String title = col['title']?.toString() ?? '';
+              final String column =
+                  col['column']?.toString() ?? col['title']?.toString() ?? '';
+              if (title.isNotEmpty && column.isNotEmpty) {
+                titleToKeyMap[title] = column;
+                titleToKeyMap[column] = title;
+              }
+            }
+          }
+
+          for (int d = 1; d <= daysInMonth; d++) {
+            final DateTime date = DateTime(year, month, d);
+            if (date.isAfter(todayStart)) continue;
+
+            try {
+              // 2. Fetch this day's records from the DB isolate
+              final ReceivePort dayReplyPort = ReceivePort();
+              dbSendPort!.send({
+                'type': 'ipcGetFilteredReportData',
+                'replyPort': dayReplyPort.sendPort,
+                'params': {
+                  'dbName': dailyDbName,
+                  'reportKey': dailyReport.key,
+                  'date': date.toIso8601String(),
+                  'aggregatorJson': aggregatorJson,
+                },
+              });
+              final dynamic dayRaw = await dayReplyPort.first;
+              dayReplyPort.close();
+
+              final Map<String, dynamic> dayData =
+                  Map<String, dynamic>.from(dayRaw as Map);
+              final List<Map<String, dynamic>> dayRecords =
+                  List<Map<String, dynamic>>.from(
+                (dayData['data'] as List? ?? []).map(
+                  (r) => Map<String, dynamic>.from(r as Map),
+                ),
+              );
+
+              if (dayRecords.isEmpty) continue;
+
+              // 3. Compute this day's summary using the daily report's formulas
+              final List<String> dataHeaders = dayRecords.isNotEmpty
+                  ? dayRecords[0].keys.toList()
+                  : [];
+              final Map<String, dynamic> daySummary = {};
+              dailyReport.summary.forEach((title, formula) {
+                daySummary[title] = FormulaEngine.evaluate(
+                  formula.toString(),
+                  dayRecords,
+                  dataHeaders,
+                  titleToKeyMap,
+                );
+              });
+
+              // 4. Map daily summary values to monthly row via column coordinate formulas
+              final Map<String, dynamic> monthlyRow = {};
+              monthlyRow['Date'] = DateFormat('dd/MM/yyyy').format(date);
+
+              for (final col in monthlyColumns) {
+                if (col is! Map) continue;
+                final String title = col['title']?.toString() ?? '';
+                String formula = col['formula']?.toString().trim() ?? '';
+                if (formula.startsWith('=')) formula = formula.substring(1);
+
+                // Parse "='Daily'!B7" → column letter → 0-based index → summary key
+                final RegExp refRegex =
+                    RegExp(r"(?:'([^']+)'|([^!]+))!([A-Z]+)([0-9]+)");
+                final Match? match = refRegex.firstMatch(formula);
+
+                if (match != null) {
+                  final String colAlpha = match.group(3)!;
+                  int colIdx = 0;
+                  for (int i = 0; i < colAlpha.length; i++) {
+                    colIdx = colIdx * 26 + (colAlpha.codeUnitAt(i) - 64);
+                  }
+                  colIdx -= 1; // convert to 0-based
+
+                  monthlyRow[title] = colIdx < dailySummaryKeys.length
+                      ? (daySummary[dailySummaryKeys[colIdx]] ?? 0)
+                      : 0;
+                } else {
+                  // Fallback: match by title name directly
+                  monthlyRow[title] = daySummary[title] ?? 0;
+                }
+              }
+
+              monthlyRows.add(monthlyRow);
+            } catch (e) {
+              debugPrint(
+                'IsolateWorker: Error computing day $d for monthly report: $e',
+              );
+            }
+          }
+        }
+
+        // 5. Build the applyPredicate-compatible result structure for report.generateData
+        final Map<String, dynamic> predObj =
+            report.extractor[0].extractor!.predicates.isNotEmpty
+                ? Map<String, dynamic>.from(
+                    report.extractor[0].extractor!.predicates[0] as Map)
+                : {};
+
+        s = {
+          'data': monthlyRows,
+          'extra': {
+            'name': DateFormat('MMM_yyyy').format(targetDate),
+            'header': List<dynamic>.from(report.header),
+            'source': report.extractor[0].extractor?.source ?? {},
+            'predicate': {...predObj, 'value': targetDate},
+          },
+        };
       }
 
       // Inject final sheetName
