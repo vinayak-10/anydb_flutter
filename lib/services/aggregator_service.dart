@@ -516,6 +516,12 @@ class AggregatorService {
         logger.log(
           "AggregatorService: Finished processing $generatedDays days. Generating final monthly summary...",
         );
+        // FIX: Clear the in-memory Excel cache before reading daily sheets back for the monthly
+        // summary. Without this, WorkbookService.read hits readSheetFromCache which returns
+        // FormulaCellValue as a formula string (e.g. "SUM(I10:I45)") via CellHelper.unwrap
+        // instead of the computed numeric value. Clearing forces the disk path
+        // (readSheetInIsolate → extractCachedValues) which correctly reads the <v> tag values.
+        workbook.clearCache();
         final monthlyDataFull = await generate(
           monthlyReport,
           date: monthDate,
