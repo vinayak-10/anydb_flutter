@@ -25,7 +25,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 | Item | Value |
 |------|-------|
 | **Branch** | `dev` |
-| **Last stable commit** | `922ff7b` (monthly summary cache-clear fix) |
+| **Last stable commit** | `643dde8` (merged monthly report fix & docs into master) |
 | **Flutter analyze** | 0 errors |
 | **Git remotes** | `local-server` (local) + `origin` (`git@github.com:vinayak-10/anydb_flutter.git`) |
 
@@ -35,7 +35,8 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
-| 2026-07-31 | [session_20260731_monthly_report_fix.md](.chat_context/session_20260731_monthly_report_fix.md) | Root-cause analysis of wrong monthly totals in viewer; fix: `workbook.clearCache()` before monthly summary step in `generateMonthlyBatch`. |
+| 2026-08-02 | [session_20260802_review_comments_and_monthly_fix_completion.md](.chat_context/session_20260802_review_comments_and_monthly_fix_completion.md) | Monthly report architectural fix completion (`c983342`), merged to `master` (`643dde8`). Analysis and breakdown of 12 user review comments in `reviews.txt`. |
+| 2026-07-31 | [session_20260731_monthly_report_fix.md](.chat_context/session_20260731_monthly_report_fix.md) | Initial root-cause analysis of wrong monthly totals in viewer. |
 | 2026-07-23 | [session_20260723_feedback_fixes.md](.chat_context/session_20260723_feedback_fixes.md) | Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on internet reconnect. |
 | 2026-07-06 | [session_20260704_payment_mode_validation_analysis.md](.chat_context/session_20260704_payment_mode_validation_analysis.md) | Payment mode validation, custom ribbon ordering, and adaptive spacing layout. Implemented. |
 
@@ -78,6 +79,7 @@ Full details for each feature are in the session files above. This table is a qu
 | 29 | **[2026-06-27]** Report reactive invalidations key mismatch fix | `collection_view.dart` | 2026-06-27 (Part 3) |
 | 30 | **[2026-07-06]** Transaction validation, custom ribbon ordering, and responsive layout spacing | `simple_account.dart` · `collection_view.dart` | 2026-07-04/06 |
 | 31 | **[2026-07-23]** Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on reconnect | `element_editor.dart` · `collection_view.dart` · `google_drive_service.dart` | 2026-07-23 |
+| 32 | **[2026-08-02]** Monthly report architectural fix & review comments analysis | `excel_generation_service.dart` ⚠️ · `isolate_worker.dart` · `aggregator_service.dart` ⚠️ | 2026-08-02 |
 
 ⚠️ = Hard-locked file (never modify without explicit user approval and notification)
 
@@ -99,6 +101,7 @@ Full details for each feature are in the session files above. This table is a qu
 
 1. **Hoisted business key query in `updateAllRaw`:** Move `getBusinessUniqueKeyRaw(dbName)` outside the batch loop — eliminates ~15,000 sequential SELECT queries during DB reload. Drops import time from minutes to under 300ms.
 2. **SQLite WASM + OPFS for Web:** Replace `localStorage` adapter with WebAssembly SQLite + Origin Private File System. Eliminates 5MB quota cap and synchronous blocking; brings web to feature parity with mobile.
+3. **Review Comments Plan (`reviews.txt`):** Implementation of 12-point user review features (background uploads, Google Drive signal chip + status menu, horizontal scroll fill for monthly reports, cancellation handling, duplicate detection UX, padding polish, edit button on last transaction, etc.).
 
 ---
 
@@ -110,5 +113,6 @@ Full details for each feature are in the session files above. This table is a qu
 | [android_backup_location_context.md](.chat_context/android_backup_location_context.md) | Android storage path guide |
 | [timestamps_indexing_plan.md](.chat_context/timestamps_indexing_plan.md) | `record_timestamps` design rationale |
 | [monthly_report_analysis.md](.chat_context/monthly_report_analysis.md) | Monthly report bug analysis archive |
+| [session_20260802_review_comments_and_monthly_fix_completion.md](.chat_context/session_20260802_review_comments_and_monthly_fix_completion.md) | Monthly report fix completion & 12-point review comments analysis |
 | [windows_build_guide.md](.chat_context/windows_build_guide.md) | Windows build + signing walkthrough |
 | [oauth_verification_guide.md](.chat_context/oauth_verification_guide.md) | Google OAuth + Drive setup guide |
