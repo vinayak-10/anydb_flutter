@@ -76,10 +76,14 @@ class FormattedText extends GenInterface {
     bool? refresh,
   }) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: EdgeInsets.symmetric(
+        horizontal: MediaQuery.of(context).size.width * 0.02,
+        vertical: MediaQuery.of(context).size.height * 0.005,
+      ),
       child: TextFormField(
         key: key,
         initialValue: extractedValue,
+        textCapitalization: TextCapitalization.sentences,
         decoration: InputDecoration(
           labelText: name,
           hintText: format,

@@ -197,7 +197,10 @@ class _PhoneNumberEditorState extends State<_PhoneNumberEditor> {
       builder: (context, ref, child) {
         final settings = ref.watch(settingsProvider);
         return Padding(
-          padding: const EdgeInsets.all(8.0),
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.of(context).size.width * 0.02,
+            vertical: MediaQuery.of(context).size.height * 0.005,
+          ),
           child: TextField(
             controller: _controller,
             keyboardType: TextInputType.phone,

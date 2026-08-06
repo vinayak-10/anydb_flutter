@@ -214,13 +214,19 @@ class _DateTimeEditorState extends State<_DateTimeEditor> {
       formatted += " ${DateFormat.jm().format(_selectedDate)}";
     }
 
-    return ListTile(
-      title: Text(widget.label),
-      subtitle: Text(formatted),
-      trailing: const Icon(Icons.calendar_today),
-      onTap: () => _pickDate(),
-      tileColor: Colors.grey[100],
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: MediaQuery.of(context).size.width * 0.02,
+        vertical: MediaQuery.of(context).size.height * 0.005,
+      ),
+      child: ListTile(
+        title: Text(widget.label),
+        subtitle: Text(formatted),
+        trailing: const Icon(Icons.calendar_today),
+        onTap: () => _pickDate(),
+        tileColor: Colors.grey[100],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 }

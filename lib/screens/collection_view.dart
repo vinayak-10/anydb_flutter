@@ -2782,11 +2782,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                       ],
                                     ),
                                     child: ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 8,
-                                          ),
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: MediaQuery.of(context).size.width * 0.03,
+                                        vertical: MediaQuery.of(context).size.height * 0.006,
+                                      ),
                                       leading: isSelectedForBatch
                                           ? Icon(
                                               Icons.check_circle,
@@ -3217,9 +3216,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                               ],
                             ),
                             child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: MediaQuery.of(context).size.width * 0.03,
+                                vertical: MediaQuery.of(context).size.height * 0.006,
                               ),
                               leading: isSelected
                                   ? Icon(
@@ -3575,7 +3574,10 @@ class _ElementViewState extends State<ElementView> {
               side: BorderSide(color: Colors.black12),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.of(context).size.width * 0.03,
+                vertical: MediaQuery.of(context).size.height * 0.01,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3594,7 +3596,9 @@ class _ElementViewState extends State<ElementView> {
                   ),
                   const Divider(color: Colors.black12),
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    padding: EdgeInsets.symmetric(
+                      vertical: MediaQuery.of(context).size.height * 0.005,
+                    ),
                     child: c.display(
                       onlyValue: false,
                       onChanged: () async {
@@ -3885,7 +3889,6 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                 leading: const Icon(Icons.cloud_upload, color: Colors.blue),
                 title: const Text("Upload to Google Drive"),
                 onTap: () async {
-                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
                   final googleDriveService = ref.read(
                     googleDriveServiceProvider,

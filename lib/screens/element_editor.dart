@@ -73,24 +73,28 @@ class _ElementEditorState extends State<ElementEditor> {
       ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.of(context).size.width * 0.03,
+            vertical: MediaQuery.of(context).size.height * 0.01,
+          ),
           child: Column(
             children: [
               // Key/ID field (readonly if not new)
               TextFormField(
                 initialValue: _editingElement.key,
+                textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(labelText: "Record ID/Key"),
                 enabled: widget.isNew,
                 onChanged: (val) => _editingElement.key = val,
               ),
-              const Divider(height: 32),
+              Divider(height: MediaQuery.of(context).size.height * 0.02),
               // Dynamic Editors from components
               ..._editingElement.getEditors(
                 onChanged: () {
                   // Trigger rebuild if necessary for dependent fields
                   setState(() {});
                 },
-                autoFocusFirst: true,
+                autoFocusFirst: false,
               ),
               const SizedBox(height: 40),
               ElevatedButton.icon(

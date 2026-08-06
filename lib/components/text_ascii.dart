@@ -201,11 +201,15 @@ class _TextAsciiEditorState extends State<_TextAsciiEditor> {
       builder: (context, ref, child) {
         final settings = ref.watch(settingsProvider);
         return Padding(
-          padding: const EdgeInsets.all(8.0),
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.of(context).size.width * 0.02,
+            vertical: MediaQuery.of(context).size.height * 0.005,
+          ),
           child: TextField(
             controller: _controller,
             focusNode: _focusNode,
             autofocus: widget.autoFocus,
+            textCapitalization: TextCapitalization.sentences,
             maxLines: widget.multiline ? null : widget.lines,
             maxLength: widget.maxsize,
             style: TextStyle(fontSize: settings.inputFontSize),
