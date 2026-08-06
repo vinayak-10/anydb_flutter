@@ -2108,6 +2108,31 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
     );
   }
 
+  bool _isDraftEmpty(ElementModel draft) {
+    final data = draft.fetch();
+    if (data.isEmpty) return true;
+    final val = data.values.first;
+    if (val is! Map) return true;
+    for (var entry in val.entries) {
+      if (entry.key == '__meta__') continue;
+      final entryVal = entry.value;
+      if (entryVal is Map) {
+        for (var sub in entryVal.entries) {
+          final vStr = sub.value?.toString().trim() ?? '';
+          if (vStr.isNotEmpty && vStr != '[]' && vStr != '0' && vStr != 'null') {
+            return false;
+          }
+        }
+      } else {
+        final vStr = entryVal?.toString().trim() ?? '';
+        if (vStr.isNotEmpty && vStr != '[]' && vStr != '0' && vStr != 'null') {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   void _resumeDraft(ElementModel draft) async {
     final saved = await Navigator.push<bool>(
       context,
@@ -2116,12 +2141,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
             ElementEditor(db: widget.db, element: draft, isNew: true),
       ),
     );
-    if (saved == true) {
+    if (saved == true || _isDraftEmpty(draft)) {
       setState(() {
-        _drafts.remove(draft);
+        _drafts.removeWhere((d) => d == draft || d.key == draft.key);
       });
     }
-    _init(forced: true);
+    await _init(forced: true);
+    if (mounted) setState(() {});
   }
 
   String? _findValueRecursively(Map<String, dynamic> map, String targetKey) {
@@ -2200,7 +2226,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
             onPressed: () {
               Navigator.pop(context);
               setState(() {
-                _drafts.remove(draft);
+                _drafts.removeWhere((d) => d == draft || d.key == draft.key);
                 if (_drafts.isEmpty) {
                   _isSpeedDialOpen = false;
                 }
@@ -2239,12 +2265,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
       ),
     );
 
-    if (saved == true) {
+    if (saved == true || _isDraftEmpty(newElement)) {
       setState(() {
-        _drafts.remove(newElement);
+        _drafts.removeWhere((d) => d == newElement || d.key == newElement.key);
       });
     }
-    _init(forced: true);
+    await _init(forced: true);
+    if (mounted) setState(() {});
   }
 
   void _openEditor(ElementModel element) async {

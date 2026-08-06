@@ -106,6 +106,7 @@ class ListHeader extends GenInterface {
         final vc = _getValuesComponents(
           v['value'] as List<dynamic>,
           allComponents,
+          onChanged,
         );
         if (vc.isNotEmpty) components.add(vc);
       } else if (v['type'] == 'function') {
@@ -123,6 +124,7 @@ class ListHeader extends GenInterface {
   List<Widget> _getValuesComponents(
     List<dynamic> values,
     List<GenInterface> allComponents,
+    VoidCallback? onChanged,
   ) {
     List<Widget> displayHeaders = [];
     for (var componentPath in values) {
@@ -138,6 +140,7 @@ class ListHeader extends GenInterface {
             displayComponent: displayComponent.isEmpty
                 ? null
                 : displayComponent,
+            onChanged: onChanged,
           ),
         );
       }
