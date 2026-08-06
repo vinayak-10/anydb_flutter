@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'platform_check.dart';
 import '../core/logger.dart';
 import 'web_history_helper.dart' as web_helper;
@@ -92,9 +93,27 @@ class GoogleDriveService {
     defaultValue: '',
   );
 
-  GoogleUser? get currentUser => _currentUser;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription ??= Connectivity().onConnectivityChanged.listen((results) async {
+      final isConnected = results.any((r) => r != ConnectivityResult.none);
+      if (isConnected && _currentUser == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final wasLoggedIn = prefs.getBool('was_logged_in') ?? false;
+        if (wasLoggedIn) {
+          logger.log("GoogleDriveService: Connectivity restored! Attempting immediate silent login...");
+          final user = await restoreSession();
+          if (user != null) {
+            onUserChanged?.call(user);
+          }
+        }
+      }
+    });
+  }
 
   Future<void> init() async {
+    _setupConnectivityListener();
     if (_initCompleter != null && !_initCompleter!.isCompleted)
       return _initCompleter!.future;
     if (_initCompleter != null && _initCompleter!.isCompleted) return;
@@ -548,16 +567,13 @@ class GoogleDriveService {
   Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('was_logged_in');
+      await prefs.setBool('was_logged_in', false);
 
       if (kIsWeb) {
         await prefs.remove('google_drive_web_token');
         await prefs.remove('google_drive_web_token_expiry');
       } else if (!isLinux()) {
         await GoogleSignIn.instance.signOut();
-        try {
-          await GoogleSignIn.instance.disconnect();
-        } catch (_) {}
       } else {
         await prefs.remove('google_drive_creds');
       }
