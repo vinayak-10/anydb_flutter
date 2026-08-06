@@ -450,7 +450,7 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           orElse: () => agg.reports.first,
         );
         final today = DateTime.now();
-        await agg.generateWorkbook(
+        final dailyPath = await agg.generateWorkbook(
           dailyReport,
           date: DateTime(today.year, today.month, today.day),
           force: true,
@@ -461,6 +461,61 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           DateTime.now(),
           force: true,
         );
+
+        // E2: Automatic report upload to Google Drive in background
+        try {
+          final googleDriveService = ref.read(googleDriveServiceProvider);
+          if (googleDriveService.isLoggedIn) {
+            unawaited(
+              Future.microtask(() async {
+                final String nowStamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+                int uploadedReportsCount = 0;
+
+                if (dailyPath.isNotEmpty) {
+                  try {
+                    final dailyFileName = '${dailyReport.key}_$nowStamp.xlsx';
+                    await googleDriveService.uploadFile(
+                      dailyPath,
+                      dailyFileName,
+                      path: ['xyz.maya', 'anydb', widget.title, 'Aggregators'],
+                    );
+                    uploadedReportsCount++;
+                  } catch (e) {
+                    debugPrint("Auto Daily report upload error: $e");
+                  }
+                }
+
+                if (monthlyPath.isNotEmpty) {
+                  try {
+                    final monthlyFileName = 'Monthly_Batch_$nowStamp.xlsx';
+                    await googleDriveService.uploadFile(
+                      monthlyPath,
+                      monthlyFileName,
+                      path: ['xyz.maya', 'anydb', widget.title, 'Aggregators'],
+                    );
+                    uploadedReportsCount++;
+                  } catch (e) {
+                    debugPrint("Auto Monthly report upload error: $e");
+                  }
+                }
+
+                if (uploadedReportsCount > 0) {
+                  ref
+                      .read(googleDriveStateProvider.notifier)
+                      .setLastUploadTime(DateTime.now());
+                  if (mounted) {
+                    FeedbackToast.success(
+                      context,
+                      "$uploadedReportsCount reports automatically uploaded to Google Drive",
+                    );
+                  }
+                }
+              }),
+            );
+          }
+        } catch (reportErr) {
+          debugPrint("Auto report upload dispatch error: $reportErr");
+        }
 
         await db.close();
 
@@ -3963,63 +4018,56 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     }).toList();
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isSmallScreen = screenWidth < 600;
 
-    final Map<int, TableColumnWidth> columnWidths = {};
-    double totalTableWidth = 0.0;
+    final List<double> columnBaseWidths = [];
+    double rawTotalWidth = 0.0;
 
     for (int i = 0; i < headers.length; i++) {
       final colName = headers[i].toString().toLowerCase();
-      if (isSmallScreen) {
-        double width = 120.0;
-        if (colName == 's.no' ||
-            colName == 'sex' ||
-            colName == 'age' ||
-            colName == 'sl' ||
-            colName == 's.no.') {
-          width = 60.0;
-        } else if (colName.contains('date') ||
-            colName.contains('amount') ||
-            colName.contains('paid') ||
-            colName.contains('charge') ||
-            colName.contains('fee')) {
-          width = 100.0;
-        } else if (colName.contains('name')) {
-          width = 160.0;
-        }
-        columnWidths[i] = FixedColumnWidth(width);
-        totalTableWidth += width;
-      } else {
-        double weight = 1.5;
-        if (colName.contains('name') ||
-            colName.contains('desc') ||
-            colName.contains('detail') ||
-            colName.contains('address') ||
-            colName.contains('note') ||
-            colName.contains('diagnosis') ||
-            colName.contains('remark') ||
-            colName.contains('reason')) {
-          weight = 3.0;
-        } else if (colName == 'sex' ||
-            colName == 'gender' ||
-            colName == 'age' ||
-            colName == 's.no' ||
-            colName == 's.no.' ||
-            colName == 'sl') {
-          weight = 0.8;
-        } else if (colName.contains('charge') ||
-            colName.contains('paid') ||
-            colName.contains('fee') ||
-            colName.contains('amount') ||
-            colName.contains('amt') ||
-            colName.contains('no') ||
-            colName.contains('date') ||
-            colName.contains('code') ||
-            colName.contains('id')) {
-          weight = 1.2;
-        }
-        columnWidths[i] = FlexColumnWidth(weight);
+      double width = 120.0;
+      if (colName == 's.no' ||
+          colName == 'sex' ||
+          colName == 'age' ||
+          colName == 'sl' ||
+          colName == 's.no.') {
+        width = 65.0;
+      } else if (colName.contains('date') ||
+          colName.contains('amount') ||
+          colName.contains('paid') ||
+          colName.contains('charge') ||
+          colName.contains('fee') ||
+          colName.contains('amt') ||
+          colName.contains('code') ||
+          colName.contains('id')) {
+        width = 110.0;
+      } else if (colName.contains('name') ||
+          colName.contains('desc') ||
+          colName.contains('detail') ||
+          colName.contains('address') ||
+          colName.contains('note') ||
+          colName.contains('diagnosis') ||
+          colName.contains('remark') ||
+          colName.contains('reason')) {
+        width = 180.0;
       }
+      columnBaseWidths.add(width);
+      rawTotalWidth += width;
+    }
+
+    final Map<int, TableColumnWidth> columnWidths = {};
+    double finalTableWidth;
+
+    if (rawTotalWidth < screenWidth) {
+      final double scale = screenWidth / rawTotalWidth;
+      for (int i = 0; i < headers.length; i++) {
+        columnWidths[i] = FixedColumnWidth(columnBaseWidths[i] * scale);
+      }
+      finalTableWidth = screenWidth;
+    } else {
+      for (int i = 0; i < headers.length; i++) {
+        columnWidths[i] = FixedColumnWidth(columnBaseWidths[i]);
+      }
+      finalTableWidth = rawTotalWidth;
     }
 
     final TableBorder borderStyle = TableBorder(
@@ -4102,18 +4150,18 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       ],
     );
 
-    if (isSmallScreen) {
+    if (finalTableWidth > screenWidth) {
       return Scrollbar(
         controller: _horizontalScrollController,
         thumbVisibility: true,
         child: SingleChildScrollView(
           controller: _horizontalScrollController,
           scrollDirection: Axis.horizontal,
-          child: SizedBox(width: totalTableWidth, child: tableContent),
+          child: SizedBox(width: finalTableWidth, child: tableContent),
         ),
       );
     } else {
-      return tableContent;
+      return SizedBox(width: screenWidth, child: tableContent);
     }
   }
 
