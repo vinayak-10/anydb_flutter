@@ -308,9 +308,6 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
     };
   }
 
-  Map<String, dynamic> _createDefaultSummary(String title) {
-    return {"title": title, "formula": "", "column": ""};
-  }
 
   // --- Tree Element Mutators ---
   void _addContentItem(String type) {
@@ -379,32 +376,6 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
     });
   }
 
-  void _addElement(Map<String, dynamic> parent, String type) {
-    setState(() {
-      parent['elements'] ??= [];
-      final List elements = parent['elements'];
-      elements.add(_createDefaultElement("New Field", type));
-    });
-  }
-
-  void _removeElement(Map<String, dynamic> parent, int index) {
-    setState(() {
-      final List elements = parent['elements'];
-      elements.removeAt(index);
-    });
-  }
-
-  void _moveElement(Map<String, dynamic> parent, int index, int direction) {
-    setState(() {
-      final List elements = parent['elements'];
-      final newIndex = index + direction;
-      if (newIndex >= 0 && newIndex < elements.length) {
-        final item = elements.removeAt(index);
-        elements.insert(newIndex, item);
-      }
-    });
-  }
-
   void _addReport(Map<String, dynamic> content) {
     setState(() {
       content['schema'] ??= [];
@@ -417,21 +388,6 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
     setState(() {
       final List schema = content['schema'];
       schema.removeAt(index);
-    });
-  }
-
-  void _addSummary(Map<String, dynamic> report) {
-    setState(() {
-      report['summary'] ??= [];
-      final List summary = report['summary'];
-      summary.add(_createDefaultSummary("New Summary Formula"));
-    });
-  }
-
-  void _removeSummary(Map<String, dynamic> report, int index) {
-    setState(() {
-      final List summary = report['summary'];
-      summary.removeAt(index);
     });
   }
 
@@ -1546,7 +1502,6 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
         builder: (context, setStateModal) {
           final type = field['type']?.toString() ?? "text";
           final name = field['name']?.toString() ?? "";
-          final isGroup = type == 'composite' || type == 'simple-account';
 
           // Define standard items
           final standardItems = [
@@ -3118,9 +3073,7 @@ class _SchemaFieldEditorState extends ConsumerState<SchemaFieldEditor> {
             // Find the database in schema and extract its leaf fields
             final contentsList = _schemaData['contents'] as List? ?? [];
             final dbContent = contentsList.firstWhere(
-              (c) =>
-                  (c as Map)['type'] == 'database' &&
-                  (c as Map)['name'] == name,
+              (c) => c is Map && c['type'] == 'database' && c['name'] == name,
               orElse: () => <String, dynamic>{},
             );
             final allDbFields = dbContent.isNotEmpty

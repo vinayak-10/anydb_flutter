@@ -1239,7 +1239,7 @@ Future<dynamic> _executeProcessTask(
             try {
               // 2. Fetch this day's records from the DB isolate
               final ReceivePort dayReplyPort = ReceivePort();
-              dbSendPort!.send({
+              dbSendPort.send({
                 'type': 'ipcGetFilteredReportData',
                 'replyPort': dayReplyPort.sendPort,
                 'params': {
