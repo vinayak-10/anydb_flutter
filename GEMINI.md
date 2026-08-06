@@ -35,6 +35,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
+| 2026-08-06 | [session_20260806_wave_5_execution.md](.chat_context/session_20260806_wave_5_execution.md) | Wave 5 execution completed (`374ac47`). Draft duplicate display bug fix, timing race condition cleanup, and interactive Last Transaction edit button on record cards. |
 | 2026-08-06 | [session_20260806_waves_1_to_4_execution.md](.chat_context/session_20260806_waves_1_to_4_execution.md) | Waves 1–4 execution completed (`d84cc29`, `cbdb045`, `ef87376`, `8da967c`). Input UX, screen-proportional padding, drawer auth dock, AppBar auth button with status colors, non-blocking DB/report cloud sync, and fill-to-width report table scroll. |
 | 2026-08-05 | [session_20260805_15_item_implementation_plan.md](.chat_context/session_20260805_15_item_implementation_plan.md) | 15-item feature planning & grilling session, rollback checkpoint saved (`23e3472`), 6-wave execution schedule formed. |
 | 2026-08-02 | [session_20260802_review_comments_and_monthly_fix_completion.md](.chat_context/session_20260802_review_comments_and_monthly_fix_completion.md) | Monthly report architectural fix completion (`c983342`), merged to `master` (`643dde8`). Analysis and breakdown of 12 user review comments in `reviews.txt`. |
