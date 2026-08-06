@@ -4,7 +4,8 @@ import '../services/isolate_worker.dart';
 import '../utils/feedback_toast.dart';
 
 class MonthlyReportProgressButton extends ConsumerWidget {
-  const MonthlyReportProgressButton({super.key});
+  // ignore: prefer_const_constructors_in_immutables
+  MonthlyReportProgressButton({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

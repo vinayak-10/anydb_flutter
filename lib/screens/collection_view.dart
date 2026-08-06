@@ -1013,7 +1013,7 @@ class _CollectionViewState extends ConsumerState<CollectionView>
                                       horizontal: 8,
                                     ),
                                   ),
-                                  const MonthlyReportProgressButton(),
+                                  MonthlyReportProgressButton(),
                                   GoogleDriveAuthButton(
                                     schemaName: widget.title,
                                     compact: true,
