@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'platform_check.dart';
 import '../core/logger.dart';
 import 'web_history_helper.dart' as web_helper;
@@ -40,9 +41,33 @@ class GoogleUser {
 
 class GoogleDriveService {
   GoogleUser? _currentUser;
+  GoogleUser? get currentUser => _currentUser;
+
+  DateTime? _lastUploadTime;
+  DateTime? get lastUploadTime => _lastUploadTime;
+
+  bool _isUploading = false;
+  bool get isUploading => _isUploading;
+
   http.Client? _httpClient;
   Timer? _autoRetryTimer;
   void Function(GoogleUser?)? onUserChanged;
+  void Function(DateTime?)? onLastUploadTimeChanged;
+  void Function(bool)? onUploadingStatusChanged;
+
+  void _recordUploadSuccess() async {
+    _lastUploadTime = DateTime.now();
+    onLastUploadTimeChanged?.call(_lastUploadTime);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'google_drive_last_upload_time',
+        _lastUploadTime!.toIso8601String(),
+      );
+    } catch (e) {
+      logger.log("GoogleDriveService: Error saving last upload time: $e");
+    }
+  }
 
   void _startAutoRetryIfNeeded() async {
     final prefs = await SharedPreferences.getInstance();
@@ -92,9 +117,27 @@ class GoogleDriveService {
     defaultValue: '',
   );
 
-  GoogleUser? get currentUser => _currentUser;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription ??= Connectivity().onConnectivityChanged.listen((results) async {
+      final isConnected = results.any((r) => r != ConnectivityResult.none);
+      if (isConnected && _currentUser == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final wasLoggedIn = prefs.getBool('was_logged_in') ?? false;
+        if (wasLoggedIn) {
+          logger.log("GoogleDriveService: Connectivity restored! Attempting immediate silent login...");
+          final user = await restoreSession();
+          if (user != null) {
+            onUserChanged?.call(user);
+          }
+        }
+      }
+    });
+  }
 
   Future<void> init() async {
+    _setupConnectivityListener();
     if (_initCompleter != null && !_initCompleter!.isCompleted)
       return _initCompleter!.future;
     if (_initCompleter != null && _initCompleter!.isCompleted) return;
@@ -548,16 +591,13 @@ class GoogleDriveService {
   Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('was_logged_in');
+      await prefs.setBool('was_logged_in', false);
 
       if (kIsWeb) {
         await prefs.remove('google_drive_web_token');
         await prefs.remove('google_drive_web_token_expiry');
       } else if (!isLinux()) {
         await GoogleSignIn.instance.signOut();
-        try {
-          await GoogleSignIn.instance.disconnect();
-        } catch (_) {}
       } else {
         await prefs.remove('google_drive_creds');
       }
@@ -696,17 +736,23 @@ class GoogleDriveService {
     final fileStream = Stream<List<int>>.value(bytes);
     final length = bytes.length;
 
+    _isUploading = true;
+    onUploadingStatusChanged?.call(true);
     try {
       await api.files.create(
         file,
         uploadMedia: drive.Media(fileStream, length),
       );
+      _recordUploadSuccess();
     } catch (e) {
       debugPrint("GoogleDrive: Upload Error: $e");
       if (e is drive.DetailedApiRequestError) {
         throw "Google Drive Error: ${e.message} (Code: ${e.status})";
       }
       rethrow;
+    } finally {
+      _isUploading = false;
+      onUploadingStatusChanged?.call(false);
     }
   }
 
@@ -741,17 +787,23 @@ class GoogleDriveService {
     final bytes = utf8.encode(jsonStr);
     final stream = Stream.fromIterable([bytes]);
 
+    _isUploading = true;
+    onUploadingStatusChanged?.call(true);
     try {
       await api.files.create(
         file,
         uploadMedia: drive.Media(stream, bytes.length),
       );
+      _recordUploadSuccess();
     } catch (e) {
       debugPrint("GoogleDrive: Upload Error: $e");
       if (e is drive.DetailedApiRequestError) {
         throw "Google Drive Error: ${e.message} (Code: ${e.status})";
       }
       rethrow;
+    } finally {
+      _isUploading = false;
+      onUploadingStatusChanged?.call(false);
     }
   }
 
@@ -796,6 +848,96 @@ class GoogleUserNotifier extends Notifier<GoogleUser?> {
 final googleUserProvider = NotifierProvider<GoogleUserNotifier, GoogleUser?>(
   GoogleUserNotifier.new,
 );
+
+class GoogleDriveState {
+  final GoogleUser? user;
+  final DateTime? lastUploadTime;
+  final bool isUploading;
+
+  const GoogleDriveState({
+    this.user,
+    this.lastUploadTime,
+    this.isUploading = false,
+  });
+
+  bool get isLoggedIn => user != null;
+
+  bool get isRecentlyUploaded {
+    if (lastUploadTime == null) return false;
+    final diff = DateTime.now().difference(lastUploadTime!);
+    return diff.inHours < 1 && !diff.isNegative;
+  }
+
+  GoogleDriveState copyWith({
+    GoogleUser? user,
+    DateTime? lastUploadTime,
+    bool? isUploading,
+    bool clearUser = false,
+    bool clearUploadTime = false,
+  }) {
+    return GoogleDriveState(
+      user: clearUser ? null : (user ?? this.user),
+      lastUploadTime: clearUploadTime ? null : (lastUploadTime ?? this.lastUploadTime),
+      isUploading: isUploading ?? this.isUploading,
+    );
+  }
+}
+
+class GoogleDriveNotifier extends Notifier<GoogleDriveState> {
+  @override
+  GoogleDriveState build() {
+    final service = ref.watch(googleDriveServiceProvider);
+
+    service.onUserChanged = (user) {
+      ref.read(googleUserProvider.notifier).setUser(user);
+      state = state.copyWith(user: user, clearUser: user == null);
+    };
+    service.onLastUploadTimeChanged = (time) {
+      state = state.copyWith(lastUploadTime: time);
+    };
+    service.onUploadingStatusChanged = (isUploading) {
+      state = state.copyWith(isUploading: isUploading);
+    };
+
+    _loadInitialState();
+    return GoogleDriveState(
+      user: service.currentUser,
+      lastUploadTime: service.lastUploadTime,
+      isUploading: service.isUploading,
+    );
+  }
+
+  Future<void> _loadInitialState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastUploadStr = prefs.getString('google_drive_last_upload_time');
+    DateTime? lastUpload;
+    if (lastUploadStr != null) {
+      lastUpload = DateTime.tryParse(lastUploadStr);
+    }
+    final service = ref.read(googleDriveServiceProvider);
+    state = state.copyWith(
+      user: service.currentUser,
+      lastUploadTime: lastUpload ?? service.lastUploadTime,
+    );
+  }
+
+  void setUser(GoogleUser? user) {
+    state = state.copyWith(user: user, clearUser: user == null);
+  }
+
+  void setLastUploadTime(DateTime? time) {
+    state = state.copyWith(lastUploadTime: time);
+  }
+
+  void setUploading(bool isUploading) {
+    state = state.copyWith(isUploading: isUploading);
+  }
+}
+
+final googleDriveStateProvider =
+    NotifierProvider<GoogleDriveNotifier, GoogleDriveState>(
+      GoogleDriveNotifier.new,
+    );
 
 String formatBackupFileName(String dbName, DateTime dt) {
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

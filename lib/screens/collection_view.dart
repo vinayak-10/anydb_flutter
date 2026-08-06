@@ -19,6 +19,8 @@ import '../services/file_service.dart';
 import '../services/io_helper.dart' as io;
 import '../services/web_downloader.dart';
 import '../services/google_drive_service.dart';
+import '../components/google_drive_auth_button.dart';
+import '../components/monthly_report_progress_button.dart';
 import '../services/sqlite_helper.dart';
 import '../services/isolate_worker.dart';
 import '../models/element_model.dart';
@@ -385,35 +387,52 @@ class _CollectionViewState extends ConsumerState<CollectionView>
         ); // Yield to paint status text
         await _exportDb(db);
 
-        // 2. Cloud Backup to Google Drive
+        // 2. Cloud Backup to Google Drive (Backgrounded for E1 non-blocking execution)
         try {
           final data = await db.exportDb();
           final jsonStr = jsonEncode(data);
           final googleDriveService = ref.read(googleDriveServiceProvider);
 
           if (googleDriveService.isLoggedIn) {
-            statusNotifier.value = "Uploading backup to Google Drive...";
-            await Future.delayed(
-              const Duration(milliseconds: 150),
-            ); // Yield to paint status text
             final fileName = formatBackupFileName(db.key, DateTime.now());
-            await googleDriveService.uploadJson(
-              jsonStr,
-              fileName,
-              path: ['xyz.maya', 'anydb', 'schema', widget.title, 'database', db.key],
+            unawaited(
+              googleDriveService
+                  .uploadJson(
+                    jsonStr,
+                    fileName,
+                    path: [
+                      'xyz.maya',
+                      'anydb',
+                      'schema',
+                      widget.title,
+                      'database',
+                      db.key,
+                    ],
+                  )
+                  .then((_) {
+                    ref
+                        .read(googleDriveStateProvider.notifier)
+                        .setLastUploadTime(DateTime.now());
+                    if (mounted) {
+                      FeedbackToast.success(
+                        context,
+                        "Cloud backup saved to Google Drive",
+                      );
+                    }
+                  })
+                  .catchError((cloudErr) {
+                    debugPrint("Background cloud backup error: $cloudErr");
+                    if (mounted) {
+                      FeedbackToast.error(
+                        context,
+                        "Cloud backup failed: $cloudErr",
+                      );
+                    }
+                  }),
             );
-          } else {
-            throw "Not logged into Google Drive";
           }
         } catch (cloudErr) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Cloud Backup Skip: $cloudErr"),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
+          debugPrint("Cloud backup payload preparation skip: $cloudErr");
         }
 
         // 3. Generate Reports
@@ -432,7 +451,7 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           orElse: () => agg.reports.first,
         );
         final today = DateTime.now();
-        await agg.generateWorkbook(
+        final dailyPath = await agg.generateWorkbook(
           dailyReport,
           date: DateTime(today.year, today.month, today.day),
           force: true,
@@ -443,6 +462,61 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           DateTime.now(),
           force: true,
         );
+
+        // E2: Automatic report upload to Google Drive in background
+        try {
+          final googleDriveService = ref.read(googleDriveServiceProvider);
+          if (googleDriveService.isLoggedIn) {
+            unawaited(
+              Future.microtask(() async {
+                final String nowStamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+                int uploadedReportsCount = 0;
+
+                if (dailyPath.isNotEmpty) {
+                  try {
+                    final dailyFileName = '${dailyReport.key}_$nowStamp.xlsx';
+                    await googleDriveService.uploadFile(
+                      dailyPath,
+                      dailyFileName,
+                      path: ['xyz.maya', 'anydb', widget.title, 'Aggregators'],
+                    );
+                    uploadedReportsCount++;
+                  } catch (e) {
+                    debugPrint("Auto Daily report upload error: $e");
+                  }
+                }
+
+                if (monthlyPath.isNotEmpty) {
+                  try {
+                    final monthlyFileName = 'Monthly_Batch_$nowStamp.xlsx';
+                    await googleDriveService.uploadFile(
+                      monthlyPath,
+                      monthlyFileName,
+                      path: ['xyz.maya', 'anydb', widget.title, 'Aggregators'],
+                    );
+                    uploadedReportsCount++;
+                  } catch (e) {
+                    debugPrint("Auto Monthly report upload error: $e");
+                  }
+                }
+
+                if (uploadedReportsCount > 0) {
+                  ref
+                      .read(googleDriveStateProvider.notifier)
+                      .setLastUploadTime(DateTime.now());
+                  if (mounted) {
+                    FeedbackToast.success(
+                      context,
+                      "$uploadedReportsCount reports automatically uploaded to Google Drive",
+                    );
+                  }
+                }
+              }),
+            );
+          }
+        } catch (reportErr) {
+          debugPrint("Auto report upload dispatch error: $reportErr");
+        }
 
         await db.close();
 
@@ -938,6 +1012,11 @@ class _CollectionViewState extends ConsumerState<CollectionView>
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
                                     ),
+                                  ),
+                                  const MonthlyReportProgressButton(),
+                                  GoogleDriveAuthButton(
+                                    schemaName: widget.title,
+                                    compact: true,
                                   ),
                                   IconButton(
                                     icon: const Icon(
@@ -2031,6 +2110,31 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
     );
   }
 
+  bool _isDraftEmpty(ElementModel draft) {
+    final data = draft.fetch();
+    if (data.isEmpty) return true;
+    final val = data.values.first;
+    if (val is! Map) return true;
+    for (var entry in val.entries) {
+      if (entry.key == '__meta__') continue;
+      final entryVal = entry.value;
+      if (entryVal is Map) {
+        for (var sub in entryVal.entries) {
+          final vStr = sub.value?.toString().trim() ?? '';
+          if (vStr.isNotEmpty && vStr != '[]' && vStr != '0' && vStr != 'null') {
+            return false;
+          }
+        }
+      } else {
+        final vStr = entryVal?.toString().trim() ?? '';
+        if (vStr.isNotEmpty && vStr != '[]' && vStr != '0' && vStr != 'null') {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   void _resumeDraft(ElementModel draft) async {
     final saved = await Navigator.push<bool>(
       context,
@@ -2039,12 +2143,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
             ElementEditor(db: widget.db, element: draft, isNew: true),
       ),
     );
-    if (saved == true) {
+    if (saved == true || _isDraftEmpty(draft)) {
       setState(() {
-        _drafts.remove(draft);
+        _drafts.removeWhere((d) => d == draft || d.key == draft.key);
       });
     }
-    _init(forced: true);
+    await _init(forced: true);
+    if (mounted) setState(() {});
   }
 
   String? _findValueRecursively(Map<String, dynamic> map, String targetKey) {
@@ -2123,7 +2228,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
             onPressed: () {
               Navigator.pop(context);
               setState(() {
-                _drafts.remove(draft);
+                _drafts.removeWhere((d) => d == draft || d.key == draft.key);
                 if (_drafts.isEmpty) {
                   _isSpeedDialOpen = false;
                 }
@@ -2162,12 +2267,13 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
       ),
     );
 
-    if (saved == true) {
+    if (saved == true || _isDraftEmpty(newElement)) {
       setState(() {
-        _drafts.remove(newElement);
+        _drafts.removeWhere((d) => d == newElement || d.key == newElement.key);
       });
     }
-    _init(forced: true);
+    await _init(forced: true);
+    if (mounted) setState(() {});
   }
 
   void _openEditor(ElementModel element) async {
@@ -2782,11 +2888,10 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                       ],
                                     ),
                                     child: ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 8,
-                                          ),
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: MediaQuery.of(context).size.width * 0.03,
+                                        vertical: MediaQuery.of(context).size.height * 0.006,
+                                      ),
                                       leading: isSelectedForBatch
                                           ? Icon(
                                               Icons.check_circle,
@@ -3217,9 +3322,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                               ],
                             ),
                             child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: MediaQuery.of(context).size.width * 0.03,
+                                vertical: MediaQuery.of(context).size.height * 0.006,
                               ),
                               leading: isSelected
                                   ? Icon(
@@ -3575,7 +3680,10 @@ class _ElementViewState extends State<ElementView> {
               side: BorderSide(color: Colors.black12),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.of(context).size.width * 0.03,
+                vertical: MediaQuery.of(context).size.height * 0.01,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3594,7 +3702,9 @@ class _ElementViewState extends State<ElementView> {
                   ),
                   const Divider(color: Colors.black12),
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    padding: EdgeInsets.symmetric(
+                      vertical: MediaQuery.of(context).size.height * 0.005,
+                    ),
                     child: c.display(
                       onlyValue: false,
                       onChanged: () async {
@@ -3885,7 +3995,6 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
                 leading: const Icon(Icons.cloud_upload, color: Colors.blue),
                 title: const Text("Upload to Google Drive"),
                 onTap: () async {
-                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
                   final googleDriveService = ref.read(
                     googleDriveServiceProvider,
@@ -3938,63 +4047,56 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
     }).toList();
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isSmallScreen = screenWidth < 600;
 
-    final Map<int, TableColumnWidth> columnWidths = {};
-    double totalTableWidth = 0.0;
+    final List<double> columnBaseWidths = [];
+    double rawTotalWidth = 0.0;
 
     for (int i = 0; i < headers.length; i++) {
       final colName = headers[i].toString().toLowerCase();
-      if (isSmallScreen) {
-        double width = 120.0;
-        if (colName == 's.no' ||
-            colName == 'sex' ||
-            colName == 'age' ||
-            colName == 'sl' ||
-            colName == 's.no.') {
-          width = 60.0;
-        } else if (colName.contains('date') ||
-            colName.contains('amount') ||
-            colName.contains('paid') ||
-            colName.contains('charge') ||
-            colName.contains('fee')) {
-          width = 100.0;
-        } else if (colName.contains('name')) {
-          width = 160.0;
-        }
-        columnWidths[i] = FixedColumnWidth(width);
-        totalTableWidth += width;
-      } else {
-        double weight = 1.5;
-        if (colName.contains('name') ||
-            colName.contains('desc') ||
-            colName.contains('detail') ||
-            colName.contains('address') ||
-            colName.contains('note') ||
-            colName.contains('diagnosis') ||
-            colName.contains('remark') ||
-            colName.contains('reason')) {
-          weight = 3.0;
-        } else if (colName == 'sex' ||
-            colName == 'gender' ||
-            colName == 'age' ||
-            colName == 's.no' ||
-            colName == 's.no.' ||
-            colName == 'sl') {
-          weight = 0.8;
-        } else if (colName.contains('charge') ||
-            colName.contains('paid') ||
-            colName.contains('fee') ||
-            colName.contains('amount') ||
-            colName.contains('amt') ||
-            colName.contains('no') ||
-            colName.contains('date') ||
-            colName.contains('code') ||
-            colName.contains('id')) {
-          weight = 1.2;
-        }
-        columnWidths[i] = FlexColumnWidth(weight);
+      double width = 120.0;
+      if (colName == 's.no' ||
+          colName == 'sex' ||
+          colName == 'age' ||
+          colName == 'sl' ||
+          colName == 's.no.') {
+        width = 65.0;
+      } else if (colName.contains('date') ||
+          colName.contains('amount') ||
+          colName.contains('paid') ||
+          colName.contains('charge') ||
+          colName.contains('fee') ||
+          colName.contains('amt') ||
+          colName.contains('code') ||
+          colName.contains('id')) {
+        width = 110.0;
+      } else if (colName.contains('name') ||
+          colName.contains('desc') ||
+          colName.contains('detail') ||
+          colName.contains('address') ||
+          colName.contains('note') ||
+          colName.contains('diagnosis') ||
+          colName.contains('remark') ||
+          colName.contains('reason')) {
+        width = 180.0;
       }
+      columnBaseWidths.add(width);
+      rawTotalWidth += width;
+    }
+
+    final Map<int, TableColumnWidth> columnWidths = {};
+    double finalTableWidth;
+
+    if (rawTotalWidth < screenWidth) {
+      final double scale = screenWidth / rawTotalWidth;
+      for (int i = 0; i < headers.length; i++) {
+        columnWidths[i] = FixedColumnWidth(columnBaseWidths[i] * scale);
+      }
+      finalTableWidth = screenWidth;
+    } else {
+      for (int i = 0; i < headers.length; i++) {
+        columnWidths[i] = FixedColumnWidth(columnBaseWidths[i]);
+      }
+      finalTableWidth = rawTotalWidth;
     }
 
     final TableBorder borderStyle = TableBorder(
@@ -4077,18 +4179,18 @@ class _AggregatorReportViewState extends ConsumerState<AggregatorReportView> {
       ],
     );
 
-    if (isSmallScreen) {
+    if (finalTableWidth > screenWidth) {
       return Scrollbar(
         controller: _horizontalScrollController,
         thumbVisibility: true,
         child: SingleChildScrollView(
           controller: _horizontalScrollController,
           scrollDirection: Axis.horizontal,
-          child: SizedBox(width: totalTableWidth, child: tableContent),
+          child: SizedBox(width: finalTableWidth, child: tableContent),
         ),
       );
     } else {
-      return tableContent;
+      return SizedBox(width: screenWidth, child: tableContent);
     }
   }
 
@@ -4689,44 +4791,30 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   bool _forceRebuild = false;
 
   Future<void> _runMonthlyBatch(AggregatorReport monthlyReport) async {
-    final batchDialogReady = Completer<void>();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text(
-                  "Generating Full Monthly Report...",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  "Processing each day and aggregating totals",
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final jobId = "monthly_${DateTime.now().millisecondsSinceEpoch}";
+    ref.read(monthlyReportTaskProvider.notifier).start(
+      jobId,
+      widget.schemaTitle,
+      widget.selectedDate,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!batchDialogReady.isCompleted) batchDialogReady.complete();
-    });
-    await batchDialogReady.future;
+
+    FeedbackToast.info(
+      context,
+      "Monthly report background generation started",
+    );
 
     try {
       await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
 
+      final isGenerating = ref.read(monthlyReportTaskProvider).isGenerating;
+      ref.read(monthlyReportTaskProvider.notifier).stop();
+
+      if (!isGenerating) {
+        // Cancelled by user via AppBar ✕ button
+        return;
+      }
+
       if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog
 
       Navigator.push(
         context,
@@ -4741,20 +4829,14 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
         ),
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Monthly Report & All Daily Sheets generated successfully!",
-          ),
-          backgroundColor: Colors.green,
-        ),
+      FeedbackToast.success(
+        context,
+        "Monthly Report & All Daily Sheets generated successfully!",
       );
     } catch (e) {
+      ref.read(monthlyReportTaskProvider.notifier).stop();
       if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Batch Error: $e"), backgroundColor: Colors.red),
-      );
+      FeedbackToast.error(context, "Batch Generation Failed: $e");
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'schema_service.dart';
 import 'sqlite_helper.dart'; // Direct warm database access
 import 'file_service.dart';
@@ -17,10 +18,71 @@ import 'excel_generation_service.dart';
 import 'excel_binary_helper.dart';
 import 'report_formula_service.dart';
 
+class MonthlyReportTaskState {
+  final bool isGenerating;
+  final String? activeJobId;
+  final String? activeSchemaTitle;
+  final DateTime? activeMonthDate;
+
+  const MonthlyReportTaskState({
+    this.isGenerating = false,
+    this.activeJobId,
+    this.activeSchemaTitle,
+    this.activeMonthDate,
+  });
+}
+
+class MonthlyReportTaskNotifier extends Notifier<MonthlyReportTaskState> {
+  @override
+  MonthlyReportTaskState build() => const MonthlyReportTaskState();
+
+  void start(String jobId, String schemaTitle, DateTime monthDate) {
+    IsolateWorker.activeMonthlyJobId = jobId;
+    state = MonthlyReportTaskState(
+      isGenerating: true,
+      activeJobId: jobId,
+      activeSchemaTitle: schemaTitle,
+      activeMonthDate: monthDate,
+    );
+  }
+
+  void stop() {
+    IsolateWorker.activeMonthlyJobId = null;
+    state = const MonthlyReportTaskState();
+  }
+
+  void cancel() {
+    IsolateWorker.cancelMonthlyJob();
+    state = const MonthlyReportTaskState();
+  }
+}
+
+final monthlyReportTaskProvider =
+    NotifierProvider<MonthlyReportTaskNotifier, MonthlyReportTaskState>(
+  MonthlyReportTaskNotifier.new,
+);
+
 class IsolateWorker {
   static final IsolateWorker _instance = IsolateWorker._internal();
   static IsolateWorker get instance => _instance;
   IsolateWorker._internal();
+
+  static String? activeMonthlyJobId;
+
+  static bool cancelMonthlyJob() {
+    if (activeMonthlyJobId != null) {
+      final jobId = activeMonthlyJobId;
+      activeMonthlyJobId = null;
+      if (instance._processSendPort != null) {
+        instance._processSendPort!.send({
+          'type': 'cancelJob',
+          'jobId': jobId,
+        });
+      }
+      return true;
+    }
+    return false;
+  }
 
   static List<int>? writeExcelInIsolate(Map<String, dynamic> params) {
     final List<int>? existingBytes = params['existingBytes'];
@@ -407,12 +469,21 @@ void _processWorkerEntryPoint(SendPort mainSendPort) {
   mainSendPort.send(workerReceivePort.sendPort);
 
   SendPort? dbSendPort;
+  final Set<String> cancelledJobIds = {};
 
   workerReceivePort.listen((message) async {
     if (message is Map) {
       // IPC Link initialization
       if (message['type'] == 'initIpc') {
         dbSendPort = message['dbSendPort'] as SendPort?;
+        return;
+      }
+
+      if (message['type'] == 'cancelJob') {
+        final String? jobId = message['jobId'] as String?;
+        if (jobId != null) {
+          cancelledJobIds.add(jobId);
+        }
         return;
       }
 
@@ -429,7 +500,12 @@ void _processWorkerEntryPoint(SendPort mainSendPort) {
       final Map<String, dynamic> params = message['params'] ?? {};
 
       try {
-        final result = await _executeProcessTask(taskType, params, dbSendPort);
+        final result = await _executeProcessTask(
+          taskType,
+          params,
+          dbSendPort,
+          cancelledJobIds,
+        );
         if (id != null) {
           mainSendPort.send({'id': id, 'result': result});
         }
@@ -789,8 +865,9 @@ Future<dynamic> _executeDbTask(
 Future<dynamic> _executeProcessTask(
   String type,
   Map<String, dynamic> params,
-  SendPort? dbSendPort,
-) async {
+  SendPort? dbSendPort, [
+  Set<String>? cancelledJobIds,
+]) async {
   switch (type) {
     case 'writeExcel':
       return IsolateWorker.writeExcelInIsolate(params);
@@ -1148,13 +1225,21 @@ Future<dynamic> _executeProcessTask(
           }
 
           for (int d = 1; d <= daysInMonth; d++) {
+            if (params['jobId'] != null &&
+                cancelledJobIds != null &&
+                cancelledJobIds.contains(params['jobId'])) {
+              cancelledJobIds.remove(params['jobId']);
+              debugPrint("IsolateWorker: Monthly generation cancelled for jobId: ${params['jobId']}");
+              return {'cancelled': true};
+            }
+
             final DateTime date = DateTime(year, month, d);
             if (date.isAfter(todayStart)) continue;
 
             try {
               // 2. Fetch this day's records from the DB isolate
               final ReceivePort dayReplyPort = ReceivePort();
-              dbSendPort!.send({
+              dbSendPort.send({
                 'type': 'ipcGetFilteredReportData',
                 'replyPort': dayReplyPort.sendPort,
                 'params': {

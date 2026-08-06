@@ -125,7 +125,7 @@ Map<String, dynamic> processImportLogic(Map<String, dynamic> params) {
   for (var item in data) {
     try {
       if (item is! Map) continue;
-      final Map<String, dynamic> m = Map<String, dynamic>.from(item as Map);
+      final Map<String, dynamic> m = Map<String, dynamic>.from(item);
       if (m.isEmpty) continue;
 
       String? key;

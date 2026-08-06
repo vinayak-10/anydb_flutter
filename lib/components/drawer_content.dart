@@ -13,7 +13,6 @@ import '../services/schema_service.dart';
 import '../screens/schema_field_editor.dart';
 import '../screens/collection_view.dart';
 import '../services/file_service.dart';
-import '../services/collection_service.dart';
 
 class DrawerContent extends ConsumerStatefulWidget {
   final String? currentSchemaName;
@@ -138,6 +137,101 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
+                  if (isLoggedIn && resolvedSchemaName != null) ...[
+                    const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
+                      child: Text(
+                        'Cloud Services',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.backup, color: Colors.blue),
+                      title: const Text('Manual Backup to Drive'),
+                      onTap: () async {
+                        final collectionService = ref.read(
+                          collectionServiceProvider,
+                        );
+                        final contents = collectionService.contents;
+
+                        if (contents.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("No database loaded to backup"),
+                            ),
+                          );
+                          return;
+                        }
+
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) =>
+                              const Center(child: CircularProgressIndicator()),
+                        );
+
+                        try {
+                          int backedUpCount = 0;
+                          for (var content in contents) {
+                            if (content.type == ContentType.database) {
+                              final db = content.service as ElementDb;
+                              await db.initDb();
+                              final data = await db.exportDb();
+                              await googleDriveService.manualBackup(
+                                content.name,
+                                data,
+                                schemaName: resolvedSchemaName,
+                              );
+                              backedUpCount++;
+                            }
+                          }
+
+                          if (!context.mounted) return;
+                          Navigator.pop(context); // Close loading dialog
+                          if (context.mounted) {
+                            Navigator.pop(context); // Close the drawer
+                          }
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                "Backup completed: $backedUpCount databases uploaded to Google Drive /xyz.maya/",
+                              ),
+                              backgroundColor: Colors.green.shade700,
+                            ),
+                          );
+                        } catch (e) {
+                          debugPrint("UI: Backup Error: $e");
+                          if (!context.mounted) return;
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                "Backup failed: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e.toString()}",
+                              ),
+                              action: SnackBarAction(
+                                label: "DETAILS",
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      content: SingleChildScrollView(
+                                        child: Text(e.toString()),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const Divider(),
+                  ],
                   if (resolvedSchemaName != null && !isLoggedIn)
                     Padding(
                       padding: const EdgeInsets.symmetric(
@@ -348,132 +442,41 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
                       },
                     ),
                   ],
-                  const Divider(),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 8.0,
-                    ),
-                    child: Text(
-                      'Cloud Services',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  if (!isLoggedIn)
-                    ListTile(
-                      leading: const Icon(Icons.login),
-                      title: const Text('Login to Google Drive'),
-                      onTap: () async {
-                        final account = await googleDriveService.login();
-                        if (account != null) {
-                          ref
-                              .read(googleUserProvider.notifier)
-                              .setUser(account);
-                          if (context.mounted) {
-                            Navigator.pop(context); // Close the drawer
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("Google Drive Authorized"),
-                              ),
-                            );
-                          }
-                        } else {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Login failed")),
-                            );
-                          }
-                        }
-                      },
-                    ),
-                  if (isLoggedIn && resolvedSchemaName != null)
-                    ListTile(
-                      leading: const Icon(Icons.backup, color: Colors.blue),
-                      title: const Text('Manual Backup to Drive'),
-                      onTap: () async {
-                        final collectionService = ref.read(
-                          collectionServiceProvider,
-                        );
-                        final contents = collectionService.contents;
-
-                        if (contents.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("No database loaded to backup"),
-                            ),
-                          );
-                          return;
-                        }
-
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (context) =>
-                              const Center(child: CircularProgressIndicator()),
-                        );
-
-                        try {
-                          int backedUpCount = 0;
-                          for (var content in contents) {
-                            if (content.type == ContentType.database) {
-                              final db = content.service as ElementDb;
-                              await db.initDb();
-                              final data = await db.exportDb();
-                              await googleDriveService.manualBackup(
-                                content.name,
-                                data,
-                                schemaName: resolvedSchemaName,
-                              );
-                              backedUpCount++;
-                            }
-                          }
-
-                          if (!context.mounted) return;
-                          Navigator.pop(context); // Close loading dialog
-                          if (context.mounted) {
-                            Navigator.pop(context); // Close the drawer
-                          }
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Backup completed: $backedUpCount databases uploaded to Google Drive /xyz.maya/",
-                              ),
-                              backgroundColor: Colors.green.shade700,
-                            ),
-                          );
-                        } catch (e) {
-                          debugPrint("UI: Backup Error: $e");
-                          if (!context.mounted) return;
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Backup failed: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e.toString()}",
-                              ),
-                              action: SnackBarAction(
-                                label: "DETAILS",
-                                onPressed: () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      content: SingleChildScrollView(
-                                        child: Text(e.toString()),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                    ),
                 ],
               ),
             ),
-            if (isLoggedIn) ...[
-              const Divider(height: 1),
+            const Divider(height: 1),
+            if (!isLoggedIn)
+              ListTile(
+                leading: const Icon(Icons.login, color: Colors.green),
+                title: const Text(
+                  'Login to Google Drive',
+                  style: TextStyle(color: Colors.green),
+                ),
+                onTap: () async {
+                  final account = await googleDriveService.login();
+                  if (account != null) {
+                    ref
+                        .read(googleUserProvider.notifier)
+                        .setUser(account);
+                    if (context.mounted) {
+                      Navigator.pop(context); // Close the drawer
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Google Drive Authorized"),
+                        ),
+                      );
+                    }
+                  } else {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Login failed")),
+                      );
+                    }
+                  }
+                },
+              )
+            else
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
                 title: const Text(
@@ -490,8 +493,7 @@ class _DrawerContentState extends ConsumerState<DrawerContent> {
                   }
                 },
               ),
-              const SizedBox(height: 8),
-            ],
+            const SizedBox(height: 8),
           ],
         ),
       ),

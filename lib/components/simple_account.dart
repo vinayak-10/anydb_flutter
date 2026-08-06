@@ -410,8 +410,131 @@ class SimpleAccount extends GenInterface {
     List<dynamic>? displayComponent,
     VoidCallback? onChanged,
   }) {
-    if (onlyValue) return _SimpleAccountSummary(account: this);
+    if (onlyValue) {
+      return _SimpleAccountSummary(account: this, onChanged: onChanged);
+    }
     return _SimpleAccountDisplay(account: this, onChanged: onChanged);
+  }
+
+  void _showEditLastTransactionModal(
+    BuildContext context,
+    VoidCallback? onChanged,
+  ) async {
+    if (componentsArray.isEmpty) return;
+    final lastTxComp = componentsArray[0];
+    String? errorMessage;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.edit_note_rounded, color: Color(0xFF6B1524), size: 28),
+              SizedBox(width: 8),
+              Text(
+                "Edit Last Transaction",
+                style: TextStyle(
+                  color: Color(0xFF6B1524),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.red, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.red.shade50,
+                      ),
+                      child: Text(
+                        errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  lastTxComp.editor(
+                    key: ValueKey("modal_edit_last_tx_${lastTxComp.hashCode}"),
+                    onChanged: (val) {},
+                    cbNotifyParent: (notifier, data, observers) {
+                      setModalState(() {
+                        updateObservers(
+                          notifier,
+                          data,
+                          observers,
+                          lastTxComp,
+                        );
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text(
+                "CANCEL",
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text(
+                "SAVE",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6B1524),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              onPressed: () {
+                final v = _validateOne(lastTxComp);
+                if (v['valid'] == true) {
+                  fetch();
+                  Navigator.pop(context, true);
+                } else {
+                  setModalState(() {
+                    errorMessage = v['constraint'];
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true) {
+      fetch();
+      if (onChanged != null) {
+        onChanged();
+      }
+      FeedbackToast.success(context, "Last transaction updated successfully");
+    }
   }
 
   @override
@@ -787,7 +910,8 @@ class _SimpleAccountDisplayState extends State<_SimpleAccountDisplay> {
 
 class _SimpleAccountSummary extends StatelessWidget {
   final SimpleAccount account;
-  const _SimpleAccountSummary({required this.account});
+  final VoidCallback? onChanged;
+  const _SimpleAccountSummary({required this.account, this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -818,27 +942,86 @@ class _SimpleAccountSummary extends StatelessWidget {
         ),
         if (lastDate.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 12.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 2.0),
-                  child: Icon(Icons.history, size: 15, color: Colors.blue),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    "Last Transaction: $lastDate",
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.blue,
-                      fontStyle: FontStyle.italic,
-                      fontWeight: FontWeight.w500,
+            padding: const EdgeInsets.only(top: 10.0),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  account._showEditLastTransactionModal(context, onChanged);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6B1524).withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF6B1524).withOpacity(0.18),
+                      width: 1.0,
                     ),
                   ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.edit_note_rounded,
+                        size: 18,
+                        color: Color(0xFF6B1524),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              const TextSpan(
+                                text: "Last Transaction: ",
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: Color(0xFF6B1524),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(
+                                text: lastDate,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: Colors.blue,
+                                  fontStyle: FontStyle.italic,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6B1524),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          "EDIT",
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
       ],

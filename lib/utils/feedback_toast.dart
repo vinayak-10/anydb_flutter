@@ -39,6 +39,25 @@ class FeedbackToast {
     );
   }
 
+  /// Displays an info toast notification
+  static void info(
+    BuildContext context,
+    String message, {
+    String? actionLabel,
+    VoidCallback? onAction,
+    Duration duration = const Duration(milliseconds: 2500),
+  }) {
+    _show(
+      context,
+      message: message,
+      isError: false,
+      icon: Icons.info_outline,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      duration: duration,
+    );
+  }
+
   /// Displays an undoable success toast notification
   static void undoable(
     BuildContext context,
