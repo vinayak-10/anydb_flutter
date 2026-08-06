@@ -238,6 +238,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         title: const Text('AnyDb: Select Schema'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: const [
+          MonthlyReportProgressButton(),
           GoogleDriveAuthButton(),
         ],
       ),

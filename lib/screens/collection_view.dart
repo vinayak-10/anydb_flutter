@@ -20,6 +20,7 @@ import '../services/io_helper.dart' as io;
 import '../services/web_downloader.dart';
 import '../services/google_drive_service.dart';
 import '../components/google_drive_auth_button.dart';
+import '../components/monthly_report_progress_button.dart';
 import '../services/sqlite_helper.dart';
 import '../services/isolate_worker.dart';
 import '../models/element_model.dart';
@@ -1012,6 +1013,7 @@ class _CollectionViewState extends ConsumerState<CollectionView>
                                       horizontal: 8,
                                     ),
                                   ),
+                                  const MonthlyReportProgressButton(),
                                   GoogleDriveAuthButton(
                                     schemaName: widget.title,
                                     compact: true,
@@ -4789,44 +4791,30 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
   bool _forceRebuild = false;
 
   Future<void> _runMonthlyBatch(AggregatorReport monthlyReport) async {
-    final batchDialogReady = Completer<void>();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text(
-                  "Generating Full Monthly Report...",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  "Processing each day and aggregating totals",
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final jobId = "monthly_${DateTime.now().millisecondsSinceEpoch}";
+    ref.read(monthlyReportTaskProvider.notifier).start(
+      jobId,
+      widget.schemaTitle,
+      widget.selectedDate,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!batchDialogReady.isCompleted) batchDialogReady.complete();
-    });
-    await batchDialogReady.future;
+
+    FeedbackToast.info(
+      context,
+      "Monthly report background generation started",
+    );
 
     try {
       await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
 
+      final isGenerating = ref.read(monthlyReportTaskProvider).isGenerating;
+      ref.read(monthlyReportTaskProvider.notifier).stop();
+
+      if (!isGenerating) {
+        // Cancelled by user via AppBar ✕ button
+        return;
+      }
+
       if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog
 
       Navigator.push(
         context,
@@ -4841,20 +4829,14 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
         ),
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Monthly Report & All Daily Sheets generated successfully!",
-          ),
-          backgroundColor: Colors.green,
-        ),
+      FeedbackToast.success(
+        context,
+        "Monthly Report & All Daily Sheets generated successfully!",
       );
     } catch (e) {
+      ref.read(monthlyReportTaskProvider.notifier).stop();
       if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Batch Error: $e"), backgroundColor: Colors.red),
-      );
+      FeedbackToast.error(context, "Batch Generation Failed: $e");
     }
   }
 
