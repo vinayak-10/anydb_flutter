@@ -76,9 +76,9 @@ class FormattedText extends GenInterface {
     bool? refresh,
   }) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: MediaQuery.of(context).size.width * 0.02,
-        vertical: MediaQuery.of(context).size.height * 0.005,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8.0,
+        vertical: 4.0,
       ),
       child: TextFormField(
         key: key,

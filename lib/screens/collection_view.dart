@@ -19,6 +19,7 @@ import '../services/file_service.dart';
 import '../services/io_helper.dart' as io;
 import '../services/web_downloader.dart';
 import '../services/google_drive_service.dart';
+import '../components/google_drive_auth_button.dart';
 import '../services/sqlite_helper.dart';
 import '../services/isolate_worker.dart';
 import '../models/element_model.dart';
@@ -385,35 +386,52 @@ class _CollectionViewState extends ConsumerState<CollectionView>
         ); // Yield to paint status text
         await _exportDb(db);
 
-        // 2. Cloud Backup to Google Drive
+        // 2. Cloud Backup to Google Drive (Backgrounded for E1 non-blocking execution)
         try {
           final data = await db.exportDb();
           final jsonStr = jsonEncode(data);
           final googleDriveService = ref.read(googleDriveServiceProvider);
 
           if (googleDriveService.isLoggedIn) {
-            statusNotifier.value = "Uploading backup to Google Drive...";
-            await Future.delayed(
-              const Duration(milliseconds: 150),
-            ); // Yield to paint status text
             final fileName = formatBackupFileName(db.key, DateTime.now());
-            await googleDriveService.uploadJson(
-              jsonStr,
-              fileName,
-              path: ['xyz.maya', 'anydb', 'schema', widget.title, 'database', db.key],
+            unawaited(
+              googleDriveService
+                  .uploadJson(
+                    jsonStr,
+                    fileName,
+                    path: [
+                      'xyz.maya',
+                      'anydb',
+                      'schema',
+                      widget.title,
+                      'database',
+                      db.key,
+                    ],
+                  )
+                  .then((_) {
+                    ref
+                        .read(googleDriveStateProvider.notifier)
+                        .setLastUploadTime(DateTime.now());
+                    if (mounted) {
+                      FeedbackToast.success(
+                        context,
+                        "Cloud backup saved to Google Drive",
+                      );
+                    }
+                  })
+                  .catchError((cloudErr) {
+                    debugPrint("Background cloud backup error: $cloudErr");
+                    if (mounted) {
+                      FeedbackToast.error(
+                        context,
+                        "Cloud backup failed: $cloudErr",
+                      );
+                    }
+                  }),
             );
-          } else {
-            throw "Not logged into Google Drive";
           }
         } catch (cloudErr) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Cloud Backup Skip: $cloudErr"),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
+          debugPrint("Cloud backup payload preparation skip: $cloudErr");
         }
 
         // 3. Generate Reports
@@ -938,6 +956,10 @@ class _CollectionViewState extends ConsumerState<CollectionView>
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
                                     ),
+                                  ),
+                                  GoogleDriveAuthButton(
+                                    schemaName: widget.title,
+                                    compact: true,
                                   ),
                                   IconButton(
                                     icon: const Icon(

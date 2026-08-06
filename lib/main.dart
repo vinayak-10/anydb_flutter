@@ -12,6 +12,7 @@ import 'screens/schema_field_editor.dart';
 import 'package:file_picker/file_picker.dart';
 import 'core/settings_provider.dart';
 import 'components/drawer_content.dart';
+import 'components/google_drive_auth_button.dart';
 import 'services/google_drive_service.dart';
 import 'services/web_history_helper.dart' as web_helper;
 import 'services/isolate_worker.dart';
@@ -236,6 +237,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       appBar: AppBar(
         title: const Text('AnyDb: Select Schema'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: const [
+          GoogleDriveAuthButton(),
+        ],
       ),
       drawer: const DrawerContent(),
       body: schemasAsync.when(
