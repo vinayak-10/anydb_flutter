@@ -237,9 +237,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       appBar: AppBar(
         title: const Text('AnyDb: Select Schema'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: const [
-          MonthlyReportProgressButton(),
-          GoogleDriveAuthButton(),
+        actions: [
+          const MonthlyReportProgressButton(),
+          const GoogleDriveAuthButton(),
         ],
       ),
       drawer: const DrawerContent(),
