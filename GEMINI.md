@@ -35,6 +35,8 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
+| 2026-08-06 | [session_20260806_waves_1_to_4_execution.md](.chat_context/session_20260806_waves_1_to_4_execution.md) | Waves 1–4 execution completed (`d84cc29`, `cbdb045`, `ef87376`, `8da967c`). Input UX, screen-proportional padding, drawer auth dock, AppBar auth button with status colors, non-blocking DB/report cloud sync, and fill-to-width report table scroll. |
+| 2026-08-05 | [session_20260805_15_item_implementation_plan.md](.chat_context/session_20260805_15_item_implementation_plan.md) | 15-item feature planning & grilling session, rollback checkpoint saved (`23e3472`), 6-wave execution schedule formed. |
 | 2026-08-02 | [session_20260802_review_comments_and_monthly_fix_completion.md](.chat_context/session_20260802_review_comments_and_monthly_fix_completion.md) | Monthly report architectural fix completion (`c983342`), merged to `master` (`643dde8`). Analysis and breakdown of 12 user review comments in `reviews.txt`. |
 | 2026-07-31 | [session_20260731_monthly_report_fix.md](.chat_context/session_20260731_monthly_report_fix.md) | Initial root-cause analysis of wrong monthly totals in viewer. |
 | 2026-07-23 | [session_20260723_feedback_fixes.md](.chat_context/session_20260723_feedback_fixes.md) | Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on internet reconnect. |
@@ -80,6 +82,7 @@ Full details for each feature are in the session files above. This table is a qu
 | 30 | **[2026-07-06]** Transaction validation, custom ribbon ordering, and responsive layout spacing | `simple_account.dart` · `collection_view.dart` | 2026-07-04/06 |
 | 31 | **[2026-07-23]** Save/action text labels, tablet ribbon scroll padding fix, and Google auto-login retry on reconnect | `element_editor.dart` · `collection_view.dart` · `google_drive_service.dart` | 2026-07-23 |
 | 32 | **[2026-08-02]** Monthly report architectural fix & review comments analysis | `excel_generation_service.dart` ⚠️ · `isolate_worker.dart` · `aggregator_service.dart` ⚠️ | 2026-08-02 |
+| 33 | **[2026-08-06]** Waves 1–4 execution: input UX, drawer auth dock, AppBar auth button + status colors, non-blocking DB/report cloud sync, fill-to-width report table scroll | `google_drive_auth_button.dart` · `google_drive_service.dart` · `collection_view.dart` · `drawer_content.dart` | 2026-08-06 |
 
 ⚠️ = Hard-locked file (never modify without explicit user approval and notification)
 
