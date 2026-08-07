@@ -3340,7 +3340,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                 ),
                               ),
                               subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: element.getDisplays(onlyValue: true),
                               ),
                               onTap: widget.selectedKeys.isNotEmpty
@@ -3559,7 +3559,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
@@ -3685,20 +3685,15 @@ class _ElementViewState extends State<ElementView> {
                 vertical: MediaQuery.of(context).size.height * 0.01,
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        c.getName(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    c.getName(),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueGrey,
+                      fontSize: 16,
+                    ),
                   ),
                   const Divider(color: Colors.black12),
                   Padding(

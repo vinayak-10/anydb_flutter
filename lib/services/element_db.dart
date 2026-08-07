@@ -21,6 +21,7 @@ class ElementDb {
   EventTriggerService? _triggerService;
   bool initialized = false;
   VoidCallback? onChanged;
+  static void Function(int count)? onRecordMutated;
 
   Future<void> init(dynamic schemaJson, dynamic interface) async {
     if (schemaJson is! Map) {
@@ -220,6 +221,7 @@ class ElementDb {
 
     await storage.add(key, val);
     await initDb(forced: true);
+    ElementDb.onRecordMutated?.call(1);
     onChanged?.call();
   }
 
@@ -234,6 +236,7 @@ class ElementDb {
 
     await storage.add(key, val);
     await initDb(forced: true);
+    ElementDb.onRecordMutated?.call(1);
     onChanged?.call();
   }
 
@@ -249,6 +252,7 @@ class ElementDb {
 
     await storage.add(key, val);
     await initDb(forced: true);
+    ElementDb.onRecordMutated?.call(1);
     onChanged?.call();
   }
 
@@ -395,6 +399,7 @@ class ElementDb {
 
     // Force-reload the local list to perfectly reflect auto-archiving state
     await initDb(forced: true);
+    ElementDb.onRecordMutated?.call(1);
     onChanged?.call();
   }
 
@@ -402,6 +407,7 @@ class ElementDb {
     await storage.remove(recordKey);
     elements.removeWhere((e) => e.key == recordKey);
     metaService.delete(recordKey);
+    ElementDb.onRecordMutated?.call(1);
     onChanged?.call();
   }
 
@@ -418,6 +424,7 @@ class ElementDb {
     }
     await storage.importData(data);
     await initDb(forced: true);
+    ElementDb.onRecordMutated?.call(data.length);
     onChanged?.call();
   }
 

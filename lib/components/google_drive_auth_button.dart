@@ -22,20 +22,20 @@ class GoogleDriveAuthButton extends ConsumerWidget {
     final googleDriveService = ref.watch(googleDriveServiceProvider);
 
     final bool isLoggedIn = driveState.isLoggedIn;
-    final bool isRecentlyUploaded = driveState.isRecentlyUploaded;
+    final bool isDirty = driveState.isDirty;
     final bool isUploading = driveState.isUploading;
 
     final Color statusColor = !isLoggedIn
         ? Colors.redAccent
-        : isRecentlyUploaded
-            ? Colors.blue.shade600
-            : Colors.green.shade600;
+        : !isDirty
+            ? Colors.green.shade600
+            : Colors.blue.shade600;
 
     final String tooltipText = !isLoggedIn
         ? "Google Drive: Not Logged In (Tap to Login)"
-        : isRecentlyUploaded
-            ? "Google Drive: Uploaded recently (<1h ago)"
-            : "Google Drive: Connected";
+        : !isDirty
+            ? "Google Drive: Synced (Up to date)"
+            : "Google Drive: ${driveState.entriesSinceLastBackup} entries modified since last backup";
 
     Widget iconWidget;
     if (isUploading) {
@@ -53,7 +53,7 @@ class GoogleDriveAuthButton extends ConsumerWidget {
         color: statusColor,
         size: compact ? 22 : 24,
       );
-    } else if (isRecentlyUploaded) {
+    } else if (!isDirty) {
       iconWidget = Icon(
         Icons.cloud_done_rounded,
         color: statusColor,
@@ -187,14 +187,14 @@ class GoogleDriveAuthButton extends ConsumerWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: driveState.isRecentlyUploaded
-                            ? Colors.blue.shade50
-                            : Colors.green.shade50,
+                        color: !driveState.isDirty
+                            ? Colors.green.shade50
+                            : Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: driveState.isRecentlyUploaded
-                              ? Colors.blue.shade300
-                              : Colors.green.shade300,
+                          color: !driveState.isDirty
+                              ? Colors.green.shade300
+                              : Colors.blue.shade300,
                         ),
                       ),
                       child: Row(
@@ -203,21 +203,21 @@ class GoogleDriveAuthButton extends ConsumerWidget {
                           Icon(
                             Icons.circle,
                             size: 8,
-                            color: driveState.isRecentlyUploaded
-                                ? Colors.blue.shade700
-                                : Colors.green.shade700,
+                            color: !driveState.isDirty
+                                ? Colors.green.shade700
+                                : Colors.blue.shade700,
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            driveState.isRecentlyUploaded
-                                ? "Synced (<1h)"
-                                : "Connected",
+                            !driveState.isDirty
+                                ? "Synced"
+                                : "Changes Pending",
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: driveState.isRecentlyUploaded
-                                  ? Colors.blue.shade900
-                                  : Colors.green.shade900,
+                              color: !driveState.isDirty
+                                  ? Colors.green.shade900
+                                  : Colors.blue.shade900,
                             ),
                           ),
                         ],
@@ -245,6 +245,33 @@ class GoogleDriveAuthButton extends ConsumerWidget {
                           fontSize: 13.5,
                           fontWeight: FontWeight.w500,
                           color: Colors.grey.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.edit_note_rounded,
+                      size: 18,
+                      color: driveState.entriesSinceLastBackup > 0
+                          ? Colors.blue.shade700
+                          : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        driveState.entriesSinceLastBackup > 0
+                            ? "${driveState.entriesSinceLastBackup} entries added/modified since last backup"
+                            : "No new entries added since last backup",
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: driveState.entriesSinceLastBackup > 0
+                              ? Colors.blue.shade900
+                              : Colors.grey.shade800,
                         ),
                       ),
                     ),
