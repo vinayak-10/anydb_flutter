@@ -15,19 +15,70 @@ class MonthlyReportProgressButton extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isCompact = screenWidth < 400;
+
+    void handleCancel() {
+      ref.read(monthlyReportTaskProvider.notifier).cancel();
+      FeedbackToast.info(
+        context,
+        "Monthly report generation cancelled",
+      );
+    }
+
+    if (isCompact) {
+      return Tooltip(
+        message: "Generating Monthly Report (Tap to cancel)",
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: handleCancel,
+              child: SizedBox(
+                width: 32,
+                height: 32,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Color(0xFF6B1524)),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close,
+                        size: 10,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            ref.read(monthlyReportTaskProvider.notifier).cancel();
-            FeedbackToast.info(
-              context,
-              "Monthly report generation cancelled",
-            );
-          },
+          onTap: handleCancel,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -46,7 +97,8 @@ class MonthlyReportProgressButton extends ConsumerWidget {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.0,
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6B1524)),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Color(0xFF6B1524)),
                   ),
                 ),
                 const SizedBox(width: 6),

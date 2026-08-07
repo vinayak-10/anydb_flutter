@@ -14,6 +14,7 @@ import '../core/logger.dart';
 import 'web_history_helper.dart' as web_helper;
 import 'desktop_auth_helper.dart' as desktop_auth;
 import 'io_helper.dart' as io;
+import 'element_db.dart';
 
 /// A unified user model to bridge official GoogleSignInAccount and manual OAuth flows
 class GoogleUser {
@@ -54,10 +55,12 @@ class GoogleDriveService {
   void Function(GoogleUser?)? onUserChanged;
   void Function(DateTime?)? onLastUploadTimeChanged;
   void Function(bool)? onUploadingStatusChanged;
+  void Function()? onUploadSuccess;
 
   void _recordUploadSuccess() async {
     _lastUploadTime = DateTime.now();
     onLastUploadTimeChanged?.call(_lastUploadTime);
+    onUploadSuccess?.call();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -853,14 +856,19 @@ class GoogleDriveState {
   final GoogleUser? user;
   final DateTime? lastUploadTime;
   final bool isUploading;
+  final bool isDirty;
+  final int entriesSinceLastBackup;
 
   const GoogleDriveState({
     this.user,
     this.lastUploadTime,
     this.isUploading = false,
+    this.isDirty = false,
+    this.entriesSinceLastBackup = 0,
   });
 
   bool get isLoggedIn => user != null;
+  bool get isSynced => isLoggedIn && !isDirty;
 
   bool get isRecentlyUploaded {
     if (lastUploadTime == null) return false;
@@ -872,6 +880,8 @@ class GoogleDriveState {
     GoogleUser? user,
     DateTime? lastUploadTime,
     bool? isUploading,
+    bool? isDirty,
+    int? entriesSinceLastBackup,
     bool clearUser = false,
     bool clearUploadTime = false,
   }) {
@@ -879,6 +889,8 @@ class GoogleDriveState {
       user: clearUser ? null : (user ?? this.user),
       lastUploadTime: clearUploadTime ? null : (lastUploadTime ?? this.lastUploadTime),
       isUploading: isUploading ?? this.isUploading,
+      isDirty: isDirty ?? this.isDirty,
+      entriesSinceLastBackup: entriesSinceLastBackup ?? this.entriesSinceLastBackup,
     );
   }
 }
@@ -898,6 +910,13 @@ class GoogleDriveNotifier extends Notifier<GoogleDriveState> {
     service.onUploadingStatusChanged = (isUploading) {
       state = state.copyWith(isUploading: isUploading);
     };
+    service.onUploadSuccess = () {
+      resetDirty();
+    };
+
+    ElementDb.onRecordMutated = (count) {
+      markDirtyAndIncrementEntries(count: count);
+    };
 
     _loadInitialState();
     return GoogleDriveState(
@@ -910,6 +929,9 @@ class GoogleDriveNotifier extends Notifier<GoogleDriveState> {
   Future<void> _loadInitialState() async {
     final prefs = await SharedPreferences.getInstance();
     final lastUploadStr = prefs.getString('google_drive_last_upload_time');
+    final isDirty = prefs.getBool('google_drive_is_dirty') ?? false;
+    final entriesCount = prefs.getInt('google_drive_entries_since_backup') ?? 0;
+
     DateTime? lastUpload;
     if (lastUploadStr != null) {
       lastUpload = DateTime.tryParse(lastUploadStr);
@@ -918,10 +940,13 @@ class GoogleDriveNotifier extends Notifier<GoogleDriveState> {
     state = state.copyWith(
       user: service.currentUser,
       lastUploadTime: lastUpload ?? service.lastUploadTime,
+      isDirty: isDirty,
+      entriesSinceLastBackup: entriesCount,
     );
   }
 
   void setUser(GoogleUser? user) {
+    ref.read(googleUserProvider.notifier).setUser(user);
     state = state.copyWith(user: user, clearUser: user == null);
   }
 
@@ -931,6 +956,25 @@ class GoogleDriveNotifier extends Notifier<GoogleDriveState> {
 
   void setUploading(bool isUploading) {
     state = state.copyWith(isUploading: isUploading);
+  }
+
+  void markDirtyAndIncrementEntries({int count = 1}) async {
+    final newCount = state.entriesSinceLastBackup + count;
+    state = state.copyWith(isDirty: true, entriesSinceLastBackup: newCount);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('google_drive_is_dirty', true);
+      await prefs.setInt('google_drive_entries_since_backup', newCount);
+    } catch (_) {}
+  }
+
+  void resetDirty() async {
+    state = state.copyWith(isDirty: false, entriesSinceLastBackup: 0);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('google_drive_is_dirty', false);
+      await prefs.setInt('google_drive_entries_since_backup', 0);
+    } catch (_) {}
   }
 }
 
