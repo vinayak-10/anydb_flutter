@@ -357,88 +357,93 @@ void _dbWorkerEntryPoint(SendPort mainSendPort) {
 
       if (message['type'] == 'ipcGetFilteredReportData') {
         final SendPort replyPort = message['replyPort'];
-        final Map<String, dynamic> params = message['params'] ?? {};
-        final String dbName = params['dbName'] ?? "";
-        final String reportKey = params['reportKey'] ?? "";
-        final dynamic date = params['date'];
-        final Map<String, dynamic> aggregatorJson =
-            params['aggregatorJson'] ?? {};
+        try {
+          final Map<String, dynamic> params = message['params'] ?? {};
+          final String dbName = params['dbName'] ?? "";
+          final String reportKey = params['reportKey'] ?? "";
+          final dynamic date = params['date'];
+          final Map<String, dynamic> aggregatorJson =
+              params['aggregatorJson'] ?? {};
 
-        // 1. Ensure cache is fully warmed
-        var tableCache = bgCache[dbName];
-        final bool hasInactiveLoaded =
-            tableCache != null && tableCache['__inactive_loaded__'] == 'true';
+          // 1. Ensure cache is fully warmed
+          var tableCache = bgCache[dbName];
+          final bool hasInactiveLoaded =
+              tableCache != null && tableCache['__inactive_loaded__'] == 'true';
 
-        if (tableCache == null || !hasInactiveLoaded) {
-          final List<Map<String, String>> rawRecords =
-              await SqliteHelper.getAllRawString(dbName);
-          tableCache = bgCache[dbName] = {};
-          for (var rec in rawRecords) {
-            tableCache[rec['id']!] = jsonDecode(rec['value']!);
+          if (tableCache == null || !hasInactiveLoaded) {
+            final List<Map<String, String>> rawRecords =
+                await SqliteHelper.getAllRawString(dbName);
+            tableCache = bgCache[dbName] = {};
+            for (var rec in rawRecords) {
+              tableCache[rec['id']!] = jsonDecode(rec['value']!);
+            }
+            tableCache['__inactive_loaded__'] = 'true';
           }
-          tableCache['__inactive_loaded__'] = 'true';
-        }
 
-        // 2. Prepare elements from pre-decoded cache wrapped in {key: value} format
-        final elements = tableCache.entries
-            .where((e) => !e.key.startsWith('__'))
-            .map((e) => {e.key: Map<String, dynamic>.from(e.value as Map)})
-            .toList();
+          // 2. Prepare elements from pre-decoded cache wrapped in {key: value} format
+          final elements = tableCache.entries
+              .where((e) => !e.key.startsWith('__'))
+              .map((e) => {e.key: Map<String, dynamic>.from(e.value as Map)})
+              .toList();
 
-        // 3. Initialize aggregator service and run daily filtering logic inside database isolate
-        final agg = AggregatorService();
-        agg.init(aggregatorJson);
-        final report = agg.reports.firstWhere((r) => r.key == reportKey);
-        final DateTime targetRaw = date is DateTime
-            ? date
-            : (date is String
-                  ? DateTime.tryParse(date) ?? DateTime.now()
-                  : DateTime.now());
-        final DateTime targetDate = DateTime(targetRaw.year, targetRaw.month, targetRaw.day);
+          // 3. Initialize aggregator service and run daily filtering logic inside database isolate
+          final agg = AggregatorService();
+          agg.init(aggregatorJson);
+          final report = agg.reports.firstWhere((r) => r.key == reportKey);
+          final DateTime targetRaw = date is DateTime
+              ? date
+              : (date is String
+                    ? DateTime.tryParse(date) ?? DateTime.now()
+                    : DateTime.now());
+          final DateTime targetDate = DateTime(targetRaw.year, targetRaw.month, targetRaw.day);
 
-        final extIntf = report.extractor[0];
+          final extIntf = report.extractor[0];
 
-        // 4. Pre-filter elements using the date predicate before running the flattening/extraction engine.
-        // This avoids running recursive flattening on thousands of unrelated records.
-        final predicate = extIntf.extractor?.predicates.firstWhere(
-          (p) => p is Map && p['operation'] == 'date',
-          orElse: () => null,
-        );
-
-        List<Map<String, dynamic>> filteredElements;
-        if (predicate != null && predicate is Map) {
-          final String searchKey = predicate['column']?.toString() ?? "Date";
-          final String matchType =
-              predicate['parameter']?['type']?.toString() ?? "day";
-          filteredElements = elements.where((e) {
-            if (e.isEmpty) return false;
-            final recordVal = e.values.first;
-            return _recordMatchesDatePredicate(
-              recordVal,
-              targetDate,
-              searchKey,
-              matchType,
-            );
-          }).toList();
-          debugPrint(
-            "Isolate DB Worker: Pre-filtered elements from ${elements.length} down to ${filteredElements.length} using key='$searchKey', matchType='$matchType', date='$targetDate'.",
+          // 4. Pre-filter elements using the date predicate before running the flattening/extraction engine.
+          // This avoids running recursive flattening on thousands of unrelated records.
+          final predicate = extIntf.extractor?.predicates.firstWhere(
+            (p) => p is Map && p['operation'] == 'date',
+            orElse: () => null,
           );
-        } else {
-          filteredElements = elements;
+
+          List<Map<String, dynamic>> filteredElements;
+          if (predicate != null && predicate is Map) {
+            final String searchKey = predicate['column']?.toString() ?? "Date";
+            final String matchType =
+                predicate['parameter']?['type']?.toString() ?? "day";
+            filteredElements = elements.where((e) {
+              if (e.isEmpty) return false;
+              final recordVal = e.values.first;
+              return _recordMatchesDatePredicate(
+                recordVal,
+                targetDate,
+                searchKey,
+                matchType,
+              );
+            }).toList();
+            debugPrint(
+              "Isolate DB Worker: Pre-filtered elements from ${elements.length} down to ${filteredElements.length} using key='$searchKey', matchType='$matchType', date='$targetDate'.",
+            );
+          } else {
+            filteredElements = elements;
+          }
+
+          await extIntf.populateWithData(filteredElements);
+
+          final s = await extIntf.extractor!.applyPredicate(
+            extIntf.extractor!.predicates[0],
+            data: targetDate,
+            getFileName: (meta, {DateTime? timestamp}) =>
+                agg.getFileName(meta, timestamp: timestamp, sourceReport: report),
+            timestamp: null,
+            force: true,
+          );
+
+          replyPort.send(s);
+        } catch (e) {
+          debugPrint("Isolate DB Worker: Error in ipcGetFilteredReportData: $e");
+          replyPort.send({'data': [], 'error': e.toString()});
         }
-
-        await extIntf.populateWithData(filteredElements);
-
-        final s = await extIntf.extractor!.applyPredicate(
-          extIntf.extractor!.predicates[0],
-          data: targetDate,
-          getFileName: (meta, {DateTime? timestamp}) =>
-              agg.getFileName(meta, timestamp: timestamp, sourceReport: report),
-          timestamp: null,
-          force: true,
-        );
-
-        replyPort.send(s);
         return;
       }
 
@@ -1166,7 +1171,10 @@ Future<dynamic> _executeProcessTask(
             'aggregatorJson': aggregatorJson,
           },
         });
-        final dynamic sRaw = await replyPort.first;
+        final dynamic sRaw = await replyPort.first.timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => {'data': []},
+        );
         replyPort.close();
         s = Map<String, dynamic>.from(sRaw as Map);
       } else {
@@ -1249,7 +1257,10 @@ Future<dynamic> _executeProcessTask(
                   'aggregatorJson': aggregatorJson,
                 },
               });
-              final dynamic dayRaw = await dayReplyPort.first;
+              final dynamic dayRaw = await dayReplyPort.first.timeout(
+                const Duration(seconds: 15),
+                onTimeout: () => {'data': []},
+              );
               dayReplyPort.close();
 
               final Map<String, dynamic> dayData =
