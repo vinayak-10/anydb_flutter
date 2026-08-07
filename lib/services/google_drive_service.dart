@@ -72,37 +72,7 @@ class GoogleDriveService {
     }
   }
 
-  void _startAutoRetryIfNeeded() async {
-    final prefs = await SharedPreferences.getInstance();
-    final wasLoggedIn = prefs.getBool('was_logged_in') ?? false;
-    if (!wasLoggedIn || _currentUser != null) {
-      _autoRetryTimer?.cancel();
-      _autoRetryTimer = null;
-      return;
-    }
 
-    if (_autoRetryTimer != null && _autoRetryTimer!.isActive) return;
-
-    logger.log(
-      "GoogleDriveService: User was previously logged in. Starting background auto-reconnect timer...",
-    );
-    _autoRetryTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
-      if (_currentUser != null) {
-        timer.cancel();
-        _autoRetryTimer = null;
-        return;
-      }
-      final user = await restoreSession();
-      if (user != null) {
-        logger.log(
-          "GoogleDriveService: Session auto-restored on internet connection for ${user.email}!",
-        );
-        timer.cancel();
-        _autoRetryTimer = null;
-        onUserChanged?.call(user);
-      }
-    });
-  }
 
   static Completer<void>? _initCompleter;
 
@@ -242,13 +212,19 @@ class GoogleDriveService {
       if (_currentUser != null) {
         _autoRetryTimer?.cancel();
         _autoRetryTimer = null;
-      } else if (wasLoggedIn) {
-        _startAutoRetryIfNeeded();
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('was_logged_in', false);
+        _autoRetryTimer?.cancel();
+        _autoRetryTimer = null;
       }
       return _currentUser;
     } catch (e) {
       logger.log("GoogleDriveService: Session restoration skip: $e");
-      _startAutoRetryIfNeeded();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('was_logged_in', false);
+      _autoRetryTimer?.cancel();
+      _autoRetryTimer = null;
       return null;
     }
   }

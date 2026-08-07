@@ -4799,10 +4799,18 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
     );
 
     try {
-      await widget.agg.generateMonthlyBatch(widget.selectedDate, force: true);
+      await widget.agg
+          .generateMonthlyBatch(widget.selectedDate, force: true)
+          .timeout(
+            const Duration(minutes: 3),
+            onTimeout: () {
+              throw TimeoutException(
+                "Monthly report generation timed out after 3 minutes.",
+              );
+            },
+          );
 
       final isGenerating = ref.read(monthlyReportTaskProvider).isGenerating;
-      ref.read(monthlyReportTaskProvider.notifier).stop();
 
       if (!isGenerating) {
         // Cancelled by user via AppBar ✕ button
@@ -4829,9 +4837,10 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
         "Monthly Report & All Daily Sheets generated successfully!",
       );
     } catch (e) {
-      ref.read(monthlyReportTaskProvider.notifier).stop();
       if (!mounted) return;
       FeedbackToast.error(context, "Batch Generation Failed: $e");
+    } finally {
+      ref.read(monthlyReportTaskProvider.notifier).stop();
     }
   }
 
