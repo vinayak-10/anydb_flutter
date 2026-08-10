@@ -457,11 +457,18 @@ class _CollectionViewState extends ConsumerState<CollectionView>
           force: true,
         );
 
-        // Monthly Report (Rebuild entire month batch to prevent sheet/formula discrepancies)
-        final monthlyPath = await agg.generateMonthlyBatch(
-          DateTime.now(),
-          force: true,
-        );
+        // Monthly Report (Rebuild entire month batch with progress-aware inactivity watchdog)
+        String monthlyPath = "";
+        try {
+          monthlyPath = await IsolateWorker.runWithInactivityTimeout(
+            () => agg.generateMonthlyBatch(
+              DateTime.now(),
+              force: true,
+            ),
+          );
+        } catch (monthlyErr) {
+          debugPrint("Monthly batch generation skipped due to error/stall: $monthlyErr");
+        }
 
         // E2: Automatic report upload to Google Drive in background
         try {
@@ -4799,16 +4806,12 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
     );
 
     try {
-      await widget.agg
-          .generateMonthlyBatch(widget.selectedDate, force: true)
-          .timeout(
-            const Duration(minutes: 3),
-            onTimeout: () {
-              throw TimeoutException(
-                "Monthly report generation timed out after 3 minutes.",
-              );
-            },
-          );
+      await IsolateWorker.runWithInactivityTimeout(
+        () => widget.agg.generateMonthlyBatch(
+          widget.selectedDate,
+          force: true,
+        ),
+      );
 
       final isGenerating = ref.read(monthlyReportTaskProvider).isGenerating;
 

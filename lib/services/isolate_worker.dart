@@ -68,6 +68,58 @@ class IsolateWorker {
   IsolateWorker._internal();
 
   static String? activeMonthlyJobId;
+  static DateTime lastActivityTime = DateTime.now();
+
+  static void touchActivity() {
+    lastActivityTime = DateTime.now();
+  }
+
+  /// Runs an async task while monitoring [lastActivityTime].
+  /// As long as isolate tasks or progress steps complete, the stall countdown resets.
+  /// If no activity occurs for [inactivityTimeout] (default 3 minutes),
+  /// throws a [TimeoutException] ("Stalled after X minutes of inactivity").
+  static Future<T> runWithInactivityTimeout<T>(
+    Future<T> Function() taskBuilder, {
+    Duration inactivityTimeout = const Duration(minutes: 3),
+    Duration checkInterval = const Duration(seconds: 2),
+  }) async {
+    touchActivity();
+    final completer = Completer<T>();
+    late Timer timer;
+
+    timer = Timer.periodic(checkInterval, (t) {
+      if (completer.isCompleted) {
+        t.cancel();
+        return;
+      }
+      final elapsedSinceActivity = DateTime.now().difference(lastActivityTime);
+      if (elapsedSinceActivity >= inactivityTimeout) {
+        t.cancel();
+        if (!completer.isCompleted) {
+          completer.completeError(
+            TimeoutException(
+              "Report generation stalled: no progress for ${inactivityTimeout.inMinutes} minutes.",
+            ),
+          );
+        }
+      }
+    });
+
+    try {
+      final result = await taskBuilder();
+      if (!completer.isCompleted) {
+        completer.complete(result);
+      }
+    } catch (e, st) {
+      if (!completer.isCompleted) {
+        completer.completeError(e, st);
+      }
+    } finally {
+      timer.cancel();
+    }
+
+    return completer.future;
+  }
 
   static bool cancelMonthlyJob() {
     if (activeMonthlyJobId != null) {
@@ -178,6 +230,7 @@ class IsolateWorker {
       final Completer<SendPort> dbPortCompleter = Completer<SendPort>();
 
       _dbReceivePort.listen((message) {
+        touchActivity();
         if (message is SendPort) {
           dbPortCompleter.complete(message);
         } else if (message is Map) {
@@ -205,6 +258,7 @@ class IsolateWorker {
       final Completer<SendPort> processPortCompleter = Completer<SendPort>();
 
       _processReceivePort.listen((message) {
+        touchActivity();
         if (message is SendPort) {
           processPortCompleter.complete(message);
         } else if (message is Map) {
@@ -248,6 +302,7 @@ class IsolateWorker {
   }
 
   Future<T> execute<T>(String taskType, Map<String, dynamic> params) async {
+    touchActivity();
     if (kIsWeb) {
       return _executeTaskSync(taskType, params) as T;
     }
@@ -1172,7 +1227,7 @@ Future<dynamic> _executeProcessTask(
           },
         });
         final dynamic sRaw = await replyPort.first.timeout(
-          const Duration(seconds: 15),
+          const Duration(seconds: 5),
           onTimeout: () => {'data': []},
         );
         replyPort.close();
@@ -1258,7 +1313,7 @@ Future<dynamic> _executeProcessTask(
                 },
               });
               final dynamic dayRaw = await dayReplyPort.first.timeout(
-                const Duration(seconds: 15),
+                const Duration(seconds: 5),
                 onTimeout: () => {'data': []},
               );
               dayReplyPort.close();
