@@ -4794,7 +4794,10 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
 
   Future<void> _runMonthlyBatch(AggregatorReport monthlyReport) async {
     final jobId = "monthly_${DateTime.now().millisecondsSinceEpoch}";
-    ref.read(monthlyReportTaskProvider.notifier).start(
+    // Capture the notifier before any async gap — safe to call after unmount
+    // because Riverpod Notifier instances outlive widget lifecycle.
+    final taskNotifier = ref.read(monthlyReportTaskProvider.notifier);
+    taskNotifier.start(
       jobId,
       widget.schemaTitle,
       widget.selectedDate,
@@ -4813,14 +4816,14 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
         ),
       );
 
+      if (!mounted) return;
+
       final isGenerating = ref.read(monthlyReportTaskProvider).isGenerating;
 
       if (!isGenerating) {
         // Cancelled by user via AppBar ✕ button
         return;
       }
-
-      if (!mounted) return;
 
       Navigator.push(
         context,
@@ -4843,7 +4846,9 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
       if (!mounted) return;
       FeedbackToast.error(context, "Batch Generation Failed: $e");
     } finally {
-      ref.read(monthlyReportTaskProvider.notifier).stop();
+      // Always stop the spinner — safe because taskNotifier was captured before
+      // any async suspension point, so it does not require a live BuildContext.
+      taskNotifier.stop();
     }
   }
 
