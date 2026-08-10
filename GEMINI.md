@@ -25,7 +25,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 | Item | Value |
 |------|-------|
 | **Branch** | `dev` |
-| **Last stable commit** | `d70a6d5` (ConsumerWidget const build fix — all 6 waves merged to master) |
+| **Last stable commit** | `1330231` (fix: resolve spinner hang — ref-after-unmount crash in _runMonthlyBatch) |
 | **Flutter analyze** | 0 errors |
 | **Git remotes** | `local-server` (local) + `origin` (`git@github.com:vinayak-10/anydb_flutter.git`) |
 

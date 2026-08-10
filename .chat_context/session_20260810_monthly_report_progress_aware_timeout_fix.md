@@ -31,7 +31,27 @@
 
 ---
 
-## 3. Verification
+## 3. Second Commit: `ref`-after-unmount Crash (`1330231`)
 
-- `flutter analyze`: **0 errors**.
-- All changes tested and verified.
+### Root Cause
+Log analysis (both Aug 7 and Aug 10) confirmed the generation was **completing successfully** (~91 seconds for Jun 2026 / 26 daily sheets). The spinner never stopped because the `finally` block crashed:
+
+```
+UNHANDLED ASYNC ERROR: Bad state: Using "ref" when a widget is about to or
+has been unmounted is unsafe.
+#2  _AggregatorViewState._runMonthlyBatch (collection_view.dart:4846)
+```
+
+The user navigated away during the ~90s batch. `ref.read(monthlyReportTaskProvider.notifier).stop()` in `finally` threw on the disposed `ConsumerStatefulElement` — spinner state never reset, Navigator push never happened.
+
+### Fix
+Capture `taskNotifier = ref.read(monthlyReportTaskProvider.notifier)` **before** the first `await` (while widget is guaranteed mounted). Riverpod `Notifier` instances are owned by `ProviderContainer` (global scope), not the widget — so `taskNotifier.stop()` is safe to call unconditionally in `finally` regardless of widget lifecycle.
+
+**Files changed:** `lib/screens/collection_view.dart` only.
+
+---
+
+## 4. Verification
+
+- `flutter analyze`: **0 errors, 1 pre-existing unrelated warning** (`lexer.dart:111`).
+- Both commits pushed to `dev` + `master` on `origin` and `local-server`.
