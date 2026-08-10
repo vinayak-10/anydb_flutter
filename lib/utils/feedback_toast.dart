@@ -94,6 +94,36 @@ class FeedbackToast {
     );
   }
 
+  /// Displays a success toast using a pre-captured ScaffoldMessengerState
+  static void successWithMessenger(
+    ScaffoldMessengerState messenger,
+    String message, {
+    Duration duration = const Duration(milliseconds: 2500),
+  }) {
+    _showWithMessenger(
+      messenger,
+      message: message,
+      isError: false,
+      icon: Icons.check_circle_outline,
+      duration: duration,
+    );
+  }
+
+  /// Displays an error toast using a pre-captured ScaffoldMessengerState
+  static void errorWithMessenger(
+    ScaffoldMessengerState messenger,
+    String message, {
+    Duration duration = const Duration(milliseconds: 3500),
+  }) {
+    _showWithMessenger(
+      messenger,
+      message: message,
+      isError: true,
+      icon: Icons.error_outline,
+      duration: duration,
+    );
+  }
+
   /// Core private SnackBar builder
   static void _show(
     BuildContext context, {
@@ -104,7 +134,27 @@ class FeedbackToast {
     VoidCallback? onAction,
     required Duration duration,
   }) {
-    ScaffoldMessenger.of(context).clearSnackBars();
+    _showWithMessenger(
+      ScaffoldMessenger.of(context),
+      message: message,
+      isError: isError,
+      icon: icon,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      duration: duration,
+    );
+  }
+
+  static void _showWithMessenger(
+    ScaffoldMessengerState messenger, {
+    required String message,
+    required bool isError,
+    IconData? icon,
+    String? actionLabel,
+    VoidCallback? onAction,
+    required Duration duration,
+  }) {
+    messenger.clearSnackBars();
 
     final themeColor = isError
         ? const Color(0xFF6B1524)
@@ -116,7 +166,7 @@ class FeedbackToast {
         ? const Color(0xFFE9967A)
         : const Color(0xFFE5C158);
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
         duration: duration,
         behavior: SnackBarBehavior.floating,
@@ -165,7 +215,7 @@ class FeedbackToast {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    messenger.hideCurrentSnackBar();
                     onAction();
                   },
                   child: Text(

@@ -102,6 +102,7 @@ Full details for each feature are in the session files above. This table is a qu
 - **Public export path:** `/storage/emulated/0/Android/data/com.example.anydbFlutter/files/xyz.maya/anydb/`
 - **Cloud backup path:** Google Drive `/xyz.maya/anydb/Database/`
 - **record_timestamps table:** Auxiliary SQLite table tracking write timestamps per record for report cache invalidation. NEVER remove.
+- **GIT PUSH HARD LOCK:** Never run `git push` or any remote sync in this project (or any project) unless the user explicitly says "push" in that specific message. Committing locally is fine. This rule is permanent and supersedes any tendency to "keep remotes in sync" after a commit.
 
 ---
 

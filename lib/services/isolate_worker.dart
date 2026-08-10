@@ -1350,6 +1350,7 @@ Future<dynamic> _executeProcessTask(
               for (final col in monthlyColumns) {
                 if (col is! Map) continue;
                 final String title = col['title']?.toString() ?? '';
+                if (title == 'Date') continue;
                 String formula = col['formula']?.toString().trim() ?? '';
                 if (formula.startsWith('=')) formula = formula.substring(1);
 

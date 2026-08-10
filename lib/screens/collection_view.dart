@@ -4794,9 +4794,13 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
 
   Future<void> _runMonthlyBatch(AggregatorReport monthlyReport) async {
     final jobId = "monthly_${DateTime.now().millisecondsSinceEpoch}";
-    // Capture the notifier before any async gap — safe to call after unmount
-    // because Riverpod Notifier instances outlive widget lifecycle.
+    // Capture the notifier, navigator, and messenger before any async gap — safe
+    // to call post-unmount because Riverpod Notifiers, NavigatorState (MaterialApp),
+    // and ScaffoldMessengerState (root Scaffold) outlive any specific widget lifecycle.
     final taskNotifier = ref.read(monthlyReportTaskProvider.notifier);
+    final navigatorState = Navigator.of(context);
+    final messengerState = ScaffoldMessenger.of(context);
+
     taskNotifier.start(
       jobId,
       widget.schemaTitle,
@@ -4816,17 +4820,12 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
         ),
       );
 
-      if (!mounted) return;
-
-      final isGenerating = ref.read(monthlyReportTaskProvider).isGenerating;
-
-      if (!isGenerating) {
+      if (!taskNotifier.state.isGenerating) {
         // Cancelled by user via AppBar ✕ button
         return;
       }
 
-      Navigator.push(
-        context,
+      navigatorState.push(
         MaterialPageRoute(
           builder: (context) => AggregatorReportView(
             report: monthlyReport,
@@ -4834,17 +4833,20 @@ class _AggregatorViewState extends ConsumerState<_AggregatorView> {
             selectedDate: widget.selectedDate,
             selectedRange: widget.selectedRange,
             schemaTitle: widget.schemaTitle,
+            forceRebuild: true,
           ),
         ),
       );
 
-      FeedbackToast.success(
-        context,
+      FeedbackToast.successWithMessenger(
+        messengerState,
         "Monthly Report & All Daily Sheets generated successfully!",
       );
     } catch (e) {
-      if (!mounted) return;
-      FeedbackToast.error(context, "Batch Generation Failed: $e");
+      FeedbackToast.errorWithMessenger(
+        messengerState,
+        "Batch Generation Failed: $e",
+      );
     } finally {
       // Always stop the spinner — safe because taskNotifier was captured before
       // any async suspension point, so it does not require a live BuildContext.
