@@ -156,7 +156,9 @@ class _DropDownEditorState extends State<_DropDownEditor> {
       builder: (context, ref, child) {
         final settings = ref.watch(settingsProvider);
         return Padding(
-          padding: const EdgeInsets.all(8.0),
+          padding: EdgeInsets.symmetric(
+            vertical: MediaQuery.of(context).size.height * 0.005,
+          ),
           child: DropdownButtonFormField<String>(
             initialValue: widget.items.contains(_currentValue)
                 ? _currentValue

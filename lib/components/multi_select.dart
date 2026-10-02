@@ -213,7 +213,9 @@ class _MultiSelectEditorState extends State<_MultiSelectEditor> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: EdgeInsets.symmetric(
+        vertical: MediaQuery.of(context).size.height * 0.005,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

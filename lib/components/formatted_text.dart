@@ -75,24 +75,25 @@ class FormattedText extends GenInterface {
     bool? autoFocus,
     bool? refresh,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8.0,
-        vertical: 4.0,
-      ),
-      child: TextFormField(
-        key: key,
-        initialValue: extractedValue,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(
-          labelText: name,
-          hintText: format,
-          border: const OutlineInputBorder(),
+    return Builder(
+      builder: (context) => Padding(
+        padding: EdgeInsets.symmetric(
+          vertical: MediaQuery.of(context).size.height * 0.005,
         ),
-        onChanged: (val) {
-          extractedValue = val;
-          onChanged(val);
-        },
+        child: TextFormField(
+          key: key,
+          initialValue: extractedValue,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            labelText: name,
+            hintText: format,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: (val) {
+            extractedValue = val;
+            onChanged(val);
+          },
+        ),
       ),
     );
   }
