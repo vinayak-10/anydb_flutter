@@ -1688,7 +1688,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
               autofocus: false,
               style: const TextStyle(fontSize: 16.0),
               decoration: InputDecoration(
-                hintText: "Search patients, unique keys, or diagnoses...",
+                hintText: widget.db.key.isNotEmpty
+                    ? "Search ${widget.db.key.toLowerCase()}, unique keys..."
+                    : "Search records, unique keys...",
                 hintStyle: const TextStyle(color: Colors.grey, fontSize: 16.0),
                 suffixIcon: showResults
                     ? IconButton(
@@ -1919,7 +1921,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                           ),
                           child: _buildGroupedSection(
                             context,
-                            "PATIENT DETAILS",
+                            _getPrimarySectionTitle(header),
                             Wrap(spacing: 20, children: elementWidgets[0]),
                             color: Colors.white,
                             isOutlined: true,
@@ -1931,7 +1933,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
 
                       _buildGroupedSection(
                         context,
-                        "FINANCIAL ACCOUNT & RENEWAL",
+                        _getSecondarySectionTitle(header),
                         DefaultTextStyle(
                           style: const TextStyle(
                             fontSize: 18,
@@ -2199,7 +2201,6 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
         // 2. Fallback: search common fields recursively if active key has no value yet
         for (var fallbackKey in [
           "name",
-          "patient name",
           "title",
           "description",
         ]) {
@@ -2804,7 +2805,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                                   ),
                                                   child: _buildGroupedSection(
                                                     context,
-                                                    "PATIENT DETAILS",
+                                                    _getPrimarySectionTitle(
+                                                      header,
+                                                    ),
                                                     Wrap(
                                                       spacing: 20,
                                                       children:
@@ -2822,7 +2825,9 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
 
                                               _buildGroupedSection(
                                                 context,
-                                                "FINANCIAL ACCOUNT & RENEWAL",
+                                                _getSecondarySectionTitle(
+                                                  header,
+                                                ),
                                                 DefaultTextStyle(
                                                   style: const TextStyle(
                                                     fontSize: 18,
@@ -3247,7 +3252,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
                                           ),
                                           child: _buildGroupedSection(
                                             context,
-                                            "PATIENT DETAILS",
+                                            _getPrimarySectionTitle(header),
                                             Wrap(
                                               spacing: 20,
                                               children: elementWidgets[0],
@@ -3263,7 +3268,7 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
 
                                       _buildGroupedSection(
                                         context,
-                                        "FINANCIAL ACCOUNT & RENEWAL",
+                                        _getSecondarySectionTitle(header),
                                         DefaultTextStyle(
                                           style: const TextStyle(
                                             fontSize: 18,
@@ -3540,6 +3545,27 @@ class _DatabaseViewState extends ConsumerState<_DatabaseView>
         ],
       ),
     );
+  }
+
+  String _getPrimarySectionTitle(ListHeader header) {
+    final name = header.getName().trim();
+    return name.isNotEmpty ? name.toUpperCase() : "RECORD DETAILS";
+  }
+
+  String _getSecondarySectionTitle(ListHeader header) {
+    final titles = header.getElementSectionTitles();
+    final secondaryTitles = titles.length > 1
+        ? titles
+            .sublist(1)
+            .whereType<String>()
+            .where((s) => s.trim().isNotEmpty)
+            .map((s) => s.trim().toUpperCase())
+            .toList()
+        : <String>[];
+    if (secondaryTitles.isNotEmpty) {
+      return secondaryTitles.join(" & ");
+    }
+    return "ADDITIONAL DETAILS";
   }
 
   Widget _buildGroupedSection(

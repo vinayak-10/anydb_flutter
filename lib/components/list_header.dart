@@ -95,6 +95,26 @@ class ListHeader extends GenInterface {
     return _getListComponents(config, allComponents, onChanged);
   }
 
+  List<String?> getElementSectionTitles() {
+    if (elements == null || elements!.isEmpty) {
+      return [];
+    }
+    List<String?> titles = [];
+    for (var v in elements!) {
+      if (v is Map && v['type'] == 'function') {
+        final val = v['value'];
+        if (val is List && val.isNotEmpty && val[0] is Map) {
+          titles.add(val[0]['title']?.toString());
+        } else {
+          titles.add(null);
+        }
+      } else {
+        titles.add(null);
+      }
+    }
+    return titles;
+  }
+
   List<List<Widget>> _getListComponents(
     List<dynamic> config,
     List<GenInterface> allComponents,
