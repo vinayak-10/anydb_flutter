@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/gen_interface.dart';
+import '../core/settings_provider.dart';
 
 class MultiSelect extends GenInterface {
   String name = "";
@@ -193,6 +195,14 @@ class _MultiSelectEditorState extends State<_MultiSelectEditor> {
     _currentValues = List<String>.from(widget.initialValues);
   }
 
+  @override
+  void didUpdateWidget(_MultiSelectEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValues != oldWidget.initialValues) {
+      _currentValues = List<String>.from(widget.initialValues);
+    }
+  }
+
   void _handleSelect(String value, bool selected) {
     setState(() {
       if (selected) {
@@ -212,6 +222,49 @@ class _MultiSelectEditorState extends State<_MultiSelectEditor> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.limit == 1) {
+      return Consumer(
+        builder: (context, ref, child) {
+          final settings = ref.watch(settingsProvider);
+          final currentVal = _currentValues.isNotEmpty &&
+                  widget.allowed.contains(_currentValues.first)
+              ? _currentValues.first
+              : null;
+          return Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: MediaQuery.of(context).size.height * 0.005,
+            ),
+            child: DropdownButtonFormField<String>(
+              key: ValueKey("dropdown_${widget.label}_$currentVal"),
+              initialValue: currentVal,
+              style: TextStyle(
+                fontSize: settings.inputFontSize,
+                color: Colors.black87,
+              ),
+              decoration: InputDecoration(
+                labelText: widget.label,
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.grey[100],
+              ),
+              items: widget.allowed.map((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: (val) {
+                setState(() {
+                  _currentValues = val != null ? [val] : [];
+                });
+                widget.onChanged(_currentValues);
+              },
+            ),
+          );
+        },
+      );
+    }
+
     return Padding(
       padding: EdgeInsets.symmetric(
         vertical: MediaQuery.of(context).size.height * 0.005,

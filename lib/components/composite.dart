@@ -306,9 +306,10 @@ class _CompositeEditorState extends State<_CompositeEditor> {
             return const SizedBox.shrink();
           }
 
+          Widget groupContent;
           if (visibleGroup.length == 1) {
             final c = visibleGroup.first;
-            return Padding(
+            groupContent = Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4.0),
               child: c.editor(
                 key: ValueKey(c.getName()),
@@ -320,30 +321,37 @@ class _CompositeEditorState extends State<_CompositeEditor> {
                 refresh: widget.refresh,
               ),
             );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: visibleGroup
-                .map(
-                  (c) => Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4.0,
-                      ),
-                      child: c.editor(
-                        key: ValueKey(c.getName()),
-                        onChanged: (val) => widget.onChanged(),
-                        cbNotifyParent: _handleNotifyParent,
-                        frefs: widget.frefs,
-                        index: widget.index,
-                        autoFocus: widget.autoFocus,
-                        refresh: widget.refresh,
+          } else {
+            groupContent = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: visibleGroup
+                  .map(
+                    (c) => Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4.0,
+                        ),
+                        child: c.editor(
+                          key: ValueKey(c.getName()),
+                          onChanged: (val) => widget.onChanged(),
+                          cbNotifyParent: _handleNotifyParent,
+                          frefs: widget.frefs,
+                          index: widget.index,
+                          autoFocus: widget.autoFocus,
+                          refresh: widget.refresh,
+                        ),
                       ),
                     ),
-                  ),
-                )
-                .toList(),
+                  )
+                  .toList(),
+            );
+          }
+
+          return Column(
+            children: [
+              groupContent,
+              const Divider(color: Colors.green, thickness: 1),
+            ],
           );
         }),
       ],

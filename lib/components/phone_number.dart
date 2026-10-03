@@ -198,7 +198,6 @@ class _PhoneNumberEditorState extends State<_PhoneNumberEditor> {
         final settings = ref.watch(settingsProvider);
         return Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: MediaQuery.of(context).size.width * 0.02,
             vertical: MediaQuery.of(context).size.height * 0.005,
           ),
           child: TextField(

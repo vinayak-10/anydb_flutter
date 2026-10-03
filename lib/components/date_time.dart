@@ -216,7 +216,6 @@ class _DateTimeEditorState extends State<_DateTimeEditor> {
 
     return Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: MediaQuery.of(context).size.width * 0.02,
         vertical: MediaQuery.of(context).size.height * 0.005,
       ),
       child: ListTile(
