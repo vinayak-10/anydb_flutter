@@ -25,7 +25,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 | Item | Value |
 |------|-------|
 | **Branch** | `dev` |
-| **Last stable commit** | `b6b6093` (fix: resolve monthly report background navigation and date overwrite in isolate worker) |
+| **Last stable commit** | `32df6e8` (fix(ui): schema-driven section titles, generic search hint, and clean fallback keys) |
 | **Flutter analyze** | 0 errors |
 | **Git remotes** | `local-server` (local) + `origin` (`git@github.com:vinayak-10/anydb_flutter.git`) |
 
@@ -35,6 +35,7 @@ This file is the **summary and index**. Each session's full details live in `.ch
 
 | Date | File | What Happened |
 |------|------|---------------|
+| 2026-10-03 | [session_20261003_generic_layout_and_schema_titles.md](.chat_context/session_20261003_generic_layout_and_schema_titles.md) | Generic composite row layout (removed hardcoded name heuristics), hidden auto-computed meta editors on New Entry view, schema-driven record detail section titles (replaced hardcoded "PATIENT DETAILS" and "FINANCIAL ACCOUNT & RENEWAL"), and generic search hint. |
 | 2026-08-10 | [session_20260810_monthly_report_navigation_and_date_fix.md](.chat_context/session_20260810_monthly_report_navigation_and_date_fix.md) | Post-generation auto-navigation restored (`navigatorState` captured pre-await), `forceRebuild: true` on viewer push, Date column overwrite fix in isolate regeneration path (COUNTIF=0 → correct), `FeedbackToast` context-free messenger overloads. |
 | 2026-08-10 | [session_20260810_monthly_report_progress_aware_timeout_fix.md](.chat_context/session_20260810_monthly_report_progress_aware_timeout_fix.md) | Progress-aware inactivity watchdog for monthly reports, modal dialog stall recovery in `_handleDone`, and 5s background pipeline IPC timeout optimization. |
 | 2026-08-07 | [session_20260807_drive_ux_and_layout_enhancements.md](.chat_context/session_20260807_drive_ux_and_layout_enhancements.md) | Drive UX sync, dirty bit state tracking, entry modifications counter in bottom sheet, compact responsive AppBar report spinner, and record card flex stretching. |
