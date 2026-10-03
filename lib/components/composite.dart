@@ -253,18 +253,30 @@ class _CompositeEditor extends StatefulWidget {
 }
 
 class _CompositeEditorState extends State<_CompositeEditor> {
-  bool _isAmountGroup(List<GenInterface> group) {
-    if (group.length != 3) return false;
-    final names = group.map((c) => c.getName()).toList();
-    return names.contains("Charges") &&
-        names.contains("Paid") &&
-        names.contains("Discount");
-  }
+  void _handleNotifyParent(
+    GenInterface notifier,
+    Map<String, dynamic> data,
+    List<dynamic> observers,
+  ) {
+    // Calculate observers from the schema if not already provided
+    List<int> observerIndexes = widget.composite.getObserverComponentIndexes(
+      notifier,
+    );
 
-  bool _isAgeSexGroup(List<GenInterface> group) {
-    if (group.length != 2) return false;
-    final names = group.map((c) => c.getName()).toList();
-    return names.contains("Age") && names.contains("Sex");
+    if (widget.cbNotifyParent != null) {
+      // Notify parent (e.g. SimpleAccount) to handle cross-component logic
+      widget.cbNotifyParent!(notifier, data, observerIndexes);
+    } else {
+      // Handle internal composite observers
+      for (var idx in observerIndexes) {
+        final obsComp = widget.composite.getComponentAtIndex(idx);
+        obsComp?.notify({"notifier": data, "loading": false});
+      }
+    }
+
+    // Force re-render of this composite to show updated values in editors
+    setState(() {});
+    widget.onChanged();
   }
 
   @override
@@ -273,114 +285,65 @@ class _CompositeEditorState extends State<_CompositeEditor> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.of(context).size.width * 0.02,
+            vertical: MediaQuery.of(context).size.height * 0.005,
+          ),
           child: Text(
             widget.label,
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         ...widget.groups.map((group) {
-          final isAmount = _isAmountGroup(group);
-          final isAgeSex = _isAgeSexGroup(group);
-          return Column(
-            children: [
-              if (isAmount || isAgeSex)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: group
-                      .map(
-                        (c) => Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4.0,
-                            ),
-                            child: c.editor(
-                              key: ValueKey(c.getName()),
-                              onChanged: (val) => widget.onChanged(),
-                              cbNotifyParent: (notifier, data, observers) {
-                                // Calculate observers from the schema if not already provided
-                                List<int> observerIndexes = widget.composite
-                                    .getObserverComponentIndexes(notifier);
+          final visibleGroup = group
+              .where(
+                (c) =>
+                    c.getType() != 'meta' && c.getType() != 'meta-default',
+              )
+              .toList();
 
-                                if (widget.cbNotifyParent != null) {
-                                  // Notify parent (e.g. SimpleAccount) to handle cross-component logic
-                                  widget.cbNotifyParent!(
-                                    notifier,
-                                    data,
-                                    observerIndexes,
-                                  );
-                                } else {
-                                  // Handle internal composite observers
-                                  for (var idx in observerIndexes) {
-                                    final obsComp = widget.composite
-                                        .getComponentAtIndex(idx);
-                                    obsComp?.notify({
-                                      "notifier": data,
-                                      "loading": false,
-                                    });
-                                  }
-                                }
+          if (visibleGroup.isEmpty) {
+            return const SizedBox.shrink();
+          }
 
-                                // Force re-render of this composite to show updated values in editors
-                                setState(() {});
-                                widget.onChanged();
-                              },
-                              frefs: widget.frefs,
-                              index: widget.index,
-                              autoFocus: widget.autoFocus,
-                              refresh: widget.refresh,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
+          if (visibleGroup.length == 1) {
+            final c = visibleGroup.first;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+              child: c.editor(
+                key: ValueKey(c.getName()),
+                onChanged: (val) => widget.onChanged(),
+                cbNotifyParent: _handleNotifyParent,
+                frefs: widget.frefs,
+                index: widget.index,
+                autoFocus: widget.autoFocus,
+                refresh: widget.refresh,
+              ),
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: visibleGroup
+                .map(
+                  (c) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4.0,
+                      ),
+                      child: c.editor(
+                        key: ValueKey(c.getName()),
+                        onChanged: (val) => widget.onChanged(),
+                        cbNotifyParent: _handleNotifyParent,
+                        frefs: widget.frefs,
+                        index: widget.index,
+                        autoFocus: widget.autoFocus,
+                        refresh: widget.refresh,
+                      ),
+                    ),
+                  ),
                 )
-              else
-                Wrap(
-                  spacing: 10,
-                  children: group
-                      .map(
-                        (c) => c.editor(
-                          key: ValueKey(c.getName()),
-                          onChanged: (val) => widget.onChanged(),
-                          cbNotifyParent: (notifier, data, observers) {
-                            // Calculate observers from the schema if not already provided
-                            List<int> observerIndexes = widget.composite
-                                .getObserverComponentIndexes(notifier);
-
-                            if (widget.cbNotifyParent != null) {
-                              // Notify parent (e.g. SimpleAccount) to handle cross-component logic
-                              widget.cbNotifyParent!(
-                                notifier,
-                                data,
-                                observerIndexes,
-                              );
-                            } else {
-                              // Handle internal composite observers
-                              for (var idx in observerIndexes) {
-                                final obsComp = widget.composite
-                                    .getComponentAtIndex(idx);
-                                obsComp?.notify({
-                                  "notifier": data,
-                                  "loading": false,
-                                });
-                              }
-                            }
-
-                            // Force re-render of this composite to show updated values in editors
-                            setState(() {});
-                            widget.onChanged();
-                          },
-                          frefs: widget.frefs,
-                          index: widget.index,
-                          autoFocus: widget.autoFocus,
-                          refresh: widget.refresh,
-                        ),
-                      )
-                      .toList(),
-                ),
-              const Divider(color: Colors.green, thickness: 1),
-            ],
+                .toList(),
           );
         }),
       ],

@@ -96,7 +96,7 @@ class _ElementEditorState extends State<ElementEditor> {
                 },
                 autoFocusFirst: false,
               ),
-              const SizedBox(height: 40),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.03),
               ElevatedButton.icon(
                 onPressed: _save,
                 icon: const Icon(Icons.save),

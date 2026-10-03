@@ -85,7 +85,7 @@ class MetaDisplay extends GenInterface {
     bool? autoFocus,
     bool? refresh,
   }) {
-    return display(onlyValue: false);
+    return SizedBox.shrink(key: key);
   }
 
   @override
